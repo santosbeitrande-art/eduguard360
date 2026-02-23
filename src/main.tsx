@@ -1,10 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import QRScanner from './QRScanner'
-import './index.css'
+
+function Test() {
+  return <h1 style={{color: "white"}}>APP FUNCIONA</h1>
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QRScanner />
+    <Test />
   </React.StrictMode>,
 )
