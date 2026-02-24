@@ -11,7 +11,7 @@ export default function QRScanner() {
     console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL)
 
     supabase
-      .from('_test_connection')
+     .from('test')
       .select('*')
       .then(res => {
         console.log("Supabase response:", res)
