@@ -1,8 +1,22 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { useEffect } from 'react'
+
 export default function QRScanner() {
-  const [movementMode, setMovementMode] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA')
+
+  const [movementMode, setMovementMode] =
+    useState<'ENTRADA' | 'SAIDA'>('ENTRADA')
+
+  // ✅ useEffect deve ficar AQUI dentro
+  useEffect(() => {
+    console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL)
+
+    supabase
+      .from('_test_connection')
+      .select('*')
+      .then(res => {
+        console.log("Supabase response:", res)
+      })
+  }, [])
 
   return (
     <div style={{
@@ -45,13 +59,3 @@ export default function QRScanner() {
     </div>
   )
 }
-useEffect(() => {
-  console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL)
-
-  supabase
-    .from('_test_connection')
-    .select('*')
-    .then(res => {
-      console.log("Supabase response:", res)
-    })
-}, [])
