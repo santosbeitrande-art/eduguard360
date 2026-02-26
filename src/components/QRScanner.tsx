@@ -4,54 +4,58 @@ import { supabase } from '../lib/supabase'
 export default function QRScanner() {
   const [movementMode, setMovementMode] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA')
   const [movements, setMovements] = useState<any[]>([])
+  const [schoolId, setSchoolId] = useState<string | null>(null)
+  const [studentId, setStudentId] = useState<string | null>(null)
 
-  const schoolId = "e74dae50-ad2d-44d8-b48c-164475c97703"
-  const studentId = "f9bbf66f-4585-415c-85f1-b5638b352357"
-
-  // 🔄 Carregar histórico ao abrir a página
+  // 🔐 Buscar utilizador autenticado e escola
   useEffect(() => {
-    loadMovements()
+    const loadUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        alert("Utilizador não autenticado")
+        return
+      }
+
+      // Buscar escola do utilizador
+      const { data, error } = await supabase
+        .from('users')
+        .select('school_id')
+        .eq('auth_id', user.id)
+        .single()
+
+      if (error || !data) {
+        console.error("Erro ao buscar school_id:", error)
+        return
+      }
+
+      setSchoolId(data.school_id)
+
+      // ⚠ Para teste ainda usamos student fixo
+      setStudentId("f9bbf66f-4585-415c-85f1-b5638b352357")
+
+      loadMovements(data.school_id)
+    }
+
+    loadUserData()
   }, [])
 
-  // 📜 Buscar últimos movimentos
-  const loadMovements = async () => {
-    const { data, error } = await supabase
+  const loadMovements = async (school_id: string) => {
+    const { data } = await supabase
       .from('attendance')
       .select('*')
-      .eq('student_id', studentId)
+      .eq('school_id', school_id)
       .order('created_at', { ascending: false })
       .limit(5)
 
-    if (!error && data) {
+    if (data) {
       setMovements(data)
     }
   }
 
-  // 🚫 + ➕ Registrar movimento com validação
   const registerMovement = async () => {
-    // 1️⃣ Buscar último movimento
-    const { data: lastMovement, error: fetchError } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('student_id', studentId)
-      .order('created_at', { ascending: false })
-      .limit(1)
+    if (!schoolId || !studentId) return
 
-    if (fetchError) {
-      console.error("Erro ao buscar último movimento:", fetchError)
-      return
-    }
-
-    if (lastMovement && lastMovement.length > 0) {
-      const lastType = lastMovement[0].movement_type
-
-      if (lastType === movementMode) {
-        alert(`Já existe um registro de ${movementMode}.`)
-        return
-      }
-    }
-
-    // 2️⃣ Inserir novo movimento
     const { error } = await supabase
       .from('attendance')
       .insert([
@@ -66,7 +70,7 @@ export default function QRScanner() {
       console.error("Erro ao registrar:", error)
     } else {
       alert(`Movimento ${movementMode} registrado com sucesso!`)
-      loadMovements() // Atualiza histórico
+      loadMovements(schoolId)
     }
   }
 
@@ -123,7 +127,6 @@ export default function QRScanner() {
         Registrar Movimento
       </button>
 
-      {/* 📜 Histórico */}
       <h3 style={{ marginTop: 40 }}>Últimos Movimentos</h3>
 
       <ul>
