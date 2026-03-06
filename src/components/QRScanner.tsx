@@ -71,7 +71,7 @@ export default function QRScanner() {
         id="reader"
         style={{ width: "300px", marginTop: 20 }}
       />
-
+npm run dev
     </div>
   )
 }
