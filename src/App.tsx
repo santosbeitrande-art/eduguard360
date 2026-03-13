@@ -1,14 +1,12 @@
-import {BrowserRouter,Routes,Route} from "react-router-dom"
+import { BrowserRouter, Routes, Route } from "react-router-dom"
 
 import Home from "./pages/Home"
 import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
-import Students from "./pages/Students"
-import Checkin from "./pages/Checkin"
 
-function App(){
+function App() {
 
-return(
+return (
 
 <BrowserRouter>
 
@@ -17,8 +15,6 @@ return(
 <Route path="/" element={<Home/>}/>
 <Route path="/login" element={<Login/>}/>
 <Route path="/dashboard" element={<Dashboard/>}/>
-<Route path="/students" element={<Students/>}/>
-<Route path="/checkin" element={<Checkin/>}/>
 
 </Routes>
 
