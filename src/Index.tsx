@@ -1,21 +1,36 @@
-import * as React from "react"
+import React from "react"
+import Header from "@/components/Header"
+import Hero from "@/components/Hero"
+import Footer from "@/components/Footer"
 
-const MOBILE_BREAKPOINT = 768;
+const Index: React.FC = () => {
 
-export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
+return (
 
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+<div>
 
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    };
+<Header/>
 
-    mql.addEventListener("change", onChange);
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
+<Hero/>
 
-  return !!isMobile;
+<div className="p-10 text-center">
+
+<h1 className="text-4xl font-bold">
+EduGuard360
+</h1>
+
+<p className="mt-4">
+Plataforma de segurança escolar
+</p>
+
+</div>
+
+<Footer/>
+
+</div>
+
+)
+
 }
+
+export default Index
