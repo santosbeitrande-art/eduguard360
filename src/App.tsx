@@ -1,27 +1,15 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
-
-import Home from "./pages/Home"
-import Login from "./pages/Login"
-import Dashboard from "./pages/Dashboard"
-
-function App() {
+export default function App() {
 
 return (
 
-<BrowserRouter>
+<div style={{padding:"40px"}}>
 
-<Routes>
+<h1>EduGuard360</h1>
 
-<Route path="/" element={<Home/>}/>
-<Route path="/login" element={<Login/>}/>
-<Route path="/dashboard" element={<Dashboard/>}/>
+<p>Sistema de segurança escolar funcionando.</p>
 
-</Routes>
-
-</BrowserRouter>
+</div>
 
 )
 
 }
-
-export default App
