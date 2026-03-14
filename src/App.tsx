@@ -1,26 +1,21 @@
-import Header from "./components/Header"
-import Hero from "./components/Hero"
-import ForSchools from "./components/ForSchools"
-import ForParents from "./components/ForParents"
-import Footer from "./components/Footer"
+import { BrowserRouter,Routes,Route } from "react-router-dom"
+import AdminDashboard from "./pages/AdminDashboard"
+import Home from "./pages/Index"
 
 export default function App(){
 
 return(
 
-<div>
+<BrowserRouter>
 
-<Header/>
+<Routes>
 
-<Hero/>
+<Route path="/" element={<Home/>}/>
+<Route path="/admin" element={<AdminDashboard/>}/>
 
-<ForSchools/>
+</Routes>
 
-<ForParents/>
-
-<Footer/>
-
-</div>
+</BrowserRouter>
 
 )
 
