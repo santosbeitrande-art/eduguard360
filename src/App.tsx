@@ -4,21 +4,21 @@ import ForSchools from "./components/ForSchools"
 import ForParents from "./components/ForParents"
 import Footer from "./components/Footer"
 
-export default function App() {
+export default function App(){
 
-return (
+return(
 
 <div>
 
-<Header />
+<Header/>
 
-<Hero />
+<Hero/>
 
-<ForSchools />
+<ForSchools/>
 
-<ForParents />
+<ForParents/>
 
-<Footer />
+<Footer/>
 
 </div>
 
