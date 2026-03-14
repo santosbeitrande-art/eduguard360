@@ -1,12 +1,24 @@
+import Header from "./components/Header"
+import Hero from "./components/Hero"
+import ForSchools from "./components/ForSchools"
+import ForParents from "./components/ForParents"
+import Footer from "./components/Footer"
+
 export default function App() {
 
 return (
 
-<div style={{padding:"40px"}}>
+<div>
 
-<h1>EduGuard360</h1>
+<Header />
 
-<p>Sistema de segurança escolar funcionando.</p>
+<Hero />
+
+<ForSchools />
+
+<ForParents />
+
+<Footer />
 
 </div>
 
