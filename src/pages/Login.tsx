@@ -1,22 +1,25 @@
-import {useState} from "react"
-import {login} from "@/hooks/useAuth"
+import { useState } from "react"
+import { supabase } from "../services/supabase"
 
 export default function Login(){
 
-const[email,setEmail]=useState("")
-const[password,setPassword]=useState("")
+const [email,setEmail]=useState("")
+const [password,setPassword]=useState("")
 
-const handleLogin=async()=>{
+async function handleLogin(){
 
-try{
+const {error} = await supabase.auth.signInWithPassword({
+email,
+password
+})
 
-await login(email,password)
+if(error){
 
-alert("Login feito")
+alert(error.message)
 
-}catch(e){
+}else{
 
-alert("Erro login")
+alert("Login realizado")
 
 }
 
@@ -24,24 +27,24 @@ alert("Erro login")
 
 return(
 
-<div className="flex h-screen items-center justify-center">
+<div className="flex justify-center mt-20">
 
 <div className="bg-white shadow p-8 rounded">
 
-<h1 className="text-2xl mb-4">
-Login
-</h1>
+<h2 className="text-2xl mb-4">
+Login Escola
+</h2>
 
 <input
-className="border p-2 w-full mb-2"
-placeholder="email"
+className="border p-2 mb-3 w-full"
+placeholder="Email"
 onChange={(e)=>setEmail(e.target.value)}
 />
 
 <input
+className="border p-2 mb-4 w-full"
 type="password"
-className="border p-2 w-full mb-4"
-placeholder="password"
+placeholder="Senha"
 onChange={(e)=>setPassword(e.target.value)}
 />
 
@@ -49,7 +52,9 @@ onChange={(e)=>setPassword(e.target.value)}
 className="bg-blue-600 text-white px-4 py-2 rounded"
 onClick={handleLogin}
 >
+
 Entrar
+
 </button>
 
 </div>
