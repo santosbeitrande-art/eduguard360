@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 export default function Hero(){
 
 return(
@@ -26,7 +25,6 @@ Começar
 )
 
 }
-=======
 import React from 'react';
 import { heroImage, stats } from '../data/content';
 import { ArrowRightIcon, TruckIcon, ShieldIcon, RefreshIcon, CreditCardIcon } from './ui/Icons';
@@ -172,4 +170,3 @@ const Hero: React.FC = () => {
 };
 
 export default Hero;
->>>>>>> 5a29b53 (primeiro deploy eduguard360)

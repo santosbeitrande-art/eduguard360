@@ -1,5 +1,5 @@
 import QRScanner from "../components/QRScanner"
-import { supabase } from "../services/supabase"
+import { supabase } from "@/lib/supabase"
 
 export default function Checkin(){
 

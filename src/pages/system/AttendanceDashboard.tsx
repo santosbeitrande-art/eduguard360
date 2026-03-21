@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../../services/supabase";
+import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 

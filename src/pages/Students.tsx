@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react"
 import StudentCard from "@/components/StudentCard"
-import {supabase} from "@/integrations/supabase/client"
+import {supabase} from "@/lib/supabase"
 
 export default function Students(){
 

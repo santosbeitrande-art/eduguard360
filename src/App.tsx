@@ -1,27 +1,3 @@
-<<<<<<< HEAD
-import { BrowserRouter,Routes,Route } from "react-router-dom"
-import AdminDashboard from "./pages/AdminDashboard"
-import Home from "./pages/Index"
-
-export default function App(){
-
-return(
-
-<BrowserRouter>
-
-<Routes>
-
-<Route path="/" element={<Home/>}/>
-<Route path="/admin" element={<AdminDashboard/>}/>
-
-</Routes>
-
-</BrowserRouter>
-
-)
-
-}
-=======
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -76,4 +52,3 @@ const App = () => {
 };
 
 export default App;
->>>>>>> 5a29b53 (primeiro deploy eduguard360)

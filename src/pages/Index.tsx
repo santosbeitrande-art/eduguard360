@@ -1,12 +1,6 @@
-import React from "react";
+import React from 'react';
+import IndexLayout from '@/components/IndexLayout';
 
-const Index: React.FC = () => {
-  return (
-    <div style={{ padding: "40px" }}>
-      <h1>EduGuard360</h1>
-      <p>Plataforma de segurança escolar funcionando.</p>
-    </div>
-  );
-};
+const Index: React.FC = () => <IndexLayout />;
 
 export default Index;
