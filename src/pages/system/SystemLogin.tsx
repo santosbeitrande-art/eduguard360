@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { supabase } from "@/services/supabase"
 import { useNavigate } from "react-router-dom"
 
@@ -50,3 +51,44 @@ navigate("/sistema/scanner")
 }
 
 }
+=======
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useNavigate } from "react-router-dom";
+
+const SystemLogin = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const navigate = useNavigate();
+
+  const handleLogin = async () => {
+    const { data } = await supabase
+      .from("school_users")
+      .select("*, schools(*)")
+      .eq("email", email)
+      .eq("password", password)
+      .single();
+
+    if (!data) {
+      alert("Login inválido");
+      return;
+    }
+
+    // 🔥 guardar school_id no local
+    localStorage.setItem("school_id", data.school_id);
+    localStorage.setItem("school", JSON.stringify(data.schools));
+
+    navigate("/sistema/escola");
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => setEmail(e.target.value)} />
+      <input type="password" onChange={(e) => setPassword(e.target.value)} />
+      <button onClick={handleLogin}>Entrar</button>
+    </div>
+  );
+};
+
+export default SystemLogin;
+>>>>>>> 5a29b53 (primeiro deploy eduguard360)

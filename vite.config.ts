@@ -17,4 +17,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
 }));
+<<<<<<< HEAD
 npm run dev
+=======
+>>>>>>> 5a29b53 (primeiro deploy eduguard360)
