@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import QrScanner from 'qr-scanner/qr-scanner.min.js'; // 🔥 Import corrigido para Vite
+import QrScanner from 'qr-scanner/qr-scanner.min.js';
 import { saveStudentEntry } from '@/lib/supabaseClient';
-import { toast } from '@/components/ui/toaster';
+import { useToast } from '@/components/ui/use-toast';
 
 interface Student {
   code: string;
@@ -11,6 +11,8 @@ interface Student {
 
 const QRScannerPro = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { toast } = useToast();
+
   const [students, setStudents] = useState<Student[]>([]);
   const [scanner, setScanner] = useState<QrScanner | null>(null);
 
@@ -21,40 +23,45 @@ const QRScannerPro = () => {
       videoRef.current,
       async (result) => {
         try {
-          // Espera-se que o QR contenha um JSON: { code, name, className }
           const student: Student = JSON.parse(result.data);
 
-          // Evita duplicatas
-          if (!students.find((s) => s.code === student.code)) {
+          const exists = students.find(
+            (s) => s.code === student.code
+          );
+
+          if (!exists) {
             setStudents((prev) => [...prev, student]);
+
             await saveStudentEntry(student);
 
-            // Mostra toast de confirmação
             toast({
-              title: 'Aluno Detectado',
+              title: "Aluno Detectado",
               description: `${student.name} - ${student.className}`,
-              type: 'success',
             });
           }
         } catch {
-          console.warn('QR inválido:', result.data);
+          console.warn("QR inválido");
         }
       },
       {
-        highlightScanRegion: true, // destaca a área de scan
-        highlightCodeOutline: true, // contorna o QR detectado
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
       }
     );
 
     scannerInstance.start();
     setScanner(scannerInstance);
 
-    return () => scannerInstance.destroy();
+    return () => {
+      scannerInstance.destroy();
+    };
   }, [students]);
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Scanner Profissional de Alunos</h1>
+      <h1 className="text-2xl font-bold mb-4">
+        Scanner Profissional de Alunos
+      </h1>
 
       <video
         ref={videoRef}
@@ -62,11 +69,20 @@ const QRScannerPro = () => {
       />
 
       <div className="mt-4">
-        <h2 className="font-semibold">Alunos Detectados:</h2>
-        {students.length === 0 && <p>Nenhum aluno detectado ainda.</p>}
+        <h2 className="font-semibold">
+          Alunos Detectados:
+        </h2>
+
+        {students.length === 0 && (
+          <p>Nenhum aluno detectado ainda.</p>
+        )}
+
         <ul className="mt-2 space-y-1">
           {students.map((s) => (
-            <li key={s.code} className="p-2 border rounded bg-gray-100">
+            <li
+              key={s.code}
+              className="p-2 border rounded bg-gray-100"
+            >
               {s.name} - {s.className}
             </li>
           ))}
