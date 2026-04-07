@@ -1,82 +1,65 @@
-import { useState } from "react";
-import { QrReader } from "react-qr-reader";
-import { supabase } from "@/lib/supabase";
+// src/pages/system/QRScanner.tsx
+import React, { useState } from 'react';
+import QrScanner from 'react-qr-scanner';
+import { Button } from '@/components/ui/button'; // botão estilizado do seu sistema
+import { toast } from '@/components/ui/toaster'; // para mensagens toast do seu tema
 
-const QRScanner = () => {
-  const [lastScan, setLastScan] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
+const QRScanner: React.FC = () => {
+  const [result, setResult] = useState<string>('Nenhum QR code lido ainda');
+  const [error, setError] = useState<string>('');
 
-  const school = JSON.parse(localStorage.getItem("school") || "null");
+  const previewStyle: React.CSSProperties = {
+    height: 350,
+    width: 350,
+    borderRadius: '12px',
+    border: '2px solid #ccc',
+  };
 
-  const handleScan = async (result: any) => {
-    if (!result?.text || loading) return;
-
-    const code = result.text.trim();
-    const now = Date.now();
-
-    if (lastScan[code] && now - lastScan[code] < 3000) return;
-    setLastScan((prev) => ({ ...prev, [code]: now }));
-
-    try {
-      setLoading(true);
-
-      const { data: aluno } = await supabase
-        .from("students")
-        .select("*")
-        .eq("qr_code", code)
-        .eq("school_id", school?.id)
-        .single();
-
-      if (!aluno) {
-        alert("Aluno não encontrado");
-        return;
-      }
-
-      const { data: ultimo } = await supabase
-        .from("attendance")
-        .select("*")
-        .eq("student_id", aluno.id)
-        .order("checkin", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!ultimo || ultimo.checkout) {
-        await supabase.from("attendance").insert({
-          student_id: aluno.id,
-          school_id: school?.id,
-          checkin: new Date().toISOString(),
-        });
-        alert("Entrada registada");
-      } else {
-        await supabase.from("attendance").update({ checkout: new Date().toISOString() }).eq("id", ultimo.id);
-        alert("Saída registada");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao processar QR code. Verifique a conexão.");
-    } finally {
-      setLoading(false);
+  const handleScan = (data: string | null) => {
+    if (data) {
+      setResult(data);
+      setError('');
     }
   };
 
+  const handleError = (err: any) => {
+    console.error(err);
+    setError('Erro ao acessar a câmera. Verifique as permissões do navegador.');
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(result);
+    toast({
+      title: 'Copiado!',
+      description: 'O resultado do QR code foi copiado para a área de transferência.',
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold mb-4">Scanner</h2>
-        <p className="text-sm text-slate-600 mb-6">Aponte a câmera para o QR dos alunos para registrar entrada/saída.</p>
+    <div className="flex flex-col items-center justify-start mt-10 gap-6">
+      <h1 className="text-2xl font-bold">Scanner de QR Code</h1>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <QrReader
-            constraints={{ facingMode: "environment" }}
-            onResult={(result) => handleScan(result)}
-          />
+      {error ? (
+        <div className="text-red-600 font-semibold">{error}</div>
+      ) : (
+        <QrScanner
+          delay={300}
+          style={previewStyle}
+          onError={handleError}
+          onScan={handleScan}
+        />
+      )}
 
-          {loading && <p className="mt-3 text-sm text-blue-600">Processando...</p>}
+      <div className="flex flex-col items-center gap-2">
+        <div className="bg-gray-100 p-3 rounded-md w-80 text-center break-words">
+          <strong>Resultado:</strong> {result}
         </div>
+        <Button onClick={handleCopy} disabled={!result || result === 'Nenhum QR code lido ainda'}>
+          Copiar Resultado
+        </Button>
       </div>
     </div>
   );
 };
 
 export default QRScanner;
-

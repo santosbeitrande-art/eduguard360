@@ -1,20 +1,18 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from '@/components/theme-provider';
 
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
-
-import SystemLogin from "./pages/system/SystemLogin";
-import QRScanner from "./pages/system/QRScanner";
-import ParentDashboard from "./pages/system/ParentDashboard";
-import AdminDashboard from "./pages/system/AdminDashboard";
-import SchoolDashboard from "./pages/system/SchoolDashboard";
-import Students from "./pages/system/Students";
-import AdminExecutiveDashboard from "./pages/system/AdminExecutiveDashboard";
+// Páginas
+import Index from './pages/Index';
+import NotFound from './pages/NotFound';
+import SystemLogin from './pages/system/SystemLogin';
+import QRScannerPro from './pages/system/QRScannerPro';
+import ParentDashboard from './pages/system/ParentDashboard';
+import AdminDashboard from './pages/system/AdminDashboard';
+import SchoolDashboard from './pages/system/SchoolDashboard';
+import AdminExecutiveDashboard from './pages/system/AdminExecutiveDashboard';
 
 const queryClient = new QueryClient();
 
@@ -24,24 +22,27 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
-          <Sonner />
 
           <BrowserRouter>
             <Routes>
+              {/* Home */}
               <Route path="/" element={<Index />} />
 
-              <Route path="/sistema" element={<SystemLogin />} />
+              {/* Login do sistema */}
               <Route path="/sistema/login" element={<SystemLogin />} />
 
-              <Route path="/sistema/scanner" element={<QRScanner />} />
+              {/* Scanner Profissional de Alunos */}
+              <Route path="/sistema/scanner-pro" element={<QRScannerPro />} />
+
+              {/* Dashboards */}
               <Route path="/sistema/pais" element={<ParentDashboard />} />
               <Route path="/sistema/admin" element={<AdminDashboard />} />
               <Route path="/sistema/escola" element={<SchoolDashboard />} />
-              <Route path="/sistema/alunos" element={<Students />} />
 
-              {/* 🔥 NOVO DASHBOARD EXECUTIVO */}
+              {/* Dashboard executivo (opcional) */}
               <Route path="/admin-executivo" element={<AdminExecutiveDashboard />} />
 
+              {/* Página não encontrada */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

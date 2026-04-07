@@ -1,77 +1,41 @@
-import React, { useEffect, useState } from "react"
-import { Html5QrcodeScanner } from "html5-qrcode"
-import { supabase } from "../lib/supabase"
+// src/pages/system/QRScanner.tsx
+import React, { useState } from 'react';
+import QrScanner from 'react-qr-scanner';
 
-export default function QRScanner() {
+const QRScanner: React.FC = () => {
+  const [result, setResult] = useState<string>('Nenhum QR code lido ainda');
 
-  const [movementMode, setMovementMode] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA')
+  // Configurações da câmera (opcional)
+  const previewStyle: React.CSSProperties = {
+    height: 300,
+    width: 300,
+  };
 
-  useEffect(() => {
+  const handleScan = (data: string | null) => {
+    if (data) {
+      setResult(data);
+    }
+  };
 
-    const scanner = new Html5QrcodeScanner(
-      "reader",
-      { fps: 10, qrbox: 250 },
-      false
-    )
-
-    scanner.render(async (decodedText) => {
-
-      try {
-
-        const studentId = decodedText
-
-        const { error } = await supabase
-          .from("attendance")
-          .insert([
-            {
-              student_id: studentId,
-              school_id: "e74dae50-ad2d-44d8-b48c-164475c97703",
-              movement_type: movementMode
-            }
-          ])
-
-        if (error) {
-          alert("Erro ao registrar movimento")
-        } else {
-          alert(`Movimento ${movementMode} registrado`)
-        }
-
-      } catch (err) {
-        console.error(err)
-      }
-
-    })
-
-  }, [movementMode])
+  const handleError = (err: any) => {
+    console.error(err);
+    setResult('Erro ao acessar a câmera');
+  };
 
   return (
-    <div style={{ padding: 30 }}>
-
-      <h1>EDUGUARD360</h1>
-
-      <div>
-
-        <button
-          onClick={() => setMovementMode("ENTRADA")}
-        >
-          ENTRADA
-        </button>
-
-        <button
-          onClick={() => setMovementMode("SAIDA")}
-        >
-          SAÍDA
-        </button>
-
-      </div>
-
-      <p>Modo atual: {movementMode}</p>
-
-      <div
-        id="reader"
-        style={{ width: "300px", marginTop: 20 }}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
+      <h1>Scanner de QR Code</h1>
+      <QrScanner
+        delay={300}          // intervalo de leitura em ms
+        style={previewStyle} // tamanho do preview
+        onError={handleError}
+        onScan={handleScan}
       />
-npm run dev
+      <div>
+        <strong>Resultado:</strong> {result}
+      </div>
     </div>
-  )
-}
+  );
+};
+
+export default QRScanner;
