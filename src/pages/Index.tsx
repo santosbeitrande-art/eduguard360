@@ -1,6 +1,15 @@
-import React from 'react';
-import IndexLayout from '@/components/IndexLayout';
+export default function Index() {
+  return (
+    <div className="flex items-center justify-center h-screen text-center">
+      <div>
+        <h1 className="text-3xl font-bold">
+          Eduguard360
+        </h1>
 
-const Index: React.FC = () => <IndexLayout />;
-
-export default Index;
+        <p className="mt-4 text-lg">
+          Sistema de Segurança Escolar Digital
+        </p>
+      </div>
+    </div>
+  );
+}

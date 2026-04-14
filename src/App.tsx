@@ -1,55 +1,85 @@
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { ThemeProvider } from '@/components/theme-provider';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// Páginas
-import Index from './pages/Index';
-import NotFound from './pages/NotFound';
-import SystemLogin from './pages/system/SystemLogin';
-import QRScannerPro from './pages/system/QRScannerPro';
-import ParentDashboard from './pages/system/ParentDashboard';
-import AdminDashboard from './pages/system/AdminDashboard';
-import SchoolDashboard from './pages/system/SchoolDashboard';
-import AdminExecutiveDashboard from './pages/system/AdminExecutiveDashboard';
+// Páginas principais
+import SystemLogin from "@/pages/system/SystemLogin";
+import AdminDashboard from "@/pages/system/AdminDashboard";
+import ParentDashboard from "@/pages/system/ParentDashboard";
+import SchoolDashboard from "@/pages/system/SchoolDashboard";
+import AdminExecutiveDashboard from "@/pages/system/AdminExecutiveDashboard";
+import QRScannerPro from "@/pages/system/QRScannerPro";
 
-const queryClient = new QueryClient();
+// Página inicial
+import Home from "@/pages/Home";
 
-const App = () => {
+// Página 404
+function NotFound() {
   return (
-    <ThemeProvider defaultTheme="light">
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
+    <div className="flex items-center justify-center h-screen text-center">
+      <div>
+        <h1 className="text-4xl font-bold">404</h1>
 
-          <BrowserRouter>
-            <Routes>
-              {/* Home */}
-              <Route path="/" element={<Index />} />
+        <p className="mt-2">
+          Página não encontrada
+        </p>
 
-              {/* Login do sistema */}
-              <Route path="/sistema/login" element={<SystemLogin />} />
-
-              {/* Scanner Profissional de Alunos */}
-              <Route path="/sistema/scanner-pro" element={<QRScannerPro />} />
-
-              {/* Dashboards */}
-              <Route path="/sistema/pais" element={<ParentDashboard />} />
-              <Route path="/sistema/admin" element={<AdminDashboard />} />
-              <Route path="/sistema/escola" element={<SchoolDashboard />} />
-
-              {/* Dashboard executivo (opcional) */}
-              <Route path="/admin-executivo" element={<AdminExecutiveDashboard />} />
-
-              {/* Página não encontrada */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+        <a
+          href="/"
+          className="text-blue-600 underline mt-4 inline-block"
+        >
+          Voltar ao início
+        </a>
+      </div>
+    </div>
   );
-};
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+
+        {/* Página inicial */}
+        <Route path="/" element={<Home />} />
+
+        {/* ROTA CRÍTICA — resolve /sistema */}
+        <Route path="/sistema" element={<SystemLogin />} />
+
+        {/* Login alternativo */}
+        <Route path="/login" element={<SystemLogin />} />
+
+        {/* Dashboards */}
+        <Route path="/admin" element={<AdminDashboard />} />
+
+        <Route path="/parent" element={<ParentDashboard />} />
+
+        <Route path="/school" element={<SchoolDashboard />} />
+
+        <Route
+          path="/executive"
+          element={<AdminExecutiveDashboard />}
+        />
+
+        {/* Scanner QR */}
+        <Route path="/scanner" element={<QRScannerPro />} />
+
+        {/* Dashboard padrão */}
+        <Route
+          path="/dashboard"
+          element={<Navigate to="/admin" replace />}
+        />
+
+        {/* Redirecionamentos úteis */}
+        <Route
+          path="/home"
+          element={<Navigate to="/" replace />}
+        />
+
+        {/* Página não encontrada */}
+        <Route path="*" element={<NotFound />} />
+
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
 export default App;
