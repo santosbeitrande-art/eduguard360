@@ -38,8 +38,8 @@ function App() {
     <BrowserRouter>
       <Routes>
 
-        {/* Página inicial */}
-        <Route path="/" element={<Home />} />
+        {/* Página inicial (Redirecionamento para Sistema) */}
+        <Route path="/" element={<Navigate to="/sistema" replace />} />
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
