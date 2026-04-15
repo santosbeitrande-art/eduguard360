@@ -11,22 +11,6 @@ const SystemLogin = () => {
   const handleLogin = async () => {
     setLoading(true);
 
-    // BYPASS MODO DEMONSTRAÇÃO (Para a Apresentação Promocional)
-    const emp = email.toLowerCase();
-    if (emp.includes('admin') || emp === 'admin@eduguard360.co.mz') {
-      setTimeout(() => { setLoading(false); navigate("/admin"); }, 600);
-      return;
-    } else if (emp.includes('escola') || emp.includes('school')) {
-      setTimeout(() => { setLoading(false); navigate("/school"); }, 600);
-      return;
-    } else if (emp.includes('pai') || emp.includes('parent') || emp.includes('encarregado')) {
-      setTimeout(() => { setLoading(false); navigate("/parent"); }, 600);
-      return;
-    } else if (emp.includes('seguranca') || emp.includes('scanner')) {
-      setTimeout(() => { setLoading(false); navigate("/scanner"); }, 600);
-      return;
-    }
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -39,25 +23,28 @@ const SystemLogin = () => {
       }
 
       const userId = data.user.id;
+      
+      // Buscar utilizador na NOVA tabela "utilizadores" criada no Supabase
       const { data: user } = await supabase
-        .from("users")
+        .from("utilizadores")
         .select("*")
         .eq("auth_id", userId)
         .single();
 
       if (!user) {
-        alert("Usuário não encontrado.");
+        alert("Utilizador não registado no sistema de acessos.");
         return;
       }
 
-      if (user.role === "super_admin") navigate("/sistema/admin");
-      else if (user.role === "school_admin") navigate("/sistema/escola");
-      else if (user.role === "parent") navigate("/sistema/pais");
-      else if (user.role === "security") navigate("/sistema/scanner");
+      // Redirecionamento por Perfil da nova tabela
+      if (user.perfil === "admin") navigate("/admin");
+      else if (user.perfil === "director") navigate("/school");
+      else if (user.perfil === "pai") navigate("/parent");
+      else if (user.perfil === "scanner") navigate("/scanner");
       else navigate("/");
     } catch (err) {
       console.error(err);
-      alert("Erro no login, tente novamente.");
+      alert("Erro crítico no login, contacte o suporte.");
     } finally {
       setLoading(false);
     }

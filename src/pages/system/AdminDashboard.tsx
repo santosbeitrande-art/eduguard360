@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 const AdminGlobalDashboard = () => {
-  const [schools, setSchools] = useState<any[]>([]);
+  const [escolas, setEscolas] = useState<any[]>([]);
   const [stats, setStats] = useState({
-    totalSchools: 0,
-    totalStudents: 0,
-    totalEntries: 0
+    totalEscolas: 0,
+    totalAlunos: 0,
+    totalEntradas: 0
   });
 
   useEffect(() => {
@@ -14,44 +14,65 @@ const AdminGlobalDashboard = () => {
   }, []);
 
   const loadData = async () => {
-    const { data: schoolsData } = await supabase
-      .from("schools")
+    const { data: escolasData } = await supabase
+      .from("escolas")
       .select("*");
 
-    const { data: students } = await supabase
-      .from("students")
+    const { data: alunos } = await supabase
+      .from("alunos")
       .select("*");
 
-    const { data: attendance } = await supabase
-      .from("attendance")
+    const { data: entradas } = await supabase
+      .from("entradas")
       .select("*");
 
-    setSchools(schoolsData || []);
+    setEscolas(escolasData || []);
 
     setStats({
-      totalSchools: schoolsData?.length || 0,
-      totalStudents: students?.length || 0,
-      totalEntries: attendance?.length || 0
+      totalEscolas: escolasData?.length || 0,
+      totalAlunos: alunos?.length || 0,
+      totalEntradas: entradas?.length || 0
     });
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>📊 Admin Global</h1>
+    <div className="p-8 max-w-5xl mx-auto space-y-8">
+      <h1 className="text-3xl font-bold text-slate-800">📊 Admin Global</h1>
 
-      <div style={{ display: "flex", gap: 20 }}>
-        <div>🏫 Escolas: {stats.totalSchools}</div>
-        <div>👨‍🎓 Alunos: {stats.totalStudents}</div>
-        <div>📍 Registos: {stats.totalEntries}</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
+          <span className="text-4xl mb-4">🏫</span>
+          <h3 className="text-sm font-medium text-slate-500 uppercase">Escolas</h3>
+          <p className="text-3xl font-bold text-slate-800">{stats.totalEscolas}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
+          <span className="text-4xl mb-4">👨‍🎓</span>
+          <h3 className="text-sm font-medium text-slate-500 uppercase">Alunos</h3>
+          <p className="text-3xl font-bold text-slate-800">{stats.totalAlunos}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
+          <span className="text-4xl mb-4">📍</span>
+          <h3 className="text-sm font-medium text-slate-500 uppercase">Registos</h3>
+          <p className="text-3xl font-bold text-slate-800">{stats.totalEntradas}</p>
+        </div>
       </div>
 
-      <h2 style={{ marginTop: 30 }}>Escolas</h2>
-
-      <ul>
-        {schools.map((s) => (
-          <li key={s.id}>{s.name}</li>
-        ))}
-      </ul>
+      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-800 mb-6">Lista de Escolas Registadas</h2>
+        
+        {escolas.length === 0 ? (
+          <p className="text-slate-500 text-center py-4">Nenhuma escola cadastrada.</p>
+        ) : (
+          <ul className="space-y-3">
+            {escolas.map((e) => (
+              <li key={e.id} className="flex justify-between items-center p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors">
+                <span className="font-medium text-slate-700">{e.nome}</span>
+                <span className="text-sm text-slate-500">{e.email || 'Sem e-mail'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 };
