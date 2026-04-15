@@ -10,6 +10,23 @@ const SystemLogin = () => {
 
   const handleLogin = async () => {
     setLoading(true);
+
+    // BYPASS MODO DEMONSTRAÇÃO (Para a Apresentação Promocional)
+    const emp = email.toLowerCase();
+    if (emp.includes('admin') || emp === 'admin@eduguard360.co.mz') {
+      setTimeout(() => { setLoading(false); navigate("/admin"); }, 600);
+      return;
+    } else if (emp.includes('escola') || emp.includes('school')) {
+      setTimeout(() => { setLoading(false); navigate("/school"); }, 600);
+      return;
+    } else if (emp.includes('pai') || emp.includes('parent') || emp.includes('encarregado')) {
+      setTimeout(() => { setLoading(false); navigate("/parent"); }, 600);
+      return;
+    } else if (emp.includes('seguranca') || emp.includes('scanner')) {
+      setTimeout(() => { setLoading(false); navigate("/scanner"); }, 600);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
