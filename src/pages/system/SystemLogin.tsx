@@ -12,8 +12,16 @@ const SystemLogin = () => {
     setLoading(true);
 
     try {
-      // Bypass automático (Hardcoded) para o Admin Principal (Evita bloqueios do Supabase Auth / Confirmação de e-mail)
+      // Bypass automático (Hardcoded) para o Admin Principal
       if (email === "admin@eduguard360.co.mz" && password === "Admin@1234") {
+        const adminUser = {
+          id: "bypass-admin-id",
+          nome: "Administrador Global",
+          email: "admin@eduguard360.co.mz",
+          perfil: "admin",
+          escola_id: null
+        };
+        localStorage.setItem("currentUser", JSON.stringify(adminUser));
         navigate("/admin");
         return;
       }
@@ -42,6 +50,9 @@ const SystemLogin = () => {
         return;
       }
 
+      // Guardar utilizador logado no contexto/localStorage
+      localStorage.setItem("currentUser", JSON.stringify(user));
+
       // Redirecionamento por Perfil da nova tabela
       if (user.perfil === "admin") navigate("/admin");
       else if (user.perfil === "director") navigate("/school");
@@ -56,10 +67,28 @@ const SystemLogin = () => {
     }
   };
   const handleDemoAccess = (role: string) => {
-    if (role === "admin") navigate("/admin");
-    else if (role === "school") navigate("/school");
-    else if (role === "parent") navigate("/parent");
-    else if (role === "scanner") navigate("/scanner");
+    let mockUser: any = null;
+    
+    if (role === "admin") {
+      mockUser = { id: "demo-admin", perfil: "admin", nome: "Admin Global" };
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      navigate("/admin");
+    }
+    else if (role === "school") {
+      mockUser = { id: "demo-school", perfil: "director", nome: "Escola Demo", escola_id: "demo-school-id" };
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      navigate("/school");
+    }
+    else if (role === "parent") {
+      mockUser = { id: "demo-parent", perfil: "pai", nome: "Pai Demo" };
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      navigate("/parent");
+    }
+    else if (role === "scanner") {
+      mockUser = { id: "demo-scanner", perfil: "scanner", nome: "Scanner", escola_id: "demo-school-id" };
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      navigate("/scanner");
+    }
   };
 
   return (

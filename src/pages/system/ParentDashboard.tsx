@@ -43,18 +43,14 @@ const ParentDashboardContent: React.FC = () => {
   }, [isAuthenticated, isLoading, navigate]);
 
   useEffect(() => {
-    if (user) {
-      setProfileName(user.name || '');
-      setProfilePhone(user.phone || '');
-      setProfileEmail(user.email || '');
-      setEmailEnabled(user.email_enabled !== false);
-      setSmsEnabled(user.sms_enabled || false);
-      setSmsPhone(user.sms_phone || user.phone || '');
-      if (user.students && user.students.length > 0) {
-        loadStudentStatuses();
-        loadNotifications();
-        setSelectedStudent(user.students[0].id);
-      }
+    if (user || localStorage.getItem('currentUser')) {
+      const currentUser = user || JSON.parse(localStorage.getItem('currentUser') || '{}');
+      setProfileName(currentUser.name || currentUser.nome || '');
+      setProfilePhone(currentUser.phone || '');
+      setProfileEmail(currentUser.email || '');
+      
+      loadStudentStatuses(currentUser.id);
+      loadNotifications();
     }
   }, [user]);
 
@@ -62,40 +58,98 @@ const ParentDashboardContent: React.FC = () => {
     if (selectedStudent) loadAttendanceHistory(selectedStudent);
   }, [selectedStudent]);
 
-  const loadStudentStatuses = async () => {
-    if (!user?.students) return;
+  const loadStudentStatuses = async (parentId: string) => {
     setLoading(true);
-    const statuses: any[] = [];
-    for (const student of user.students) {
-      try {
-        const { data } = await supabase.functions.invoke('eduguard-data', {
-          body: { action: 'get_student_status', student_id: student.id, user_id: user.id, user_type: 'parent' }
-        });
-        if (data?.success) { statuses.push(data); }
-        else { statuses.push({ student: { id: student.id, name: student.name, grade: student.grade, class: student.class }, status: 'not_arrived', today_logs: [], last_movement: null }); }
-      } catch (err) {
-        statuses.push({ student: { id: student.id, name: student.name, grade: student.grade, class: student.class }, status: 'not_arrived', today_logs: [], last_movement: null });
+    try {
+      // Buscar alunos do encarregado
+      const { data: alunosData } = await supabase
+        .from('alunos')
+        .select('*')
+        .eq('encarregado_id', parentId);
+
+      if (!alunosData || alunosData.length === 0) {
+        setStudentStatuses([]);
+        setLoading(false);
+        return;
       }
+
+      const statuses: any[] = [];
+      for (const student of alunosData) {
+        // Buscar a última entrada deste aluno para determinar o status
+        const { data: ultimasEntradas } = await supabase
+          .from('entradas')
+          .select('*')
+          .eq('aluno_id', student.id)
+          .order('data', { ascending: false })
+          .limit(1);
+          
+        const lastEntry = ultimasEntradas?.[0];
+        let status = 'not_arrived';
+        if (lastEntry) {
+           status = lastEntry.tipo === 'entrada' ? 'in_school' : 'left_school';
+        }
+
+        // Buscar logs de hoje
+        const today = new Date().toISOString().split('T')[0];
+        const { data: logsHoje } = await supabase
+          .from('entradas')
+          .select('*')
+          .eq('aluno_id', student.id)
+          .gte('data', today + 'T00:00:00Z');
+
+        const today_logs = (logsHoje || []).map(log => ({
+          movement_type: log.tipo.toUpperCase(),
+          time: new Date(log.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })
+        }));
+
+        statuses.push({
+          student: { id: student.id, name: student.nome, grade: student.classe, class: '' },
+          status: status,
+          today_logs: today_logs,
+          last_movement: lastEntry ? {
+            type: lastEntry.tipo.toUpperCase(),
+            time: new Date(lastEntry.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })
+          } : null
+        });
+      }
+      
+      setStudentStatuses(statuses);
+      if (statuses.length > 0 && !selectedStudent) {
+        setSelectedStudent(statuses[0].student.id);
+      }
+    } catch (err) {
+      console.error(err);
     }
-    setStudentStatuses(statuses);
     setLoading(false);
   };
 
   const loadNotifications = async () => {
-    try {
-      const { data } = await supabase.functions.invoke('eduguard-data', {
-        body: { action: 'get_notifications', user_id: user?.id, user_type: 'parent' }
-      });
-      if (data?.success) setNotifications(data.data || []);
-    } catch (err) {}
+    // Como ainda não existe tabela de notificações, retornamos vazio
+    setNotifications([]);
   };
 
   const loadAttendanceHistory = async (studentId: string) => {
     try {
-      const { data } = await supabase.functions.invoke('eduguard-data', {
-        body: { action: 'get_attendance', student_id: studentId, user_id: user?.id, user_type: 'parent' }
-      });
-      if (data?.success) setAttendanceHistory(data.data || []);
+      const { data } = await supabase
+        .from('entradas')
+        .select('*')
+        .eq('aluno_id', studentId)
+        .order('data', { ascending: false })
+        .limit(20);
+
+      if (data) {
+        const history = data.map(log => {
+           const d = new Date(log.data);
+           return {
+             log_id: log.id,
+             date: d.toLocaleDateString('pt-MZ'),
+             time: d.toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' }),
+             movement_type: log.tipo.toUpperCase(),
+             location: 'Portão Principal'
+           };
+        });
+        setAttendanceHistory(history);
+      }
     } catch (err) {}
   };
 
@@ -245,12 +299,12 @@ const ParentDashboardContent: React.FC = () => {
         {/* History Tab */}
         {activeTab === 'history' && (
           <div className="space-y-6">
-            {user?.students && user.students.length > 1 && (
+            {studentStatuses.length > 1 && (
               <div className="flex gap-2 flex-wrap">
-                {user.students.map((student) => (
-                  <button key={student.id} onClick={() => setSelectedStudent(student.id)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedStudent === student.id ? 'bg-[#2ecc71] text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}>
-                    {student.name}
+                {studentStatuses.map((status) => (
+                  <button key={status.student.id} onClick={() => setSelectedStudent(status.student.id)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedStudent === status.student.id ? 'bg-[#2ecc71] text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}>
+                    {status.student.name}
                   </button>
                 ))}
               </div>
@@ -358,7 +412,7 @@ const ParentDashboardContent: React.FC = () => {
                   <div className="flex items-center justify-between py-2 border-b border-white/10"><span className="text-gray-400">Nome</span><span className="text-white">{user?.name}</span></div>
                   <div className="flex items-center justify-between py-2 border-b border-white/10"><span className="text-gray-400">Email</span><span className="text-white">{user?.email}</span></div>
                   <div className="flex items-center justify-between py-2 border-b border-white/10"><span className="text-gray-400">Telefone</span><span className="text-white">{user?.phone || 'Não definido'}</span></div>
-                  <div className="flex items-center justify-between py-2"><span className="text-gray-400">Educandos</span><span className="text-white">{user?.students?.length || 0}</span></div>
+                  <div className="flex items-center justify-between py-2"><span className="text-gray-400">Educandos</span><span className="text-white">{studentStatuses.length}</span></div>
                 </div>
               )}
             </div>

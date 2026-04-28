@@ -7,30 +7,43 @@ const SchoolDashboard = () => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Safely parse the school from localStorage
-  let school: any = null;
+  // Ler o utilizador autenticado
+  let currentUser: any = null;
   try {
-    school = JSON.parse(localStorage.getItem("school") || "null");
+    currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
   } catch (e) {
-    console.error("Failed to parse school from localStorage");
+    console.error("Failed to parse currentUser from localStorage");
   }
 
   const fetchData = async () => {
     setLoading(true);
-    if (!school?.id) {
+    
+    // Bloquear acesso se não houver utilizador ou se não for admin/director
+    if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
       setLoading(false);
+      setData([]);
       return;
     }
 
-    // Consulta à tabela 'entradas', juntando com 'alunos' para filtrar pela escola
-    const { data: entradasData, error } = await supabase
+    let query = supabase
       .from("entradas")
       .select(`
         *,
         alunos!inner(nome, classe, escola_id)
       `)
-      .eq("alunos.escola_id", school.id)
       .order("data", { ascending: false });
+
+    // Se não for admin global, restringe à sua própria escola
+    if (currentUser.perfil !== 'admin') {
+      if (!currentUser.escola_id) {
+        console.error("Utilizador não tem escola associada.");
+        setLoading(false);
+        return;
+      }
+      query = query.eq("alunos.escola_id", currentUser.escola_id);
+    }
+
+    const { data: entradasData, error } = await query;
 
     if (error) {
       console.error("Erro ao buscar dados:", error);
@@ -49,7 +62,7 @@ const SchoolDashboard = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white">
-            Painel da Escola {school?.nome ? `- ${school.nome}` : ""}
+            Painel da Escola
           </h1>
           <p className="text-gray-400 mt-1">Acompanhe as entradas e saídas dos alunos em tempo real.</p>
         </div>
