@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import QrScanner from 'qr-scanner/qr-scanner.min.js';
 import { saveStudentEntry } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { CheckCircle2, ScanLine, AlertCircle } from 'lucide-react';
 
 interface Student {
   code: string;
@@ -15,6 +16,7 @@ const QRScannerPro = () => {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [scanner, setScanner] = useState<QrScanner | null>(null);
+  const [isScanning, setIsScanning] = useState(true);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -23,6 +25,10 @@ const QRScannerPro = () => {
       videoRef.current,
       async (result) => {
         try {
+          // Temporarily pause scanning to avoid multiple requests
+          if (!isScanning) return;
+          setIsScanning(false);
+
           const student: Student = JSON.parse(result.data);
 
           const exists = students.find(
@@ -30,17 +36,31 @@ const QRScannerPro = () => {
           );
 
           if (!exists) {
-            setStudents((prev) => [...prev, student]);
+            setStudents((prev) => [student, ...prev]);
 
-            await saveStudentEntry(student);
-
-            toast({
-              title: "Aluno Detectado",
-              description: `${student.name} - ${student.className}`,
-            });
+            try {
+              await saveStudentEntry(student);
+              toast({
+                title: "Sucesso!",
+                description: `Entrada registada: ${student.name} - ${student.className}`,
+                className: "bg-[#2ecc71] text-white border-none",
+              });
+            } catch (error) {
+              console.error(error);
+              toast({
+                title: "Erro no Registo",
+                description: `Não foi possível registar ${student.name}. Tente novamente.`,
+                variant: "destructive",
+              });
+            }
           }
+          
+          // Resume scanning after 2 seconds
+          setTimeout(() => setIsScanning(true), 2000);
+
         } catch {
-          console.warn("QR inválido");
+          console.warn("QR inválido ou não formatado corretamente.");
+          setTimeout(() => setIsScanning(true), 2000);
         }
       },
       {
@@ -55,38 +75,64 @@ const QRScannerPro = () => {
     return () => {
       scannerInstance.destroy();
     };
-  }, [students]);
+  }, [students, isScanning, toast]);
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">
-        Scanner Profissional de Alunos
-      </h1>
+    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 flex flex-col items-center">
+      <div className="w-full max-w-md card overflow-hidden">
+        <div className="border-b border-[#2e5a6e] p-6 text-center">
+          <div className="w-16 h-16 bg-[#2ecc71]/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+             <ScanLine className="h-8 w-8 text-[#2ecc71]" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">
+            Scanner EduGuard
+          </h1>
+          <p className="text-gray-400 mt-1 text-sm">Posicione o cartão do aluno na câmara</p>
+        </div>
 
-      <video
-        ref={videoRef}
-        className="w-full max-w-xl mx-auto border-2 border-blue-500 rounded-lg"
-      />
+        <div className="p-6">
+          <div className="relative rounded-2xl overflow-hidden bg-black aspect-square flex items-center justify-center shadow-inner border border-white/10">
+            <video
+              ref={videoRef}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            {/* Visual overlay for scanning status */}
+            <div className={`absolute inset-0 border-4 transition-colors duration-300 pointer-events-none ${isScanning ? 'border-blue-500/50' : 'border-[#2ecc71]/80'}`}></div>
+          </div>
 
-      <div className="mt-4">
-        <h2 className="font-semibold">
-          Alunos Detectados:
-        </h2>
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white text-lg flex items-center gap-2">
+                Últimos Registos
+              </h2>
+              <span className="bg-[#2ecc71]/10 text-[#2ecc71] border border-[#2ecc71]/20 text-xs px-2 py-1 rounded-full font-medium">
+                {students.length} hoje
+              </span>
+            </div>
 
-        {students.length === 0 && (
-          <p>Nenhum aluno detectado ainda.</p>
-        )}
-
-        <ul className="mt-2 space-y-1">
-          {students.map((s) => (
-            <li
-              key={s.code}
-              className="p-2 border rounded bg-gray-100"
-            >
-              {s.name} - {s.className}
-            </li>
-          ))}
-        </ul>
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+              {students.length === 0 ? (
+                <div className="text-center py-8 bg-white/5 rounded-xl border border-dashed border-white/10">
+                  <AlertCircle className="h-8 w-8 text-gray-500 mx-auto mb-2" />
+                  <p className="text-gray-400 text-sm">A aguardar leitura de cartão...</p>
+                </div>
+              ) : (
+                students.map((s, index) => (
+                  <div
+                    key={`${s.code}-${index}`}
+                    className="flex items-start gap-3 p-3 bg-white/5 border border-white/10 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2"
+                  >
+                    <CheckCircle2 className="h-5 w-5 text-[#2ecc71] mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-white leading-tight">{s.name}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{s.className}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
