@@ -10,6 +10,7 @@ import QRScannerPro from "@/pages/system/QRScannerPro";
 
 // Página inicial
 import Home from "@/pages/Home";
+import LandingPage from "@/pages/public/LandingPage";
 
 // Página 404
 function NotFound() {
@@ -38,8 +39,8 @@ function App() {
     <BrowserRouter>
       <Routes>
 
-        {/* Página inicial (Redirecionamento para Sistema) */}
-        <Route path="/" element={<Navigate to="/sistema" replace />} />
+        {/* Página inicial Pública */}
+        <Route path="/" element={<LandingPage />} />
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
