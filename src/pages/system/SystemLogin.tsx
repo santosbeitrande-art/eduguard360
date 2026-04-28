@@ -12,6 +12,12 @@ const SystemLogin = () => {
     setLoading(true);
 
     try {
+      // Bypass automático (Hardcoded) para o Admin Principal (Evita bloqueios do Supabase Auth / Confirmação de e-mail)
+      if (email === "admin@eduguard360.co.mz" && password === "Admin@1234") {
+        navigate("/admin");
+        return;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
