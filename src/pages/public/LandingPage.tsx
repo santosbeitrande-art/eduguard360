@@ -45,12 +45,12 @@ const LandingPage = () => {
       <header className="fixed w-full top-0 z-50 bg-[#0a1a24]/90 backdrop-blur-md border-b border-[#2e5a6e]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            <div className="flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-3">
               <div className="w-10 h-10 bg-[#2ecc71] rounded-lg flex items-center justify-center shadow-lg shadow-[#2ecc71]/20">
                 <ShieldCheck className="h-6 w-6 text-white" />
               </div>
               <span className="font-bold text-2xl tracking-tight text-white">EduGuard<span className="text-[#2ecc71]">360</span></span>
-            </div>
+            </Link>
             
             <nav className="hidden md:flex space-x-8">
               <a href="#sobre" className="text-gray-300 hover:text-[#2ecc71] font-medium transition-colors">Sobre</a>
