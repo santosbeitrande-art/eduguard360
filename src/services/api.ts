@@ -135,5 +135,4 @@ export class ApiService {
       return { error: error instanceof Error ? error.message : 'Failed to get user' };
     }
   }
-}</content>
-<parameter name="filePath">c:\Users\AEAO\Desktop\Santos\website-guide eduguard360\src\services\api.ts
+}
