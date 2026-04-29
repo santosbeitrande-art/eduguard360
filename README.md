@@ -203,7 +203,7 @@ O EduGuard360 foi desenvolvido especificamente para o contexto educacional de Mo
 
 Para demonstrações, implementação ou informações adicionais:
 - Website: https://eduguard360.co.mz
-- Email: contacto@eduguard360.co.mz
+- Email: admin@eduguard360.co.mz
 
 ---
 

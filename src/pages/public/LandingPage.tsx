@@ -1,7 +1,43 @@
+import { useState, FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
+import { ApiService } from "@/services/api";
 
 const LandingPage = () => {
+  const [schoolName, setSchoolName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const handleDemoRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!schoolName.trim() || !contactEmail.trim()) {
+      setFeedback({ type: "error", message: "Por favor preencha o nome da escola e o e-mail de contacto." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFeedback(null);
+
+    const response = await ApiService.submitDemoRequest({
+      name: `Pedido de simulação - ${schoolName}`,
+      email: contactEmail,
+      school: schoolName,
+      role: "director",
+    });
+
+    setIsSubmitting(false);
+
+    if (response.error) {
+      setFeedback({ type: "error", message: response.error });
+    } else {
+      setFeedback({ type: "success", message: "Pedido enviado com sucesso! Entraremos em contacto em breve." });
+      setSchoolName("");
+      setContactEmail("");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0b1f2a] text-white selection:bg-[#2ecc71] selection:text-white font-sans">
       
@@ -46,6 +82,9 @@ const LandingPage = () => {
         </h1>
         <p className="mt-6 text-xl text-[#9bbbc9] max-w-2xl mx-auto leading-relaxed z-10">
           O primeiro ecossistema inteligente em Moçambique que notifica os pais em tempo real através de QR Codes inteligentes quando os alunos entram ou saem da escola.
+        </p>
+        <p className="mt-4 text-base text-[#a6c4d5] max-w-2xl mx-auto leading-relaxed z-10">
+          Portal já funcional: escolas, pais e administração podem aceder com credenciais e gerir a plataforma de forma segura.
         </p>
         
         <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center z-10">
@@ -119,7 +158,7 @@ const LandingPage = () => {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-[#2ecc71] to-blue-500 blur-3xl opacity-20 rounded-full"></div>
               <div className="card border border-[#2e5a6e] p-2 relative">
-                <img src="https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop" alt="Crianças na escola" className="rounded-lg shadow-2xl opacity-80" />
+                <img src="https://images.unsplash.com/photo-1544717305-996b815c338c?auto=format&fit=crop&w=2070&q=80" alt="Crianças de várias raças em sala de aula" className="rounded-lg shadow-2xl opacity-80" />
               </div>
             </div>
           </div>
@@ -137,19 +176,30 @@ const LandingPage = () => {
               Inicie a transição para a modernidade hoje mesmo. Deixe o seu contacto e a nossa equipa agendará uma simulação presencial ou remota, sem compromisso.
             </p>
 
-            <form className="max-w-lg mx-auto flex flex-col gap-4 relative z-10">
+            <form onSubmit={handleDemoRequest} className="max-w-lg mx-auto flex flex-col gap-4 relative z-10">
               <input 
                 type="text" 
+                value={schoolName}
+                onChange={(e) => setSchoolName(e.target.value)}
                 placeholder="Nome da Escola ou Instituição" 
                 className="w-full px-5 py-4 rounded-lg"
+                required
               />
               <input 
                 type="email" 
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
                 placeholder="E-mail de Contacto da Direção" 
                 className="w-full px-5 py-4 rounded-lg"
+                required
               />
-              <button type="button" className="btn w-full px-8 py-4 font-bold text-lg mt-2">
-                Solicitar Simulação Gratuita
+              {feedback && (
+                <div className={`rounded-lg px-4 py-3 text-sm ${feedback.type === 'success' ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
+                  {feedback.message}
+                </div>
+              )}
+              <button type="submit" disabled={isSubmitting} className="btn w-full px-8 py-4 font-bold text-lg mt-2">
+                {isSubmitting ? 'A enviar...' : 'Solicitar Simulação Gratuita'}
               </button>
             </form>
           </div>
@@ -175,7 +225,7 @@ const LandingPage = () => {
               <ul className="space-y-4">
                 <li className="flex items-center gap-3 text-[#9bbbc9]">
                   <Mail className="h-5 w-5 text-[#2ecc71]" />
-                  <a href="mailto:comercial@eduguard360.co.mz" className="hover:text-white transition-colors">comercial@eduguard360.co.mz</a>
+                  <a href="mailto:admin@eduguard360.co.mz" className="hover:text-white transition-colors">admin@eduguard360.co.mz</a>
                 </li>
                 <li className="flex items-center gap-3 text-[#9bbbc9]">
                   <Phone className="h-5 w-5 text-[#2ecc71]" />
