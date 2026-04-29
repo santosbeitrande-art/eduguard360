@@ -6,7 +6,7 @@ const AdminCredentials: React.FC = () => (
     <p className='mt-2 text-slate-700'>Use para acessar rapidamente o painel administrativo e validar fluxo.</p>
     <ul className='mt-4 list-disc list-inside text-slate-700'>
       <li>E-mail: <strong>admin@eduguard360.co.mz</strong></li>
-      <li>Senha: <strong>admin1234</strong></li>
+      <li>Senha: <strong>Admin1234admin</strong></li>
     </ul>
     <p className='mt-2 text-sm text-slate-500'>Altere estas credenciais antes do deploy em produção.</p>
   </section>

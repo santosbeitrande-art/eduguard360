@@ -13,13 +13,15 @@ const SystemLogin = () => {
 
     try {
       // Bypass automático (Hardcoded) para o Admin Principal
-      if (email === "admin@eduguard360.co.mz" && (password === "Admin@1234" || password === "admin1234")) {
+      if (email === "admin@eduguard360.co.mz" && password === "Admin1234admin") {
         const adminUser = {
           id: "bypass-admin-id",
           nome: "Administrador Global",
           email: "admin@eduguard360.co.mz",
           perfil: "admin",
-          escola_id: null
+          escola_id: null,
+          canAccessParent: true,
+          canAccessSchool: true
         };
         localStorage.setItem("currentUser", JSON.stringify(adminUser));
         navigate("/admin");

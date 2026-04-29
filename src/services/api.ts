@@ -87,7 +87,7 @@ export class ApiService {
   static async signIn(email: string, password: string): Promise<ApiResponse<any>> {
     if (isMockMode) {
       // Mock auth
-      if (email === 'admin@eduguard360.co.mz' && (password === 'Admin@1234' || password === 'admin1234')) {
+      if (email === 'admin@eduguard360.co.mz' && password === 'Admin1234admin') {
         return { data: { user: { email }, session: { access_token: 'mock_token' } } };
       }
       return { error: 'Invalid credentials' };
