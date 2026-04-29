@@ -1,7 +1,6 @@
 import { useState, FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
-import { ApiService } from "@/services/api";
 
 const LandingPage = () => {
   const [schoolName, setSchoolName] = useState("");
@@ -20,21 +19,40 @@ const LandingPage = () => {
     setIsSubmitting(true);
     setFeedback(null);
 
-    const response = await ApiService.submitDemoRequest({
-      name: `Pedido de simulação - ${schoolName}`,
+    const formBody = {
+      name: schoolName,
       email: contactEmail,
       school: schoolName,
-      role: "director",
-    });
+      message: `Pedido de simulação gratuita para a escola ${schoolName}. E-mail de contacto: ${contactEmail}`,
+      _subject: "Novo pedido de simulação EduGuard360",
+      _captcha: "false",
+    };
 
-    setIsSubmitting(false);
+    try {
+      const response = await fetch("https://formsubmit.co/ajax/admin@eduguard360.co.mz", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(formBody),
+      });
 
-    if (response.error) {
-      setFeedback({ type: "error", message: response.error });
-    } else {
-      setFeedback({ type: "success", message: "Pedido enviado com sucesso! Entraremos em contacto em breve." });
+      const result = await response.json();
+      if (!response.ok || result.success === false) {
+        throw new Error(result.message || "Falha ao enviar o pedido por email.");
+      }
+
+      setFeedback({ type: "success", message: "Pedido enviado! O nosso administrador receberá o email imediatamente." });
       setSchoolName("");
       setContactEmail("");
+    } catch (error) {
+      const mailBody = encodeURIComponent(`Pedido de simulação gratuita para a escola ${schoolName}.\nE-mail de contacto: ${contactEmail}`);
+      const mailto = `mailto:admin@eduguard360.co.mz?subject=${encodeURIComponent("Pedido de Simulação Gratuita EduGuard360")}&body=${mailBody}`;
+      window.location.href = mailto;
+      setFeedback({ type: "success", message: "Não foi possível enviar automaticamente, mas o e-mail já foi aberto para completar o envio." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

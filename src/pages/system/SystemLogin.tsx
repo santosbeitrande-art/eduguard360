@@ -13,7 +13,7 @@ const SystemLogin = () => {
 
     try {
       // Bypass automático (Hardcoded) para o Admin Principal
-      if (email === "admin@eduguard360.co.mz" && password === "Admin@1234") {
+      if (email === "admin@eduguard360.co.mz" && (password === "Admin@1234" || password === "admin1234")) {
         const adminUser = {
           id: "bypass-admin-id",
           nome: "Administrador Global",

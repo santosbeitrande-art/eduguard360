@@ -128,7 +128,7 @@ A aplicação está disponível em: **https://eduguard360.co.mz**
 
 ### Credenciais de Teste (Administrador)
 - **Email**: admin@eduguard360.co.mz
-- **Senha**: Admin@1234
+- **Senha**: admin1234
 
 ⚠️ **Importante**: Altere estas credenciais antes do deploy em produção.
 
