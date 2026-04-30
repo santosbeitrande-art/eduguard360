@@ -71,28 +71,66 @@ const SystemLogin = () => {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const handleDemoAccess = (role: string) => {
+    let mockUser: any = null;
+
     if (role === "admin") {
-      setEmail("admin@eduguard360.co.mz");
-      setPassword("Admin1234admin");
-      setInfoMessage("Global Mestre é o mesmo que Admin Global: utilize admin@eduguard360.co.mz e Admin1234admin e depois clique em Aceder ao Portal Escolar.");
+      mockUser = {
+        id: "bypass-admin-id",
+        nome: "Administrador Global",
+        email: "admin@eduguard360.co.mz",
+        perfil: "admin",
+        escola_id: null,
+        canAccessParent: true,
+        canAccessSchool: true,
+        password_changed: true
+      };
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, email: mockUser.email, name: mockUser.nome, type: 'system_user', role: 'super_admin', password_changed: true }));
+      navigate("/admin");
       return;
     }
 
-    let mockUser: any = null;
     if (role === "school") {
-      mockUser = { id: "demo-school", perfil: "director", nome: "Escola Demo", escola_id: "demo-school-id" };
+      mockUser = {
+        id: "demo-school",
+        perfil: "director",
+        nome: "Escola Demo",
+        escola_id: "demo-school-id",
+        password_changed: true
+      };
       localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, type: 'system_user', role: 'school_admin', school_id: mockUser.escola_id, password_changed: true }));
       navigate("/school");
+      return;
     }
-    else if (role === "parent") {
-      mockUser = { id: "demo-parent", perfil: "pai", nome: "Pai Demo" };
+
+    if (role === "parent") {
+      mockUser = {
+        id: "demo-parent",
+        perfil: "pai",
+        nome: "Helena Costa",
+        email: "helena.costa@exemplo.mz",
+        phone: "+258 84 123 4567",
+        password_changed: true
+      };
       localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, email: mockUser.email, type: 'parent', phone: mockUser.phone, password_changed: true }));
       navigate("/parent");
+      return;
     }
-    else if (role === "scanner") {
-      mockUser = { id: "demo-scanner", perfil: "scanner", nome: "Scanner", escola_id: "demo-school-id" };
+
+    if (role === "scanner") {
+      mockUser = {
+        id: "demo-scanner",
+        perfil: "scanner",
+        nome: "Scanner",
+        escola_id: "demo-school-id",
+        password_changed: true
+      };
       localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, type: 'system_user', role: 'scanner', school_id: mockUser.escola_id, password_changed: true }));
       navigate("/scanner");
+      return;
     }
   };
 
