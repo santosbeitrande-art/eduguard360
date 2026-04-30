@@ -68,15 +68,18 @@ const SystemLogin = () => {
       setLoading(false);
     }
   };
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
   const handleDemoAccess = (role: string) => {
-    let mockUser: any = null;
-    
     if (role === "admin") {
-      mockUser = { id: "demo-admin", perfil: "admin", nome: "Admin Global" };
-      localStorage.setItem("currentUser", JSON.stringify(mockUser));
-      navigate("/admin");
+      setEmail("admin@eduguard360.co.mz");
+      setPassword("Admin1234admin");
+      setInfoMessage("Global Mestre é o mesmo que Admin Global: utilize admin@eduguard360.co.mz e Admin1234admin e depois clique em Aceder ao Portal Escolar.");
+      return;
     }
-    else if (role === "school") {
+
+    let mockUser: any = null;
+    if (role === "school") {
       mockUser = { id: "demo-school", perfil: "director", nome: "Escola Demo", escola_id: "demo-school-id" };
       localStorage.setItem("currentUser", JSON.stringify(mockUser));
       navigate("/school");
@@ -144,7 +147,7 @@ const SystemLogin = () => {
               <div className="w-full border-t border-[#2e5a6e]"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#132f3f] text-[#9bbbc9] font-medium tracking-wide text-xs uppercase">Acessos de Demonstração (Bypass)</span>
+              <span className="px-2 bg-[#132f3f] text-[#9bbbc9] font-medium tracking-wide text-xs uppercase">Acessos de Demonstração</span>
             </div>
           </div>
 
@@ -153,7 +156,7 @@ const SystemLogin = () => {
               onClick={() => handleDemoAccess("admin")}
               className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"
             >
-              👑 Global Mestre
+              👑 Admin Global
             </button>
             <button 
               onClick={() => handleDemoAccess("school")}
@@ -174,6 +177,9 @@ const SystemLogin = () => {
               📷 Segurança QR
             </button>
           </div>
+          {infoMessage && (
+            <p className="mt-3 text-sm text-yellow-300">{infoMessage}</p>
+          )}
         </div>
       </div>
     </div>

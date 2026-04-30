@@ -17,8 +17,9 @@ create table utilizadores (
   auth_id uuid references auth.users(id), -- Importante ligar à Autenticação Oficial Supabase
   nome text,
   email text unique,
-  senha text, 
-  perfil text check (perfil in ('admin', 'director', 'pai', 'scanner')), 
+  senha text,
+  telefone text,
+  perfil text check (perfil in ('admin', 'director', 'pai', 'scanner')),
   escola_id uuid references escolas(id)
 );
 
@@ -36,6 +37,7 @@ create table alunos (
 create table entradas (
   id uuid primary key default uuid_generate_v4(),
   aluno_id uuid references alunos(id),
+  encarregado_email text,
   tipo text check (tipo in ('entrada', 'saida')),
   data timestamp default now()
 );

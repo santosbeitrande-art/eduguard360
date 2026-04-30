@@ -79,11 +79,51 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const parseLegacyUser = (legacy: any): User => {
+    const type = legacy.perfil === 'pai' ? 'parent' : 'system_user';
+    const role = legacy.perfil === 'admin' ? 'super_admin'
+      : legacy.perfil === 'director' ? 'school_admin'
+      : legacy.perfil === 'scanner' ? 'scanner'
+      : legacy.role;
+
+    return {
+      id: legacy.id || legacy.auth_id || legacy.user_id || 'legacy-user',
+      email: legacy.email || legacy.email || '',
+      name: legacy.nome || legacy.name || '',
+      type,
+      role,
+      school_id: legacy.escola_id || legacy.school_id || undefined,
+      phone: legacy.phone || undefined,
+      sms_enabled: legacy.sms_enabled,
+      sms_phone: legacy.sms_phone,
+      email_enabled: legacy.email_enabled ?? true,
+      password_changed: legacy.password_changed ?? true,
+      tenant_id: legacy.tenant_id || undefined,
+      tenant: legacy.tenant || null,
+    };
+  };
+
   useEffect(() => {
     const storedUser = localStorage.getItem('eduguard_user');
     const storedToken = localStorage.getItem('eduguard_token');
+
     if (storedUser && storedToken) {
-      try { setUser(JSON.parse(storedUser)); setToken(storedToken); } catch (e) { localStorage.removeItem('eduguard_user'); localStorage.removeItem('eduguard_token'); }
+      try {
+        setUser(JSON.parse(storedUser));
+        setToken(storedToken);
+      } catch (e) {
+        localStorage.removeItem('eduguard_user');
+        localStorage.removeItem('eduguard_token');
+      }
+    } else {
+      const legacyUser = localStorage.getItem('currentUser');
+      if (legacyUser) {
+        try {
+          setUser(parseLegacyUser(JSON.parse(legacyUser)));
+        } catch (e) {
+          console.warn('Failed to parse legacy currentUser', e);
+        }
+      }
     }
     setIsLoading(false);
   }, []);

@@ -39,17 +39,23 @@ const ParentDashboardContent: React.FC = () => {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) navigate('/sistema/login');
+    const legacyAuth = localStorage.getItem('eduguard_user') || localStorage.getItem('currentUser');
+    if (!isLoading && !isAuthenticated && !legacyAuth) navigate('/sistema/login');
   }, [isAuthenticated, isLoading, navigate]);
 
   useEffect(() => {
-    if (user || localStorage.getItem('currentUser')) {
-      const currentUser = user || JSON.parse(localStorage.getItem('currentUser') || '{}');
-      setProfileName(currentUser.name || currentUser.nome || '');
-      setProfilePhone(currentUser.phone || '');
-      setProfileEmail(currentUser.email || '');
+    const storedUser = user || (() => {
+      const legacyRaw = localStorage.getItem('eduguard_user') || localStorage.getItem('currentUser');
+      if (!legacyRaw) return null;
+      try { return JSON.parse(legacyRaw); } catch { return null; }
+    })();
+
+    if (storedUser) {
+      setProfileName(storedUser.name || storedUser.nome || '');
+      setProfilePhone(storedUser.phone || '');
+      setProfileEmail(storedUser.email || '');
       
-      loadStudentStatuses(currentUser.id);
+      loadStudentStatuses(storedUser.id);
       loadNotifications();
     }
   }, [user]);
@@ -124,8 +130,65 @@ const ParentDashboardContent: React.FC = () => {
   };
 
   const loadNotifications = async () => {
-    // Como ainda não existe tabela de notificações, retornamos vazio
-    setNotifications([]);
+    try {
+      if (!user?.id) {
+        setNotifications([]);
+        return;
+      }
+
+      // Primeiro, busca os alunos do encarregado
+      const { data: alunosData, error: alunosError } = await supabase
+        .from('alunos')
+        .select('id, nome, classe, escola_id')
+        .eq('encarregado_id', user.id);
+
+      if (alunosError) {
+        console.error('Erro ao buscar alunos:', alunosError);
+        setNotifications([]);
+        return;
+      }
+
+      const studentIds = (alunosData || []).map((s: any) => s.id);
+      if (studentIds.length === 0) {
+        setNotifications([]);
+        return;
+      }
+
+      // Depois, busca as entradas desses alunos
+      const { data: entriesData, error: entriesError } = await supabase
+        .from('entradas')
+        .select('id, tipo, data, aluno_id')
+        .in('aluno_id', studentIds)
+        .order('data', { ascending: false })
+        .limit(50);
+
+      if (entriesError) {
+        console.error('Erro ao carregar notificações:', entriesError);
+        setNotifications([]);
+        return;
+      }
+
+      // Cria um mapa de alunos para acesso rápido
+      const alunosMap = new Map(alunosData?.map((a: any) => [a.id, a]));
+
+      // Mapeia as notificações
+      const mappedNotifications = (entriesData || []).map((entry: any) => {
+        const aluno = alunosMap.get(entry.aluno_id);
+        return {
+          notification_id: entry.id,
+          title: `${aluno?.nome || 'Aluno'} ${entry.tipo === 'entrada' ? 'entrou' : 'saiu'}`,
+          message: `O seu educando ${aluno?.nome || 'Aluno'} ${entry.tipo === 'entrada' ? 'entrou' : 'saiu'} da escola às ${new Date(entry.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })}.`, 
+          type: entry.tipo.toUpperCase(),
+          created_at: entry.data,
+          channel: 'app',
+        };
+      });
+
+      setNotifications(mappedNotifications);
+    } catch (err) {
+      console.error('Erro ao carregar notificações:', err);
+      setNotifications([]);
+    }
   };
 
   const loadAttendanceHistory = async (studentId: string) => {
@@ -357,7 +420,7 @@ const ParentDashboardContent: React.FC = () => {
                       <h4 className="text-white font-medium">{notif.title}</h4>
                       {notif.channel === 'sms' && <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded text-xs">SMS</span>}
                       {notif.channel === 'email' && <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">Email</span>}
-                      {notif.channel === 'push' && <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">App</span>}
+                      {notif.channel === 'app' && <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">App</span>}
                     </div>
                     <p className="text-gray-300 mt-1">{notif.message}</p>
                     <p className="text-gray-500 text-sm mt-2">{new Date(notif.created_at).toLocaleString('pt-MZ')}</p>

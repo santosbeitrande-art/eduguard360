@@ -44,6 +44,10 @@ function App() {
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
+        <Route path="/sistema/pais" element={<ParentDashboard />} />
+        <Route path="/sistema/admin" element={<AdminDashboard />} />
+        <Route path="/sistema/escola" element={<SchoolDashboard />} />
+        <Route path="/sistema/scanner" element={<QRScannerPro />} />
 
         {/* Login alternativo */}
         <Route path="/login" element={<SystemLogin />} />

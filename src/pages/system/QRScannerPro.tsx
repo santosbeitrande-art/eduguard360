@@ -39,25 +39,22 @@ const QRScannerPro = () => {
             setStudents((prev) => [student, ...prev]);
 
             try {
-              await saveStudentEntry(student);
-              toast({
-                title: "Sucesso!",
-                description: `Entrada registada: ${student.name} - ${student.className}`,
-                className: "bg-[#2ecc71] text-white border-none",
-              });
-            } catch (error) {
-              console.error(error);
-              toast({
-                title: "Erro no Registo",
-                description: `Não foi possível registar ${student.name}. Tente novamente.`,
-                variant: "destructive",
-              });
+                const entryResult = await saveStudentEntry(student);
+                const entryType = entryResult?.[0]?.tipo || 'entrada';
+                toast({
+                  title: "Sucesso!",
+                  description: `${entryType === 'saida' ? 'Saída' : 'Entrada'} registada: ${student.name} - ${student.className}`,
+                  className: "bg-[#2ecc71] text-white border-none",
+                });
+              } catch (error) {
+                console.error(error);
+                toast({
+                  title: "Erro no Registo",
+                  description: `Não foi possível registar ${student.name}. Tente novamente.`,
+                  variant: "destructive",
+                });
+              }
             }
-          }
-          
-          // Resume scanning after 2 seconds
-          setTimeout(() => setIsScanning(true), 2000);
-
         } catch {
           console.warn("QR inválido ou não formatado corretamente.");
           setTimeout(() => setIsScanning(true), 2000);

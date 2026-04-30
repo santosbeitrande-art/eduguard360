@@ -27,10 +27,7 @@ const SchoolDashboard = () => {
 
     let query = supabase
       .from("entradas")
-      .select(`
-        *,
-        alunos!inner(nome, classe, escola_id)
-      `)
+      .select('*')
       .order("data", { ascending: false });
 
     // Se não for admin global, restringe à sua própria escola
@@ -47,8 +44,16 @@ const SchoolDashboard = () => {
 
     if (error) {
       console.error("Erro ao buscar dados:", error);
-    } else {
-      setData(entradasData || []);
+    } else if (entradasData) {
+      // Busca dados dos alunos para enriquecer a resposta
+      const { data: alunosData } = await supabase.from('alunos').select('id, nome, classe, escola_id');
+      const alunosMap = new Map((alunosData || []).map(a => [a.id, a]));
+      
+      const enrichedData = entradasData.map((entry: any) => ({
+        ...entry,
+        alunos: alunosMap.get(entry.aluno_id)
+      }));
+      setData(enrichedData);
     }
     setLoading(false);
   };

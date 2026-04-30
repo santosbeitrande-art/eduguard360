@@ -1,192 +1,568 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { Building2, GraduationCap, MapPin, Search, Users, LogOut } from "lucide-react";
+import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Edit3, Trash2, Mail, Phone, CheckCircle } from "lucide-react";
 
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [recentEntries, setRecentEntries] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalEscolas: 0,
     totalAlunos: 0,
     totalEntradas: 0
   });
   const [loading, setLoading] = useState(true);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
+  const [schoolForm, setSchoolForm] = useState({ id: '', nome: '', endereco: '', telefone: '', email: '' });
+  const [schoolMode, setSchoolMode] = useState<'create' | 'edit'>('create');
+  const [studentForm, setStudentForm] = useState({ id: '', nome: '', classe: '', guardianName: '', guardianEmail: '', qrcode_id: '', telefone: '' });
+  const [studentMode, setStudentMode] = useState<'create' | 'edit'>('create');
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
+    // Verificar se o utilizador está autenticado como admin
+    const currentUser = localStorage.getItem('currentUser');
+    if (!currentUser) {
+      navigate('/sistema');
+      return;
+    }
+    
+    try {
+      const user = JSON.parse(currentUser);
+      if (user.perfil !== 'admin') {
+        navigate('/sistema');
+        return;
+      }
+    } catch (e) {
+      navigate('/sistema');
+      return;
+    }
+
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (selectedSchoolId) {
+      loadStudents(selectedSchoolId);
+    }
+  }, [selectedSchoolId]);
+
   const loadData = async () => {
     setLoading(true);
-    const { data: escolasData } = await supabase
-      .from("escolas")
-      .select("*");
 
-    const { data: alunos } = await supabase
-      .from("alunos")
-      .select("*");
+    const [{ data: escolasData, error: escolasError }, { data: alunosData, error: alunosError }, { data: entradasData, error: entradasError }, { data: recentEntriesData, error: recentEntriesError }] = await Promise.all([
+      supabase.from('escolas').select('*').order('nome'),
+      supabase.from('alunos').select('*'),
+      supabase.from('entradas').select('*'),
+      supabase.from('entradas')
+        .select('id, tipo, data, aluno_id')
+        .order('data', { ascending: false })
+        .limit(12),
+    ]);
 
-    const { data: entradas } = await supabase
-      .from("entradas")
-      .select("*");
+    if (escolasError || alunosError || entradasError || recentEntriesError) {
+      console.error('Erro ao carregar dados do admin:', escolasError || alunosError || entradasError || recentEntriesError);
+      setNotification({ type: 'error', message: 'Erro ao carregar informações. Tente novamente.' });
+    }
+
+    // Enriquecer dados de entradas recentes com informações de alunos e escolas
+    let enrichedRecentEntries: any[] = [];
+    if (recentEntriesData && alunosData && escolasData) {
+      const alunosMap = new Map(alunosData.map((a: any) => [a.id, a]));
+      const escolasMap = new Map(escolasData.map((e: any) => [e.id, e]));
+      enrichedRecentEntries = recentEntriesData.map((entry: any) => {
+        const aluno = alunosMap.get(entry.aluno_id);
+        return {
+          ...entry,
+          alunos: aluno,
+          escola: aluno ? escolasMap.get(aluno.escola_id) : null,
+        };
+      });
+    }
 
     setEscolas(escolasData || []);
-
     setStats({
       totalEscolas: escolasData?.length || 0,
-      totalAlunos: alunos?.length || 0,
-      totalEntradas: entradas?.length || 0
+      totalAlunos: alunosData?.length || 0,
+      totalEntradas: entradasData?.length || 0
     });
+    setRecentEntries(enrichedRecentEntries);
+    if (!selectedSchoolId && escolasData?.length) {
+      setSelectedSchoolId(escolasData[0].id);
+    }
     setLoading(false);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("currentUser");
-    navigate("/sistema");
+  const loadStudents = async (schoolId: string) => {
+    setStudentsLoading(true);
+    const { data: alunosData, error: alunosError } = await supabase
+      .from('alunos')
+      .select('*')
+      .eq('escola_id', schoolId)
+      .order('nome');
+
+    if (alunosError) {
+      console.error('Erro ao carregar alunos:', alunosError);
+      setNotification({ type: 'error', message: 'Falha ao buscar alunos da escola.' });
+      setStudents([]);
+      setStudentsLoading(false);
+      return;
+    }
+
+    const guardianIds = Array.from(new Set((alunosData || []).map((student: any) => student.encarregado_id).filter(Boolean)));
+    const { data: guardiansData } = guardianIds.length > 0 ? await supabase.from('utilizadores').select('*').in('id', guardianIds) : { data: [] };
+    const guardiansMap = new Map((guardiansData || []).map((g: any) => [g.id, g]));
+
+    setStudents((alunosData || []).map((student: any) => ({
+      ...student,
+      guardian: guardiansMap.get(student.encarregado_id)
+    })));
+    setStudentsLoading(false);
   };
 
+  const clearNotification = () => setNotification(null);
+
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    navigate('/sistema');
+  };
+
+  const resetSchoolForm = () => {
+    setSchoolMode('create');
+    setSchoolForm({ id: '', nome: '', endereco: '', telefone: '', email: '' });
+  };
+
+  const resetStudentForm = () => {
+    setStudentMode('create');
+    setStudentForm({ id: '', nome: '', classe: '', guardianName: '', guardianEmail: '', qrcode_id: '', telefone: '' });
+  };
+
+  const handleSchoolEdit = (school: any) => {
+    setSchoolMode('edit');
+    setSchoolForm({
+      id: school.id,
+      nome: school.nome || '',
+      endereco: school.endereco || '',
+      telefone: school.telefone || '',
+      email: school.email || ''
+    });
+  };
+
+  const handleStudentEdit = (student: any) => {
+    setStudentMode('edit');
+    setStudentForm({
+      id: student.id,
+      nome: student.nome || '',
+      classe: student.classe || '',
+      guardianName: student.guardian?.nome || '',
+      guardianEmail: student.guardian?.email || '',
+      qrcode_id: student.qrcode_id || '',
+      telefone: student.telefone || '',
+    });
+  };
+
+  const handleSchoolSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!schoolForm.nome.trim()) {
+      setNotification({ type: 'error', message: 'Informe o nome da escola.' });
+      return;
+    }
+
+    const payload = {
+      nome: schoolForm.nome.trim(),
+      endereco: schoolForm.endereco.trim() || null,
+      telefone: schoolForm.telefone.trim() || null,
+      email: schoolForm.email.trim() || null
+    };
+
+    try {
+      if (schoolMode === 'edit') {
+        await supabase.from('escolas').update(payload).eq('id', schoolForm.id);
+        setNotification({ type: 'success', message: 'Escola atualizada com sucesso.' });
+      } else {
+        await supabase.from('escolas').insert(payload);
+        setNotification({ type: 'success', message: 'Escola criada com sucesso.' });
+      }
+      resetSchoolForm();
+      await loadData();
+    } catch (error) {
+      console.error('Erro salvar escola:', error);
+      setNotification({ type: 'error', message: 'Não foi possível salvar a escola.' });
+    }
+  };
+
+  const handleStudentSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedSchoolId) {
+      setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
+      return;
+    }
+    if (!studentForm.nome.trim() || !studentForm.guardianName.trim() || !studentForm.guardianEmail.trim()) {
+      setNotification({ type: 'error', message: 'Preencha nome do aluno, nome do encarregado e email do encarregado.' });
+      return;
+    }
+
+    try {
+      const guardianEmail = studentForm.guardianEmail.trim().toLowerCase();
+      let guardianId: string | null = null;
+
+      const { data: existingGuardian } = await supabase
+        .from('utilizadores')
+        .select('*')
+        .eq('email', guardianEmail)
+        .single();
+
+      if (existingGuardian) {
+        guardianId = existingGuardian.id;
+        await supabase.from('utilizadores').update({ nome: studentForm.guardianName.trim(), telefone: studentForm.telefone.trim() || null }).eq('id', guardianId);
+      } else {
+        const { data: newParent } = await supabase
+          .from('utilizadores')
+          .insert({
+            nome: studentForm.guardianName.trim(),
+            email: guardianEmail,
+            telefone: studentForm.telefone.trim() || null,
+            perfil: 'pai',
+            escola_id: selectedSchoolId
+          })
+          .select('id')
+          .single();
+        guardianId = newParent?.id || null;
+      }
+
+      const qrcodeId = studentForm.qrcode_id?.trim() || `ALUNO-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`;
+      const payload = {
+        nome: studentForm.nome.trim(),
+        classe: studentForm.classe.trim() || 'Sem turma',
+        escola_id: selectedSchoolId,
+        encarregado_id: guardianId,
+        qrcode_id: qrcodeId,
+        telefone: studentForm.telefone.trim() || null
+      };
+
+      if (studentMode === 'edit' && studentForm.id) {
+        await supabase.from('alunos').update(payload).eq('id', studentForm.id);
+        setNotification({ type: 'success', message: 'Aluno atualizado com sucesso.' });
+      } else {
+        await supabase.from('alunos').insert(payload);
+        setNotification({ type: 'success', message: 'Aluno criado com sucesso.' });
+      }
+
+      resetStudentForm();
+      await loadStudents(selectedSchoolId);
+    } catch (error) {
+      console.error('Erro salvar aluno:', error);
+      setNotification({ type: 'error', message: 'Não foi possível salvar o aluno. Verifique os dados e tente novamente.' });
+    }
+  };
+
+  const handleDeleteSchool = async (schoolId: string) => {
+    if (!window.confirm('Tem certeza de que deseja remover esta escola? Isso também pode afetar alunos relacionados.')) return;
+    try {
+      await supabase.from('escolas').delete().eq('id', schoolId);
+      setNotification({ type: 'success', message: 'Escola removida com sucesso.' });
+      if (selectedSchoolId === schoolId) {
+        setSelectedSchoolId(null);
+        setStudents([]);
+      }
+      await loadData();
+    } catch (error) {
+      console.error('Erro remover escola:', error);
+      setNotification({ type: 'error', message: 'Falha ao remover escola.' });
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: string) => {
+    if (!window.confirm('Tem certeza de que deseja remover este aluno?')) return;
+    try {
+      await supabase.from('alunos').delete().eq('id', studentId);
+      setNotification({ type: 'success', message: 'Aluno removido com sucesso.' });
+      if (selectedSchoolId) await loadStudents(selectedSchoolId);
+    } catch (error) {
+      console.error('Erro remover aluno:', error);
+      setNotification({ type: 'error', message: 'Falha ao remover aluno.' });
+    }
+  };
+
+  const selectedSchool = escolas.find((school) => school.id === selectedSchoolId);
+
   return (
-    <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white">
-      <div className="max-w-6xl mx-auto space-y-8">
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white bg-[#05121c]">
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white">
-              Admin Global
-            </h1>
-            <p className="mt-1 text-gray-400">
-              Visão geral de todas as escolas e atividades no sistema.
-            </p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white">Admin Global</h1>
+            <p className="mt-1 text-gray-400">Gestão de escolas, alunos e contactos de encarregados.</p>
           </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={loadData}
-              className="btn inline-flex items-center justify-center px-4 py-2 shadow-sm"
-            >
-              Atualizar Dados
+          <div className="flex flex-wrap gap-2">
+            <button onClick={loadData} className="btn inline-flex items-center justify-center px-4 py-2 shadow-sm">Atualizar Dados</button>
+            <button onClick={() => navigate('/parent')} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
+              <Users className="w-4 h-4" /> Ver Área Pais
             </button>
-            <button
-              onClick={() => navigate("/parent")}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-colors"
-            >
-              <Users className="w-4 h-4" />
-              Ver Área Pais
+            <button onClick={() => navigate('/school')} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
+              <Building2 className="w-4 h-4" /> Ver Escolas
             </button>
-            <button
-              onClick={() => navigate("/school")}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-colors"
-            >
-              <Building2 className="w-4 h-4" />
-              Ver Escolas
-            </button>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow-sm transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
+            <button onClick={handleLogout} className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
+              <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card Escolas */}
-          <div className="card p-6 relative overflow-hidden group">
-            <div className="absolute -right-6 -top-6 bg-blue-500/10 w-24 h-24 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
-            <div className="relative flex items-center justify-between mb-4">
-              <div className="p-3 bg-blue-500/20 text-blue-400 rounded-2xl">
-                <Building2 className="w-6 h-6" />
-              </div>
-            </div>
-            <div className="relative">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Escolas Ativas</h3>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold text-white">{stats.totalEscolas}</span>
-              </div>
+        {notification && (
+          <div className={`rounded-2xl p-4 border ${notification.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200' : 'bg-red-500/10 border-red-500/20 text-red-200'}`}>
+            <div className="flex items-center gap-3">
+              <span className="text-lg">{notification.type === 'success' ? '✅' : '⚠️'}</span>
+              <p className="text-sm">{notification.message}</p>
             </div>
           </div>
+        )}
 
-          {/* Card Alunos */}
-          <div className="card p-6 relative overflow-hidden group">
-            <div className="absolute -right-6 -top-6 bg-indigo-500/10 w-24 h-24 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
-            <div className="relative flex items-center justify-between mb-4">
-              <div className="p-3 bg-indigo-500/20 text-indigo-400 rounded-2xl">
-                <GraduationCap className="w-6 h-6" />
+        <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-6">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="card p-6 bg-[#081825] border border-white/10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-300"><Building2 className="w-6 h-6" /></div>
+                  <span className="text-xs uppercase tracking-[0.2em] text-gray-400">Escolas</span>
+                </div>
+                <p className="text-4xl font-bold text-white">{stats.totalEscolas}</p>
+              </div>
+              <div className="card p-6 bg-[#081825] border border-white/10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="rounded-2xl bg-indigo-500/10 p-3 text-indigo-300"><GraduationCap className="w-6 h-6" /></div>
+                  <span className="text-xs uppercase tracking-[0.2em] text-gray-400">Alunos</span>
+                </div>
+                <p className="text-4xl font-bold text-white">{stats.totalAlunos}</p>
+              </div>
+              <div className="card p-6 bg-[#081825] border border-white/10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-300"><MapPin className="w-6 h-6" /></div>
+                  <span className="text-xs uppercase tracking-[0.2em] text-gray-400">Movimentos</span>
+                </div>
+                <p className="text-4xl font-bold text-white">{stats.totalEntradas}</p>
               </div>
             </div>
-            <div className="relative">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Total de Alunos</h3>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold text-white">{stats.totalAlunos}</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Card Registos */}
-          <div className="card p-6 relative overflow-hidden group">
-            <div className="absolute -right-6 -top-6 bg-emerald-500/10 w-24 h-24 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
-            <div className="relative flex items-center justify-between mb-4">
-              <div className="p-3 bg-[#2ecc71]/20 text-[#2ecc71] rounded-2xl">
-                <MapPin className="w-6 h-6" />
+            <div className="card bg-[#081825] border border-white/10">
+              <div className="p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Movimentos Recentes</h2>
+                  <p className="text-gray-400 text-sm">Histórico de entradas e saídas registadas para análise rápida.</p>
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                {recentEntries.length === 0 ? (
+                  <div className="text-gray-400">Nenhum movimento recente encontrado.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {recentEntries.map((entry) => (
+                      <div key={entry.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <p className="text-white font-semibold">{entry.alunos?.nome || 'Aluno desconhecido'}</p>
+                          <p className="text-sm text-gray-400">{entry.alunos?.classe || 'Classe não definida'}</p>
+                          <p className="text-xs text-gray-500">{entry.escola?.nome || 'Sem escola associada'}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${entry.tipo === 'entrada' ? 'bg-[#2ecc71]/10 text-[#2ecc71]' : 'bg-orange-500/10 text-orange-400'}`}>
+                            {entry.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                          </span>
+                          <p className="text-gray-400 text-sm mt-2">{entry.data ? new Date(entry.data).toLocaleString('pt-MZ', { dateStyle: 'short', timeStyle: 'short' }) : 'Sem data'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-            <div className="relative">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Movimentos (Entradas/Saídas)</h3>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold text-white">{stats.totalEntradas}</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div className="card overflow-hidden">
-          <div className="p-6 border-b border-white/10 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-white">Escolas Registadas</h2>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400" />
+            <div className="card bg-[#081825] border border-white/10">
+              <div className="p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Gestão de Escolas</h2>
+                  <p className="text-gray-400 text-sm">Adicione, edite ou remova escolas e tenha o seu contacto de email de aviso.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-300">Escola atual</label>
+                  <select
+                    value={selectedSchoolId || ''}
+                    onChange={(e) => setSelectedSchoolId(e.target.value)}
+                    className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm text-white outline-none"
+                  >
+                    <option value="">Selecione uma escola</option>
+                    {escolas.map((school) => (
+                      <option key={school.id} value={school.id}>{school.nome}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <input
-                type="text"
-                placeholder="Procurar escola..."
-                className="pl-10 pr-4 py-2 outline-none transition-all w-64"
-              />
-            </div>
-          </div>
-          
-          {loading ? (
-             <div className="p-8 text-center text-gray-400">
-               <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#2ecc71] border-t-transparent mx-auto mb-4"></div>
-               A carregar dados...
-             </div>
-          ) : escolas.length === 0 ? (
-            <div className="p-8 text-center flex flex-col items-center justify-center">
-               <Building2 className="w-12 h-12 text-gray-600 mb-3" />
-               <p className="text-gray-400">Nenhuma escola cadastrada no momento.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {escolas.map((e) => (
-                <div key={e.id} className="p-4 hover:bg-white/5 flex items-center justify-between transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-[#0a192f] border border-white/10 flex items-center justify-center text-blue-400 font-bold">
-                      {e.nome.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-white">{e.nome}</p>
-                      <p className="text-xs text-gray-400">{e.email || 'Sem e-mail registado'}</p>
-                    </div>
+
+              <div className="p-6 space-y-4">
+                <form onSubmit={handleSchoolSubmit} className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Nome da Escola</label>
+                    <input type="text" value={schoolForm.nome} onChange={(e) => setSchoolForm({ ...schoolForm, nome: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="Ex: Escola Central" />
                   </div>
                   <div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#2ecc71]/10 text-[#2ecc71] border border-[#2ecc71]/20">
-                      Ativa
-                    </span>
+                    <label className="block text-sm text-gray-300 mb-2">E-mail de Contato</label>
+                    <input type="email" value={schoolForm.email} onChange={(e) => setSchoolForm({ ...schoolForm, email: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="admin@escola.mz" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Telefone</label>
+                    <input type="tel" value={schoolForm.telefone} onChange={(e) => setSchoolForm({ ...schoolForm, telefone: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="+258 84 XXX XXXX" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Endereço</label>
+                    <input type="text" value={schoolForm.endereco} onChange={(e) => setSchoolForm({ ...schoolForm, endereco: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="Rua da Educação, Maputo" />
+                  </div>
+
+                  <div className="md:col-span-2 flex flex-wrap gap-3 items-center">
+                    <button type="submit" className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#2ecc71] hover:bg-[#27ae60] text-black font-semibold transition-colors">
+                      <PlusCircle className="w-4 h-4" /> {schoolMode === 'edit' ? 'Atualizar Escola' : 'Adicionar Escola'}
+                    </button>
+                    {schoolMode === 'edit' && (
+                      <button type="button" onClick={resetSchoolForm} className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white transition-colors">
+                        Cancelar edição
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Escolas Registradas</h2>
+                  <p className="text-gray-400 text-sm">Clique em uma escola para editar ou visualizar os seus alunos.</p>
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                {loading ? (
+                  <div className="text-gray-400">A carregar escolas...</div>
+                ) : escolas.length === 0 ? (
+                  <div className="text-gray-400">Nenhuma escola cadastrada.</div>
+                ) : (
+                  escolas.map((school) => (
+                    <div key={school.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-white">{school.nome}</p>
+                        <p className="text-sm text-gray-400">{school.email || 'Sem email'} · {school.telefone || 'Sem telefone'}</p>
+                        <p className="text-sm text-gray-500">{school.endereco || 'Endereço não definido'}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => { setSelectedSchoolId(school.id); handleSchoolEdit(school); }} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-2xl text-sm text-white">
+                          <Edit3 className="w-4 h-4" /> Editar
+                        </button>
+                        <button onClick={() => handleDeleteSchool(school.id)} className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-2xl text-sm text-white">
+                          <Trash2 className="w-4 h-4" /> Remover
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="card bg-[#081825] border border-white/10 p-6">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Alunos da Escola</h2>
+                  <p className="text-gray-400 text-sm">Adicione e edite alunos por escola. O email do encarregado será usado para alertas.</p>
+                </div>
+                <div className="rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">{selectedSchool?.nome || 'Nenhuma escola selecionada'}</div>
+              </div>
+
+              <form onSubmit={handleStudentSubmit} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Nome do Aluno</label>
+                    <input type="text" value={studentForm.nome} onChange={(e) => setStudentForm({ ...studentForm, nome: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="Ex: João Silva" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Classe / Turma</label>
+                    <input type="text" value={studentForm.classe} onChange={(e) => setStudentForm({ ...studentForm, classe: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="5ª Classe - Turma A" />
                   </div>
                 </div>
-              ))}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Nome do Encarregado</label>
+                    <input type="text" value={studentForm.guardianName} onChange={(e) => setStudentForm({ ...studentForm, guardianName: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="Ex: Ana Pereira" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Email do Encarregado</label>
+                    <input type="email" value={studentForm.guardianEmail} onChange={(e) => setStudentForm({ ...studentForm, guardianEmail: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="ana@exemplo.mz" />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Telefone do Encarregado</label>
+                    <input type="tel" value={studentForm.telefone} onChange={(e) => setStudentForm({ ...studentForm, telefone: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="+258 84 XXX XXXX" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">QR Code ID (opcional)</label>
+                    <input type="text" value={studentForm.qrcode_id} onChange={(e) => setStudentForm({ ...studentForm, qrcode_id: e.target.value })} className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none" placeholder="Auto-gerado se deixado vazio" />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button type="submit" className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#2ecc71] hover:bg-[#27ae60] text-black font-semibold transition-colors">
+                    <CheckCircle className="w-4 h-4" /> {studentMode === 'edit' ? 'Atualizar Aluno' : 'Adicionar Aluno'}
+                  </button>
+                  {studentMode === 'edit' && (
+                    <button type="button" onClick={resetStudentForm} className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white transition-colors">Cancelar edição</button>
+                  )}
+                </div>
+              </form>
             </div>
-          )}
+
+            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Lista de Alunos</h2>
+                  <p className="text-gray-400 text-sm">Veja todos os alunos do estabelecimento selecionado.</p>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
+                  <Mail className="w-4 h-4" /> Email do Encarregado
+                </div>
+              </div>
+
+              <div className="p-6">
+                {studentsLoading ? (
+                  <div className="text-gray-400">A carregar alunos...</div>
+                ) : students.length === 0 ? (
+                  <div className="text-gray-400">Nenhum aluno registado nesta escola.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {students.map((student) => (
+                      <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-white font-semibold">{student.nome}</p>
+                          <p className="text-sm text-gray-400">{student.classe || 'Classe não definida'}</p>
+                          <p className="text-sm text-gray-300">Enc: {student.guardian?.nome || 'Não registado'}</p>
+                          <p className="text-sm text-gray-300">📧 {student.guardian?.email || 'Sem email'}</p>
+                          <p className="text-sm text-gray-300">📱 {student.guardian?.telefone || 'Sem telefone'}</p>
+                          <p className="text-xs text-gray-500 mt-1">QR Code ID: {student.qrcode_id || 'N/A'}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => handleStudentEdit(student)} className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-sm text-white">
+                            <Edit3 className="w-4 h-4" /> Editar
+                          </button>
+                          <button onClick={() => handleDeleteStudent(student.id)} className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-600 hover:bg-red-700 text-sm text-white">
+                            <Trash2 className="w-4 h-4" /> Remover
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,8 +1,9 @@
 import { useState, FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
 
 const LandingPage = () => {
+  const navigate = useNavigate();
   const [schoolName, setSchoolName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -112,6 +113,42 @@ const LandingPage = () => {
           <a href="#adesao" className="btn px-8 py-4 font-semibold shadow-xl shadow-[#2ecc71]/20 flex items-center justify-center gap-2">
             Simular na Minha Escola
           </a>
+        </div>
+
+        <div className="mt-8 max-w-3xl mx-auto bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-[#00000033]">
+          <h2 className="text-2xl font-semibold text-white">Acesso Pais / Encarregados</h2>
+          <p className="mt-3 text-gray-300">
+            Se já tiver uma conta de pai/encarregado, use o portal de acesso. Para testar imediatamente, pode entrar com a conta de demonstração de encarregado.
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => {
+                const demoParent = {
+                  id: "demo-parent",
+                  perfil: "pai",
+                  nome: "Pai Demo",
+                  email: "demo.pai@eduguard360.co.mz",
+                  phone: "+258 84 000 0000"
+                };
+                localStorage.setItem('currentUser', JSON.stringify(demoParent));
+                localStorage.setItem('eduguard_user', JSON.stringify({
+                  id: demoParent.id,
+                  email: demoParent.email,
+                  name: demoParent.nome,
+                  type: 'parent',
+                  phone: demoParent.phone,
+                  password_changed: true,
+                }));
+                navigate('/parent');
+              }}
+              className="btn px-8 py-4 bg-[#2ecc71] hover:bg-[#27ae60] text-black font-semibold shadow-xl shadow-[#2ecc71]/20"
+            >
+              👨‍👩‍👧 Entrar como Pai Demo
+            </button>
+            <Link to="/sistema" className="px-8 py-4 bg-[#132f3f] border border-[#2e5a6e] rounded-lg font-semibold hover:bg-[#1c3b4d] transition-colors text-white flex items-center justify-center">
+              Aceder ao Portal de Login
+            </Link>
+          </div>
         </div>
       </section>
 

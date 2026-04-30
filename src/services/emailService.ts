@@ -5,10 +5,36 @@ import {
   formatNewRegistrationsNotification,
 } from "@/utils/credentialGenerator";
 
+const formSubmitBase = 'https://formsubmit.co/ajax';
+
+const formatGuardianNotification = (
+  guardianName: string,
+  studentName: string,
+  schoolName: string,
+  entryType: 'entrada' | 'saida',
+  entryTime: string
+): string => {
+  const movement = entryType === 'entrada' ? 'entrou' : 'saiu';
+  return `Olá ${guardianName},
+
+Informamos que o aluno ${studentName} ${movement} na escola ${schoolName} às ${entryTime}.
+
+Detalhes da ocorrência:
+- Movimento: ${entryType === 'entrada' ? 'Entrada' : 'Saída'}
+- Hora: ${entryTime}
+- Escola: ${schoolName}
+
+Se precisar de apoio, aceda à sua área de pais em: https://eduguard360.co.mz/sistema/pais
+
+Atenciosamente,
+Equipa EduGuard360
+`;
+};
+
 /**
  * Serviço para enviar credenciais automáticamente por email
  */
-export class CredentialEmailService {
+export class EmailService {
   /**
    * Envia credenciais de director para email
    */
@@ -136,6 +162,55 @@ export class CredentialEmailService {
       return response.ok;
     } catch (error) {
       console.error("Erro ao notificar admin:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Envia um alerta de entrada/saída para o encarregado de educação
+   */
+  static async sendGuardianEntryExitAlert(
+    guardianEmail: string,
+    guardianName: string,
+    studentName: string,
+    schoolName: string,
+    entryType: 'entrada' | 'saida',
+    entryTime: string
+  ): Promise<boolean> {
+    try {
+      const message = formatGuardianNotification(
+        guardianName,
+        studentName,
+        schoolName,
+        entryType,
+        entryTime
+      );
+
+      const response = await fetch(
+        `${formSubmitBase}/${encodeURIComponent(guardianEmail)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            _subject: `[EduGuard360] ${studentName} ${entryType === 'entrada' ? 'entrou' : 'saiu'} da escola`,
+            _captcha: 'false',
+            email: guardianEmail,
+            name: guardianName,
+            studentName,
+            schoolName,
+            movement: entryType === 'entrada' ? 'Entrada' : 'Saída',
+            time: entryTime,
+            message,
+          }),
+        }
+      );
+
+      return response.ok;
+    } catch (error) {
+      console.error('Erro ao enviar alerta ao encarregado:', error);
       return false;
     }
   }
