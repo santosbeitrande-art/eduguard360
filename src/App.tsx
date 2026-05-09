@@ -12,6 +12,11 @@ import QRScannerPro from "@/pages/system/QRScannerPro";
 import Home from "@/pages/Home";
 import LandingPage from "@/pages/public/LandingPage";
 
+// Portais
+import EducuardPortalHub from "@/EducuardPortalHub";
+import EducationMarketplace from "@/EducationMarketplace";
+import EducatorCreateCourse from "@/EducatorCreateCourse";
+
 // Página 404
 function NotFound() {
   return (
@@ -41,6 +46,13 @@ function App() {
 
         {/* Página inicial Pública */}
         <Route path="/" element={<LandingPage />} />
+
+        {/* Portal Hub - Acesso central aos portais */}
+        <Route path="/portais" element={<EducuardPortalHub />} />
+
+        {/* EduMarket Portal */}
+        <Route path="/edumarket" element={<EducationMarketplace />} />
+        <Route path="/edumarket/criar-curso" element={<EducatorCreateCourse />} />
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />

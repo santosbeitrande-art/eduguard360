@@ -1,0 +1,326 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  BookOpen,
+  Shield,
+  ArrowRight,
+  Users,
+  TrendingUp,
+  Zap,
+  Lock,
+  GraduationCap,
+  ChevronDown,
+} from 'lucide-react';
+
+interface Portal {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  route: string;
+  features: string[];
+  status: 'available' | 'coming-soon';
+  stats?: { label: string; value: string }[];
+}
+
+const EducuardPortalHub: React.FC = () => {
+  const navigate = useNavigate();
+  const [selectedPortal, setSelectedPortal] = useState<string | null>(null);
+
+  const portals: Portal[] = [
+    {
+      id: 'security',
+      name: 'Segurança Escolar',
+      title: '🛡️ EduGuard Security',
+      description: 'Sistema de segurança e monitoramento da comunidade escolar',
+      icon: <Shield className="w-12 h-12" />,
+      color: 'from-blue-600 to-blue-700',
+      route: '/sistema',
+      status: 'available',
+      features: [
+        'Monitoramento em tempo real',
+        'Alertas de segurança',
+        'Comunicação com pais',
+        'Relatórios de incidentes',
+        'Controlo de presença',
+        'QR Scanning avançado',
+      ],
+      stats: [
+        { label: 'Escolas', value: '250+' },
+        { label: 'Utilizadores', value: '15K+' },
+        { label: 'Uptime', value: '99.9%' },
+      ],
+    },
+    {
+      id: 'edumarket',
+      name: 'EduMarket',
+      title: '📚 EduMarket MZ',
+      description: 'Marketplace de educação e serviços profissionais - Ganhe renda online',
+      icon: <BookOpen className="w-12 h-12" />,
+      color: 'from-purple-600 to-indigo-600',
+      route: '/edumarket',
+      status: 'available',
+      features: [
+        'Criar e vender cursos',
+        'Oferecer serviços profissionais',
+        'Pagamentos M-Pesa integrado',
+        'Dashboard de ganhos',
+        'Sistema de certificados',
+        'Comunidade de aprendizagem',
+      ],
+      stats: [
+        { label: 'Cursos', value: '300+' },
+        { label: 'Educadores', value: '500+' },
+        { label: 'Alunos', value: '10K+' },
+      ],
+    },
+    {
+      id: 'enterprise',
+      name: 'Enterprise',
+      title: '🏢 EduGuard Enterprise',
+      description: 'Solução completa para gestão administrativa e academic de instituições',
+      icon: <Users className="w-12 h-12" />,
+      color: 'from-green-600 to-emerald-600',
+      route: '#',
+      status: 'coming-soon',
+      features: [
+        'Gestão de notas e currículos',
+        'Planejamento académico',
+        'Comunicação com alunos',
+        'Relatórios pedagógicos',
+        'Integração com sistemas',
+        'API dedicada',
+      ],
+    },
+    {
+      id: 'analytics',
+      name: 'Analytics',
+      title: '📊 EduGuard Analytics',
+      description: 'Análise avançada de dados educacionais e insights inteligentes',
+      icon: <TrendingUp className="w-12 h-12" />,
+      color: 'from-orange-600 to-red-600',
+      route: '#',
+      status: 'coming-soon',
+      features: [
+        'Análise de desempenho',
+        'Tendências de segurança',
+        'Relatórios customizados',
+        'Previsões inteligentes',
+        'Dashboards executivos',
+        'Exportação de dados',
+      ],
+    },
+  ];
+
+  const handlePortalAccess = (portal: Portal) => {
+    if (portal.status === 'available') {
+      navigate(portal.route);
+    } else {
+      setSelectedPortal(portal.id);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+              <GraduationCap className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">EduGuard 360</h1>
+          </div>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg font-semibold transition-colors"
+          >
+            Voltar
+          </button>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+        <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+          Bem-vindo aos Portais EduGuard
+        </h2>
+        <p className="text-xl text-gray-600 mb-2">
+          Escolha o serviço que deseja acessar
+        </p>
+        <p className="text-gray-500">
+          Soluções integradas para segurança, educação e desenvolvimento profissional em Moçambique
+        </p>
+      </div>
+
+      {/* Portals Grid */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+          {portals.map((portal) => (
+            <div
+              key={portal.id}
+              className="group relative overflow-hidden rounded-2xl bg-white shadow-lg hover:shadow-2xl transition-all duration-300"
+            >
+              {/* Background gradient */}
+              <div
+                className={`absolute inset-0 bg-gradient-to-br ${portal.color} opacity-0 group-hover:opacity-5 transition-opacity`}
+              />
+
+              {/* Content */}
+              <div className="relative p-8">
+                {/* Badge */}
+                <div className="mb-4">
+                  {portal.status === 'coming-soon' && (
+                    <span className="inline-block px-3 py-1 text-xs font-semibold bg-amber-100 text-amber-700 rounded-full">
+                      ⏰ Em Breve
+                    </span>
+                  )}
+                  {portal.status === 'available' && (
+                    <span className="inline-block px-3 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded-full">
+                      ✓ Disponível
+                    </span>
+                  )}
+                </div>
+
+                {/* Icon and Title */}
+                <div className="mb-6">
+                  <div
+                    className={`w-16 h-16 rounded-xl bg-gradient-to-br ${portal.color} flex items-center justify-center text-white mb-4 group-hover:scale-110 transition-transform`}
+                  >
+                    {portal.icon}
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{portal.name}</h3>
+                  <p className="text-sm text-gray-500">{portal.title}</p>
+                </div>
+
+                {/* Description */}
+                <p className="text-gray-600 mb-6">{portal.description}</p>
+
+                {/* Features */}
+                <div className="mb-8">
+                  <ul className="space-y-2">
+                    {portal.features.slice(0, 3).map((feature, idx) => (
+                      <li key={idx} className="flex items-center gap-2 text-sm text-gray-700">
+                        <Zap className="w-4 h-4 text-blue-500" />
+                        {feature}
+                      </li>
+                    ))}
+                    {portal.features.length > 3 && (
+                      <li className="text-sm text-gray-500 pl-6">
+                        + {portal.features.length - 3} mais recursos
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                {/* Stats */}
+                {portal.stats && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="grid grid-cols-3 gap-4">
+                      {portal.stats.map((stat, idx) => (
+                        <div key={idx} className="text-center">
+                          <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                          <p className="text-xs text-gray-500">{stat.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Button */}
+                <button
+                  onClick={() => handlePortalAccess(portal)}
+                  disabled={portal.status === 'coming-soon'}
+                  className={`w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all ${
+                    portal.status === 'available'
+                      ? `bg-gradient-to-r ${portal.color} text-white hover:shadow-lg group-hover:translate-y-0`
+                      : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {portal.status === 'available' ? (
+                    <>
+                      Acessar Portal
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-5 h-5" />
+                      Em Breve
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Coming Soon Details Modal */}
+        {selectedPortal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                {portals.find((p) => p.id === selectedPortal)?.name}
+              </h3>
+              <p className="text-gray-600 mb-6">
+                Este portal estará disponível em breve. Deixe seu e-mail para ser notificado do lançamento.
+              </p>
+
+              <div className="space-y-3 mb-6">
+                <input
+                  type="email"
+                  placeholder="seu@email.com"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-semibold">
+                  Notifique-me
+                </button>
+              </div>
+
+              <button
+                onClick={() => setSelectedPortal(null)}
+                className="w-full text-gray-600 py-2 rounded-lg hover:bg-gray-100"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Info Section */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
+            <div>
+              <Lock className="w-8 h-8 mx-auto mb-3" />
+              <h3 className="text-xl font-bold mb-2">Seguro</h3>
+              <p className="text-blue-100">Dados encriptados e protegidos</p>
+            </div>
+            <div>
+              <Zap className="w-8 h-8 mx-auto mb-3" />
+              <h3 className="text-xl font-bold mb-2">Rápido</h3>
+              <p className="text-blue-100">Plataforma otimizada para Moçambique</p>
+            </div>
+            <div>
+              <Users className="w-8 h-8 mx-auto mb-3" />
+              <h3 className="text-xl font-bold mb-2">Integrado</h3>
+              <p className="text-blue-100">Todos os serviços em um único lugar</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-gray-400 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p>© 2024 EduGuard 360 - Soluções de Educação para Moçambique</p>
+          <p className="text-sm mt-2">admin@eduguard360.co.mz | +258 84 XXXXXX</p>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default EducuardPortalHub;

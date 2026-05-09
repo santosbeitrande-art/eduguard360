@@ -2,6 +2,10 @@ import { useState, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
 
+// Novos componentes dos portais
+import EducuardNavigation from "@/components/EducuardNavigation";
+import PortalsPromoSection from "@/components/PortalsPromoSection";
+
 const LandingPage = () => {
   const navigate = useNavigate();
   const [schoolName, setSchoolName] = useState("");
@@ -59,36 +63,9 @@ const LandingPage = () => {
 
   return (
     <div className="min-h-screen bg-[#0b1f2a] text-white selection:bg-[#2ecc71] selection:text-white font-sans">
-      
-      {/* Header / Navigation */}
-      <header className="fixed w-full top-0 z-50 bg-[#0a1a24]/90 backdrop-blur-md border-b border-[#2e5a6e]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[#2ecc71] rounded-lg flex items-center justify-center shadow-lg shadow-[#2ecc71]/20">
-                <ShieldCheck className="h-6 w-6 text-white" />
-              </div>
-              <span className="font-bold text-2xl tracking-tight text-white">EduGuard<span className="text-[#2ecc71]">360</span></span>
-            </Link>
-            
-            <nav className="hidden md:flex space-x-8">
-              <a href="#sobre" className="text-gray-300 hover:text-[#2ecc71] font-medium transition-colors">Sobre</a>
-              <a href="#visao" className="text-gray-300 hover:text-[#2ecc71] font-medium transition-colors">A Nossa Visão</a>
-              <a href="#adesao" className="text-gray-300 hover:text-[#2ecc71] font-medium transition-colors">Adesão Escolar</a>
-              <a href="#contactos" className="text-gray-300 hover:text-[#2ecc71] font-medium transition-colors">Contactos</a>
-            </nav>
 
-            <div className="flex items-center gap-4">
-              <Link 
-                to="/sistema" 
-                className="btn px-6 py-2.5 font-semibold shadow-lg hover:-translate-y-0.5 transition-transform flex items-center gap-2"
-              >
-                Aceder ao Portal <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Navegação centralizada com portais */}
+      <EducuardNavigation variant="light" />
 
       {/* Hero Section */}
       <section className="pt-32 pb-20 lg:pt-48 lg:pb-32 px-4 relative overflow-hidden flex flex-col items-center text-center">
@@ -107,9 +84,9 @@ const LandingPage = () => {
         </p>
         
         <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center z-10">
-          <a href="#sobre" className="px-8 py-4 bg-[#132f3f] border border-[#2e5a6e] rounded-lg font-semibold hover:bg-[#1c3b4d] transition-colors text-white">
-            Saber Mais
-          </a>
+          <Link to="/portais" className="px-8 py-4 bg-[#132f3f] border border-[#2e5a6e] rounded-lg font-semibold hover:bg-[#1c3b4d] transition-colors text-white">
+            Explorar Portais
+          </Link>
           <a href="#adesao" className="btn px-8 py-4 font-semibold shadow-xl shadow-[#2ecc71]/20 flex items-center justify-center gap-2">
             Simular na Minha Escola
           </a>
@@ -151,6 +128,8 @@ const LandingPage = () => {
           </div>
         </div>
       </section>
+
+      <PortalsPromoSection />
 
       {/* Sobre Section */}
       <section id="sobre" className="py-20 bg-[#0f2e3d]">
@@ -292,6 +271,8 @@ const LandingPage = () => {
             <div>
               <h4 className="text-white font-bold text-lg mb-6">Acesso Rápido</h4>
               <ul className="space-y-3">
+                <li><Link to="/portais" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Portal Hub</Link></li>
+                <li><Link to="/edumarket" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">EduMarket</Link></li>
                 <li><Link to="/sistema" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Portal de Acesso (Escolas e Pais)</Link></li>
                 <li><a href="#sobre" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Como Funciona</a></li>
                 <li><a href="#" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Política de Privacidade</a></li>

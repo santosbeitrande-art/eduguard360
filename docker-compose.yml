@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecotrade360_db
+    environment:
+      POSTGRES_DB: ecotrade360
+      POSTGRES_USER: ecotrade_app
+      POSTGRES_PASSWORD: secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ecotrade_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecotrade_app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    container_name: ecotrade360_api
+    environment:
+      NODE_ENV: development
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: ecotrade_app
+      DATABASE_PASSWORD: secure_password
+      DATABASE_NAME: ecotrade360
+      PORT: 3000
+      JWT_SECRET: your_super_secret_jwt_key_change_in_production
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecotrade_network
+    volumes:
+      - ./backend/src:/app/src
+    command: npm run dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecotrade360_cache
+    ports:
+      - "6379:6379"
+    networks:
+      - ecotrade_network
+
+volumes:
+  postgres_data:
+
+networks:
+  ecotrade_network:
+    driver: bridge

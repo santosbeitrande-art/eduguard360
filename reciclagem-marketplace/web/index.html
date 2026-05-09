@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reciclagem Marketplace</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="logo-section">
+        <h1 class="logo">♻️ Reciclagem Marketplace</h1>
+      </div>
+      <div id="userMenu" class="user-menu" style="display:none;">
+        <div class="user-info">
+          <span class="user-icon">👤</span>
+          <div>
+            <span id="userPhone" class="user-phone"></span>
+            <span id="userRole" class="user-role"></span>
+            <span id="userContext" class="user-context"></span>
+          </div>
+        </div>
+        <button onclick="logout()" class="btn-logout">Sair</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Login Screen -->
+  <div id="loginScreen" class="screen login-screen">
+    <div class="hero-bg"></div>
+    <div class="login-container">
+      <div class="login-header">
+        <h2>♻️ Bem-vindo ao Marketplace de Reciclagem</h2>
+        <p>Transforme lixo em valor. Compre e venda itens recicláveis em Moçambique.</p>
+      </div>
+      
+      <form id="loginForm" onsubmit="handleLogin(event)" class="login-form">
+        <div class="form-group">
+          <label for="phone">Número de Telefone</label>
+          <input 
+            type="tel" 
+            id="phone" 
+            placeholder="+258 82 123 4567 ou 821234567" 
+            required
+            class="form-input"
+          >
+          <p class="hint">Qualquer número moçambicano válido é aceite.</p>
+        </div>
+        <button type="submit" class="btn-primary btn-large">Entrar</button>
+      </form>
+
+      <button type="button" class="btn-secondary btn-large" onclick="continueAsGuest()">Continuar como visitante</button>
+      <p class="guest-note">A qualquer pessoa é permitido aceder ao sistema. Para vender ou comprar, registe o seu nome ou nome da empresa e número de telefone.</p>
+
+      <form id="profileForm" class="profile-form" style="display:none;" onsubmit="submitProfile(event)">
+        <div class="profile-heading">
+          <h3 id="profileTitle">Completar registo</h3>
+          <p id="profileDescription">Escolha o seu papel e registe os dados para publicar ou recolher lixo reciclável.</p>
+        </div>
+        <div class="form-group">
+          <label for="fullName">Nome ou Nome da Empresa</label>
+          <input 
+            type="text" 
+            id="fullName" 
+            placeholder="Seu nome ou nome da entidade" 
+            class="form-input"
+          >
+          <p class="hint">Registe o seu nome pessoal ou o nome da empresa.
+          </p>
+        </div>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="role" value="seller">
+            Sou vendedor/publicador (ponto de recolha ou entrega)
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="role" value="buyer">
+            Sou comprador/empresa que recolhe lixo reciclável
+          </label>
+        </div>
+        <div class="form-group">
+          <label for="company">Empresa</label>
+          <input 
+            type="text" 
+            id="company" 
+            placeholder="Nome da empresa" 
+            class="form-input"
+          >
+          <p class="hint">Informe a empresa para a qual trabalha, se for comprador.</p>
+        </div>
+        <div class="form-group">
+          <label for="collector">Ponto de recolha / descrição</label>
+          <input 
+            type="text" 
+            id="collector" 
+            placeholder="Local de recolha, ponto de entrega ou localidade" 
+            class="form-input"
+          >
+          <p class="hint">Informe o ponto de recolha se for vendedor ou publicador.</p>
+        </div>
+        <button type="submit" class="btn-primary btn-large">Guardar registo</button>
+      </form>
+      
+      <p id="loginError" class="error-message"></p>
+      
+      <div class="login-features">
+        <div class="feature">
+          <span class="feature-icon">🌍</span>
+          <span>Acesso em Moçambique</span>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">💚</span>
+          <span>Gestão sustentável</span>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">💼</span>
+          <span>Informação de empresas</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Listings Screen -->
+  <div id="listingsScreen" class="screen listings-screen" style="display:none;">
+    <div class="container">
+      <!-- Header Section -->
+      <div class="listings-header">
+        <div class="header-content">
+          <h2>Anúncios Disponíveis</h2>
+          <p id="listingsCount" class="count-info">Carregando...</p>
+          <div class="header-actions">
+            <button id="createListingBtn" class="btn-primary" style="display:none;" onclick="showCreateListingForm()">+ Criar Anúncio</button>
+            <button id="registerActionBtn" class="btn-secondary" style="display:none; margin-top: 1rem;" onclick="promptRegistration()">Registar para comprar/vender</button>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Procurar anúncios..." 
+            class="search-input"
+            onkeyup="handleSearch()"
+          >
+        </div>
+      </div>
+      
+      <!-- Filters Section -->
+      <div class="filters-section">
+        <h3>Filtrar por tipo:</h3>
+        <div class="filters">
+          <button class="filter-btn active" onclick="filterListings(null)">✨ Todos</button>
+          <button class="filter-btn" onclick="filterListings('plastic')">🥤 Plástico</button>
+          <button class="filter-btn" onclick="filterListings('metal')">⚙️ Metal</button>
+          <button class="filter-btn" onclick="filterListings('paper')">📄 Papel</button>
+          <button class="filter-btn" onclick="filterListings('glass')">🥃 Vidro</button>
+        </div>
+      </div>
+
+      <!-- Stats Section -->
+      <div class="stats-section">
+        <div class="stat-card">
+          <span class="stat-value" id="totalItems">0</span>
+          <span class="stat-label">Anúncios</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="totalValue">MT0</span>
+          <span class="stat-label">Valor Total</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="totalWeight">0</span>
+          <span class="stat-label">Peso (kg)</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="registrationCount">0</span>
+          <span class="stat-label">Registos</span>
+        </div>
+      </div>
+
+      <!-- Listings Grid -->
+      <div id="listingsContainer" class="listings-grid">
+        <!-- Listings loaded here -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state" style="display:none;">
+        <span class="empty-icon">📭</span>
+        <h3>Nenhum anúncio encontrado</h3>
+        <p>Tente ajustar os seus filtros</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Listing Modal -->
+  <div id="createListingModal" class="modal" style="display:none;">
+    <div class="modal-content large-modal">
+      <button class="modal-close" onclick="closeCreateListingModal()">✕</button>
+      <div class="modal-body">
+        <h2>Criar Novo Anúncio</h2>
+        <form id="createListingForm" onsubmit="submitCreateListing(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="listingTitle">Título do Anúncio</label>
+              <input 
+                type="text" 
+                id="listingTitle" 
+                placeholder="Ex: Plástico PET reciclável" 
+                required
+                class="form-input"
+              >
+            </div>
+            <div class="form-group">
+              <label for="listingType">Tipo de Material</label>
+              <select id="listingType" required class="form-input">
+                <option value="">Selecione o tipo</option>
+                <option value="plastic">🥤 Plástico</option>
+                <option value="metal">⚙️ Metal</option>
+                <option value="paper">📄 Papel</option>
+                <option value="glass">🥃 Vidro</option>
+                <option value="organic">🌱 Orgânico</option>
+                <option value="electronics">📱 Eletrônicos</option>
+                <option value="textiles">👕 Têxteis</option>
+                <option value="other">♻️ Outro</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="listingWeight">Peso (kg)</label>
+              <input 
+                type="number" 
+                id="listingWeight" 
+                placeholder="0.0" 
+                step="0.1" 
+                min="0.1" 
+                required
+                class="form-input"
+              >
+            </div>
+            <div class="form-group">
+              <label for="listingPrice">Preço (MT)</label>
+              <input 
+                type="number" 
+                id="listingPrice" 
+                placeholder="0.00" 
+                step="0.01" 
+                min="0.01" 
+                required
+                class="form-input"
+              >
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="listingDescription">Descrição</label>
+            <textarea 
+              id="listingDescription" 
+              placeholder="Descreva o material reciclável..." 
+              rows="3"
+              class="form-input"
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Fotos do Material</label>
+            <div class="file-upload-area" onclick="document.getElementById('listingPhotos').click()">
+              <div class="upload-placeholder">
+                <span class="upload-icon">📷</span>
+                <p>Clique para adicionar fotos</p>
+                <small>JPG, PNG até 5MB cada</small>
+              </div>
+              <input 
+                type="file" 
+                id="listingPhotos" 
+                multiple 
+                accept="image/*" 
+                style="display:none;" 
+                onchange="handlePhotoUpload(event)"
+              >
+            </div>
+            <div id="photoPreview" class="photo-preview"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Localização</label>
+            <div class="location-section">
+              <div class="map-container">
+                <div id="map" class="map-placeholder">
+                  <div class="map-placeholder-content">
+                    <span>🗺️</span>
+                    <p>Clique no mapa para definir localização</p>
+                  </div>
+                </div>
+              </div>
+              <div class="location-details">
+                <input 
+                  type="text" 
+                  id="listingAddress" 
+                  placeholder="Endereço ou referência" 
+                  required
+                  class="form-input"
+                >
+                <div class="coordinates" id="coordinates">Coordenadas: Não definidas</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="closeCreateListingModal()">Cancelar</button>
+            <button type="submit" class="btn-primary">Publicar Anúncio</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
