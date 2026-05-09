@@ -16,6 +16,8 @@ import LandingPage from "@/pages/public/LandingPage";
 import EducuardPortalHub from "@/EducuardPortalHub";
 import EducationMarketplace from "@/EducationMarketplace";
 import EducatorCreateCourse from "@/EducatorCreateCourse";
+import CourseDetail from "@/CourseDetail";
+import OfferService from "@/OfferService";
 
 // Página 404
 function NotFound() {
@@ -53,6 +55,8 @@ function App() {
         {/* EduMarket Portal */}
         <Route path="/edumarket" element={<EducationMarketplace />} />
         <Route path="/edumarket/criar-curso" element={<EducatorCreateCourse />} />
+        <Route path="/edumarket/oferecer-servico" element={<OfferService />} />
+        <Route path="/edumarket/curso/:courseId" element={<CourseDetail />} />
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />

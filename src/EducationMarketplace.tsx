@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Star, Users, TrendingUp, DollarSign, BookOpen, CheckCircle } from 'lucide-react';
 
 interface Course {
@@ -28,6 +29,7 @@ interface Service {
 }
 
 export const EducationMarketplace: React.FC = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'courses' | 'services' | 'analytics'>('courses');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -199,10 +201,16 @@ export const EducationMarketplace: React.FC = () => {
               <h1 className="text-3xl font-bold text-gray-900">EduMarket MZ</h1>
             </div>
             <div className="flex gap-2">
-              <button className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+              <button
+                onClick={() => navigate('/edumarket/criar-curso')}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
+              >
                 Criar Curso
               </button>
-              <button className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+              <button
+                onClick={() => navigate('/edumarket/oferecer-servico')}
+                className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
+              >
                 Oferecer Serviço
               </button>
             </div>
@@ -311,7 +319,11 @@ export const EducationMarketplace: React.FC = () => {
             {/* Cursos Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredCourses.map((course) => (
-                <CourseCard key={course.id} course={course} />
+                <CourseCard
+                  key={course.id}
+                  course={course}
+                  onViewMore={() => navigate(`/edumarket/curso/${course.id}`)}
+                />
               ))}
             </div>
           </div>
@@ -321,7 +333,11 @@ export const EducationMarketplace: React.FC = () => {
         {activeTab === 'services' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {services.map((service) => (
-              <ServiceCard key={service.id} service={service} />
+              <ServiceCard
+                key={service.id}
+                service={service}
+                onContract={() => navigate(`/edumarket/oferecer-servico?service=${service.id}`)}
+              />
             ))}
           </div>
         )}
@@ -360,7 +376,7 @@ const StatCard: React.FC<{
   );
 };
 
-const CourseCard: React.FC<{ course: Course }> = ({ course }) => {
+const CourseCard: React.FC<{ course: Course; onViewMore: () => void }> = ({ course, onViewMore }) => {
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
       <img
@@ -394,7 +410,10 @@ const CourseCard: React.FC<{ course: Course }> = ({ course }) => {
           <div className="text-2xl font-bold text-indigo-600">
             MT {course.price}
           </div>
-          <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+          <button
+            onClick={onViewMore}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+          >
             Ver Mais
           </button>
         </div>
@@ -404,7 +423,7 @@ const CourseCard: React.FC<{ course: Course }> = ({ course }) => {
   );
 };
 
-const ServiceCard: React.FC<{ service: Service }> = ({ service }) => {
+const ServiceCard: React.FC<{ service: Service; onContract: () => void }> = ({ service, onContract }) => {
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
       <img
@@ -430,7 +449,10 @@ const ServiceCard: React.FC<{ service: Service }> = ({ service }) => {
           <div className="text-xl font-bold text-green-600">
             MT {service.price}/hora
           </div>
-          <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+          <button
+            onClick={onContract}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+          >
             Contratar
           </button>
         </div>
