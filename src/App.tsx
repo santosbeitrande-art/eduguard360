@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 // Páginas principais
 import SystemLogin from "@/pages/system/SystemLogin";
 import AdminDashboard from "@/pages/system/AdminDashboard";
+import AdminCourses from "@/pages/system/AdminCourses";
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import AdminExecutiveDashboard from "@/pages/system/AdminExecutiveDashboard";
@@ -18,6 +19,12 @@ import EducationMarketplace from "@/EducationMarketplace";
 import EducatorCreateCourse from "@/EducatorCreateCourse";
 import CourseDetail from "@/CourseDetail";
 import OfferService from "@/OfferService";
+
+// Novas páginas educação online
+import CoursesPage from "@/pages/CoursesPage";
+import LiteraturePage from "@/pages/LiteraturePage";
+import LiteratureBookPage from "@/pages/LiteratureBookPage";
+import EducatorPortalPage from "@/pages/EducatorPortalPage";
 
 // Página 404
 function NotFound() {
@@ -58,10 +65,22 @@ function App() {
         <Route path="/edumarket/oferecer-servico" element={<OfferService />} />
         <Route path="/edumarket/curso/:courseId" element={<CourseDetail />} />
 
+        {/* Cursos Online - Nova Plataforma */}
+        <Route path="/cursos" element={<CoursesPage />} />
+        <Route path="/cursos/:courseId" element={<CourseDetail />} />
+        
+        {/* Portal de Literatura Aberta */}
+        <Route path="/literatura" element={<LiteraturePage />} />
+        <Route path="/literatura/:bookId" element={<LiteratureBookPage />} />
+        
+        {/* Dashboard de Educador */}
+        <Route path="/educador" element={<EducatorPortalPage />} />
+
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
         <Route path="/sistema/pais" element={<ParentDashboard />} />
         <Route path="/sistema/admin" element={<AdminDashboard />} />
+        <Route path="/sistema/admin/edumarket" element={<AdminCourses />} />
         <Route path="/sistema/escola" element={<SchoolDashboard />} />
         <Route path="/sistema/scanner" element={<QRScannerPro />} />
 

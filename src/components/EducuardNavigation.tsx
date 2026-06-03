@@ -25,6 +25,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
   const portals = [
     { label: '🛡️ Segurança Escolar', href: '/sistema' },
     { label: '📚 EduMarket', href: '/edumarket' },
+    { label: '📖 Literatura Aberta', href: '/literatura' },
     { label: '🏢 Enterprise (Em breve)', href: '#' },
     { label: '📊 Analytics (Em breve)', href: '#' },
   ];

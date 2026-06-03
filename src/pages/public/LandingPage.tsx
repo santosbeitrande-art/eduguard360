@@ -5,6 +5,7 @@ import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "luci
 // Novos componentes dos portais
 import EducuardNavigation from "@/components/EducuardNavigation";
 import PortalsPromoSection from "@/components/PortalsPromoSection";
+import NewFeaturesNavigation from "@/components/NewFeaturesNavigation";
 
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -130,6 +131,9 @@ const LandingPage = () => {
       </section>
 
       <PortalsPromoSection />
+
+      {/* Novos Portais Educacionais */}
+      <NewFeaturesNavigation />
 
       {/* Sobre Section */}
       <section id="sobre" className="py-20 bg-[#0f2e3d]">

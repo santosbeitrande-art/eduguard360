@@ -22,6 +22,7 @@ interface Portal {
   route: string;
   features: string[];
   status: 'available' | 'coming-soon';
+  badge?: 'Novo' | 'Popular' | 'Beta';
   stats?: { label: string; value: string }[];
 }
 
@@ -74,6 +75,30 @@ const EducuardPortalHub: React.FC = () => {
         { label: 'Cursos', value: '300+' },
         { label: 'Educadores', value: '500+' },
         { label: 'Alunos', value: '10K+' },
+      ],
+    },
+    {
+      id: 'literature',
+      name: 'Literatura Aberta',
+      title: '📖 Portal de Literatura',
+      description: 'Aceda livros, artigos e publicações abertas com busca avançada',
+      icon: <BookOpen className="w-12 h-12" />,
+      color: 'from-amber-500 to-orange-500',
+      route: '/literatura',
+      status: 'available',
+      badge: 'Novo',
+      features: [
+        'Busca por Open Library',
+        'Resultados do Project Gutenberg',
+        'Conteúdo Repoarte e moçambicano',
+        'Filtros por idioma e fonte',
+        'Acesso direto a livros completos',
+        'Visualização rápida de livros',
+      ],
+      stats: [
+        { label: 'Fontes', value: '3+' },
+        { label: 'Obras', value: '50K+' },
+        { label: 'Artigos', value: '10K+' },
       ],
     },
     {
@@ -192,6 +217,11 @@ const EducuardPortalHub: React.FC = () => {
                     {portal.icon}
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900 mb-2">{portal.name}</h3>
+                  {portal.badge && (
+                    <span className="inline-flex items-center justify-center text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-amber-100 text-amber-800 mb-2">
+                      {portal.badge}
+                    </span>
+                  )}
                   <p className="text-sm text-gray-500">{portal.title}</p>
                 </div>
 

@@ -299,6 +299,9 @@ const AdminGlobalDashboard = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={loadData} className="btn inline-flex items-center justify-center px-4 py-2 shadow-sm">Atualizar Dados</button>
+            <button onClick={() => navigate('/sistema/admin/edumarket')} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
+              <GraduationCap className="w-4 h-4" /> Gerir Cursos
+            </button>
             <button onClick={() => navigate('/parent')} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
               <Users className="w-4 h-4" /> Ver Área Pais
             </button>

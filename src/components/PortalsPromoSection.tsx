@@ -20,6 +20,13 @@ export const PortalsPromoSection: React.FC = () => {
       color: 'from-purple-600 to-indigo-600',
       route: '/edumarket',
     },
+    {
+      icon: <BookOpen className="w-8 h-8" />,
+      title: 'Portal de Literatura',
+      description: 'Acesse livros e artigos de acesso livre com busca avançada',
+      color: 'from-amber-500 to-orange-500',
+      route: '/literatura',
+    },
   ];
 
   return (

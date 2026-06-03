@@ -275,16 +275,6 @@ export const EducationMarketplace: React.FC = () => {
           >
             🔧 Serviços
           </button>
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`px-6 py-2 rounded-lg font-semibold transition-colors ${
-              activeTab === 'analytics'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            📈 Meu Dashboard
-          </button>
         </div>
 
         {/* Courses Tab */}
