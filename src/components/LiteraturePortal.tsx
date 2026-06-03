@@ -408,7 +408,47 @@ export const LiteraturePortal = () => {
 // Card do Livro
 export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
   const [saved, setSaved] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const bookLink = resolveBookLink(book);
+
+  // Função robusta de download
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    if (!book.file_url) {
+      alert('URL do arquivo não disponível');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      // Tentar download direto
+      const response = await fetch(book.file_url, {
+        mode: 'cors',
+        credentials: 'omit',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ao baixar: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${book.file_format || 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro no download:', error);
+      // Fallback: abrir em nova aba
+      window.open(book.file_url, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <Card className="overflow-hidden hover:shadow-lg transition">
@@ -467,11 +507,15 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
         </div>
 
         {/* Download / Acesso */}
-        <Button variant="ghost" size="sm" className="w-full mt-2" asChild>
-          <a href={book.file_url} target="_blank" rel="noreferrer" {...(['pdf','txt'].includes(book.file_format) ? { download: true } : {})}>
-            <Download size={16} className="mr-1" />
-            Acessar {book.file_format.toUpperCase()}
-          </a>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="w-full mt-2 hover:bg-amber-50" 
+          onClick={handleDownload}
+          disabled={downloading || !book.file_url}
+        >
+          <Download size={16} className={`mr-1 ${downloading ? 'animate-spin' : ''}`} />
+          {downloading ? 'Baixando...' : `Baixar ${book.file_format?.toUpperCase() || 'PDF'}`}
         </Button>
       </CardContent>
     </Card>
@@ -506,6 +550,42 @@ export const LiteratureReader = ({ bookId }) => {
   const [book, setBook] = useState<any>(null);
   const [authors, setAuthors] = useState<string>('Autor desconhecido');
   const [annotations, setAnnotations] = useState<any[]>([]);
+  const [downloading, setDownloading] = useState(false);
+
+  // Função robusta de download para LiteratureReader
+  const handleDownload = async () => {
+    if (!book?.file_url) {
+      alert('URL do arquivo não disponível');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const response = await fetch(book.file_url, {
+        mode: 'cors',
+        credentials: 'omit',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ao baixar: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${book.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${book.file_format || 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro no download:', error);
+      window.open(book.file_url, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     fetchBook();
@@ -629,6 +709,15 @@ export const LiteratureReader = ({ bookId }) => {
               <a href={book.openlibrary_url || book.file_url} target="_blank" rel="noreferrer">
                 {book.openlibrary_url ? 'Abrir na página do livro' : 'Abrir obra'}
               </a>
+            </Button>
+            <Button 
+              variant="default" 
+              className="w-full bg-amber-600 hover:bg-amber-700" 
+              onClick={handleDownload}
+              disabled={downloading || !book.file_url}
+            >
+              <Download size={16} className={`mr-2 ${downloading ? 'animate-spin' : ''}`} />
+              {downloading ? 'Baixando...' : 'Baixar Arquivo'}
             </Button>
             <Button variant="outline" className="w-full" onClick={() => navigator.share?.({ title: book.title, url: book.openlibrary_url || book.file_url })}>
               Partilhar
