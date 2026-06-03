@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+// ============================================
+// SISTEMA DE TRADUÇÕES - i18n
+// Suporta: Português (PT) e Inglês (EN)
+// ============================================
 
-export type Language = 'pt' | 'en';
-
-// ==================== TRADUÇÕES COMPLETAS ====================
 export const translations = {
   pt: {
+    // ==================== NAVEGAÇÃO ====================
     nav: {
       inicio: 'Início',
       sobre: 'Sobre',
@@ -14,6 +15,8 @@ export const translations = {
       logout: 'Sair',
       idioma: 'Idioma',
     },
+
+    // ==================== PORTAIS ====================
     portals: {
       hub_title: 'Todos os Portais',
       hub_subtitle: 'Explore nossos portais educacionais',
@@ -28,6 +31,8 @@ export const translations = {
       disponivel: 'Disponível',
       novo: 'Novo',
     },
+
+    // ==================== LITERATURA ====================
     literatura: {
       title: 'Literatura Aberta',
       subtitle: 'Acesso Gratuito a Milhares de Livros',
@@ -37,6 +42,7 @@ export const translations = {
       mocambique: 'Moçambique',
       guardados: 'Guardados',
       nenhum_livro_guardado: 'Nenhum livro guardado ainda',
+      
       filtros: {
         idioma: 'Idioma',
         licenca: 'Licença',
@@ -44,6 +50,7 @@ export const translations = {
         pais: 'País',
         fonte: 'Fonte',
       },
+
       opcoes: {
         todos: 'Todos',
         portugues: 'Português',
@@ -57,6 +64,7 @@ export const translations = {
         portugal: 'Portugal',
         brasil: 'Brasil',
       },
+
       botoes: {
         ver: 'Ver',
         baixar: 'Baixar',
@@ -64,14 +72,32 @@ export const translations = {
         compartilhar: 'Partilhar',
         nenhum_resultado: 'Nenhum resultado encontrado',
       },
+
+      fontes: {
+        todas: 'Todas as Fontes',
+        open_library: 'Open Library',
+        gutenberg: 'Project Gutenberg',
+        arxiv: 'arXiv',
+        ssrn: 'SSRN',
+        repoarte: 'Repoarte.ac.mz',
+      },
     },
+
+    // ==================== EDUMARKET ====================
     edumarket: {
       title: 'EduMarket',
       subtitle: 'Marketplace de Cursos e Educação',
       meus_cursos: 'Meus Cursos',
       criar_curso: 'Criar Curso',
       procurar_curso: 'Procurar um curso...',
+      filtro_categoria: 'Categoria',
+      filtro_preco: 'Preço',
+      filtro_avaliacao: 'Avaliação',
+      carrinho: 'Carrinho',
+      checkout: 'Finalizar Compra',
     },
+
+    // ==================== SISTEMA / SEGURANÇA ====================
     sistema: {
       title: 'Segurança Escolar',
       login: 'Entrar',
@@ -79,16 +105,46 @@ export const translations = {
       nome_usuario: 'Nome de Usuário',
       email: 'Email',
       senha: 'Senha',
+      confirmar_senha: 'Confirmar Senha',
       entrar: 'Entrar',
       registrar: 'Registrar',
+      esqueceu_senha: 'Esqueceu a senha?',
       erro_login: 'Email ou senha inválidos',
+      dashboard: 'Dashboard',
+      admin: 'Administrador',
+      professor: 'Professor',
+      aluno: 'Aluno',
+      pai: 'Responsável',
     },
+
+    // ==================== HOME / LANDING ====================
     home: {
       titulo_principal: 'Bem-vindo ao EduGuard360',
       subtitulo: 'Plataforma Educacional Integrada',
       cta_explorar: 'Explorar Portais',
       cta_saber_mais: 'Saiba Mais',
+      
+      hero_titulo: 'Educação para o Futuro',
+      hero_descricao: 'Acesso a múltiplos portais educacionais em um só lugar',
+
+      features_titulo: 'Funcionalidades',
+      features_subtitulo: 'Tudo que você precisa para educação de qualidade',
+
+      sobre_titulo: 'Sobre EduGuard360',
+      sobre_descricao: 'Plataforma integrada de educação moderna',
+
+      vision_titulo: 'Nossa Visão',
+      vision_descricao: 'Transformar a educação através da tecnologia',
+
+      newsletter_titulo: 'Inscreva-se',
+      newsletter_email: 'Seu email',
+      newsletter_botao: 'Inscrever',
+
+      contato: 'Contacto',
+      email_contato: 'contact@eduguard360.mz',
     },
+
+    // ==================== BOTÕES COMUNS ====================
     botoes: {
       ok: 'OK',
       cancelar: 'Cancelar',
@@ -105,31 +161,20 @@ export const translations = {
       erro: 'Erro',
       sucesso: 'Sucesso',
     },
+
+    // ==================== MENSAGENS ====================
     mensagens: {
       bem_vindo: 'Bem-vindo!',
       ate_logo: 'Até logo!',
       operacao_sucesso: 'Operação concluída com sucesso',
       erro_generico: 'Ocorreu um erro. Tente novamente.',
+      conectando: 'Conectando...',
       offline: 'Você está offline',
     },
-    // Compatibilidade com chaves antigas
-    'nav.home': 'Início',
-    'nav.project': 'O Projeto',
-    'nav.contact': 'Contactos',
-    'hero.title': 'EDU•GUARD360',
-    'hero.slogan': 'Segurança escolar transformada em confiança digital.',
-    'hero.description': 'Plataforma digital para controlo de entradas e saídas escolares, garantindo tranquilidade para pais e governação para escolas.',
-    'hero.cta': 'Solicitar Demonstração',
-    'hero.learnMore': 'Saiba Mais',
-    'howItWorks.title': 'Como Funciona',
-    'howItWorks.subtitle': 'Processo simples em 4 passos',
-    'project.title': 'O Projeto',
-    'contact.title': 'Contactos',
-    'contact.subtitle': 'Entre em contacto connosco',
-    'footer.rights': 'Todos os direitos reservados.',
   },
 
   en: {
+    // ==================== NAVIGATION ====================
     nav: {
       inicio: 'Home',
       sobre: 'About',
@@ -139,6 +184,8 @@ export const translations = {
       logout: 'Logout',
       idioma: 'Language',
     },
+
+    // ==================== PORTALS ====================
     portals: {
       hub_title: 'All Portals',
       hub_subtitle: 'Explore our educational portals',
@@ -153,6 +200,8 @@ export const translations = {
       disponivel: 'Available',
       novo: 'New',
     },
+
+    // ==================== LITERATURE ====================
     literatura: {
       title: 'Open Literature',
       subtitle: 'Free Access to Thousands of Books',
@@ -162,6 +211,7 @@ export const translations = {
       mocambique: 'Mozambique',
       guardados: 'Saved',
       nenhum_livro_guardado: 'No saved books yet',
+      
       filtros: {
         idioma: 'Language',
         licenca: 'License',
@@ -169,6 +219,7 @@ export const translations = {
         pais: 'Country',
         fonte: 'Source',
       },
+
       opcoes: {
         todos: 'All',
         portugues: 'Português',
@@ -182,6 +233,7 @@ export const translations = {
         portugal: 'Portugal',
         brasil: 'Brazil',
       },
+
       botoes: {
         ver: 'View',
         baixar: 'Download',
@@ -189,14 +241,32 @@ export const translations = {
         compartilhar: 'Share',
         nenhum_resultado: 'No results found',
       },
+
+      fontes: {
+        todas: 'All Sources',
+        open_library: 'Open Library',
+        gutenberg: 'Project Gutenberg',
+        arxiv: 'arXiv',
+        ssrn: 'SSRN',
+        repoarte: 'Repoarte.ac.mz',
+      },
     },
+
+    // ==================== EDUMARKET ====================
     edumarket: {
       title: 'EduMarket',
       subtitle: 'Courses and Education Marketplace',
       meus_cursos: 'My Courses',
       criar_curso: 'Create Course',
       procurar_curso: 'Search for a course...',
+      filtro_categoria: 'Category',
+      filtro_preco: 'Price',
+      filtro_avaliacao: 'Rating',
+      carrinho: 'Cart',
+      checkout: 'Checkout',
     },
+
+    // ==================== SYSTEM / SECURITY ====================
     sistema: {
       title: 'School Security',
       login: 'Login',
@@ -204,16 +274,46 @@ export const translations = {
       nome_usuario: 'Username',
       email: 'Email',
       senha: 'Password',
+      confirmar_senha: 'Confirm Password',
       entrar: 'Sign In',
       registrar: 'Sign Up',
+      esqueceu_senha: 'Forgot password?',
       erro_login: 'Invalid email or password',
+      dashboard: 'Dashboard',
+      admin: 'Administrator',
+      professor: 'Teacher',
+      aluno: 'Student',
+      pai: 'Parent',
     },
+
+    // ==================== HOME / LANDING ====================
     home: {
       titulo_principal: 'Welcome to EduGuard360',
       subtitulo: 'Integrated Educational Platform',
       cta_explorar: 'Explore Portals',
       cta_saber_mais: 'Learn More',
+      
+      hero_titulo: 'Education for the Future',
+      hero_descricao: 'Access multiple educational portals in one place',
+
+      features_titulo: 'Features',
+      features_subtitulo: 'Everything you need for quality education',
+
+      sobre_titulo: 'About EduGuard360',
+      sobre_descricao: 'Integrated modern education platform',
+
+      vision_titulo: 'Our Vision',
+      vision_descricao: 'Transform education through technology',
+
+      newsletter_titulo: 'Subscribe',
+      newsletter_email: 'Your email',
+      newsletter_botao: 'Subscribe',
+
+      contato: 'Contact',
+      email_contato: 'contact@eduguard360.mz',
     },
+
+    // ==================== COMMON BUTTONS ====================
     botoes: {
       ok: 'OK',
       cancelar: 'Cancel',
@@ -230,89 +330,17 @@ export const translations = {
       erro: 'Error',
       sucesso: 'Success',
     },
+
+    // ==================== MESSAGES ====================
     mensagens: {
       bem_vindo: 'Welcome!',
       ate_logo: 'See you soon!',
       operacao_sucesso: 'Operation completed successfully',
       erro_generico: 'An error occurred. Please try again.',
+      conectando: 'Connecting...',
       offline: 'You are offline',
     },
-    // Compatibilidade com chaves antigas
-    'nav.home': 'Home',
-    'nav.project': 'The Project',
-    'nav.contact': 'Contact',
-    'hero.title': 'EDU•GUARD360',
-    'hero.slogan': 'School security transformed into digital trust.',
-    'hero.description': 'Digital platform for school entry and exit control, ensuring peace of mind for parents and governance for schools.',
-    'hero.cta': 'Request Demo',
-    'hero.learnMore': 'Learn More',
-    'howItWorks.title': 'How It Works',
-    'howItWorks.subtitle': 'Simple 4-step process',
-    'project.title': 'The Project',
-    'contact.title': 'Contact',
-    'contact.subtitle': 'Get in touch with us',
-    'footer.rights': 'All rights reserved.',
   },
 };
 
-interface LanguageContextType {
-  language: Language;
-  setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
-}
-
-const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
-
-export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Estado inicial: localStorage ou navegador ou padrão (pt)
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('preferred-language') as Language | null;
-      if (saved && (saved === 'pt' || saved === 'en')) {
-        return saved;
-      }
-
-      const browserLang = navigator.language.substring(0, 2);
-      if (browserLang === 'pt') return 'pt';
-      if (browserLang === 'en') return 'en';
-    }
-    return 'pt';
-  });
-
-  // Salvar preferência ao mudar
-  useEffect(() => {
-    localStorage.setItem('preferred-language', language);
-    // Atualizar atributo html para CSS e acessibilidade
-    document.documentElement.lang = language;
-  }, [language]);
-
-  // Função para acessar traduções com notação de ponto
-  const t = (key: string): string => {
-    const keys = key.split('.');
-    let value: any = translations[language];
-
-    for (const k of keys) {
-      if (value && typeof value === 'object' && k in value) {
-        value = value[k];
-      } else {
-        return key;
-      }
-    }
-
-    return typeof value === 'string' ? value : key;
-  };
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage: setLanguageState, t }}>
-      {children}
-    </LanguageContext.Provider>
-  );
-};
-
-export const useLanguage = (): LanguageContextType => {
-  const context = useContext(LanguageContext);
-  if (!context) {
-    throw new Error('useLanguage must be used within a LanguageProvider');
-  }
-  return context;
-};
+export type Language = 'pt' | 'en';

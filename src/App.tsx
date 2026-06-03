@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { LanguageProvider } from "@/context/LanguageContext";
 
 // Páginas principais
 import SystemLogin from "@/pages/system/SystemLogin";
@@ -50,8 +51,9 @@ function NotFound() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <LanguageProvider>
+      <BrowserRouter>
+        <Routes>
 
         {/* Página inicial Pública */}
         <Route path="/" element={<LandingPage />} />
@@ -118,7 +120,8 @@ function App() {
         <Route path="*" element={<NotFound />} />
 
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </LanguageProvider>
   );
 }
 
