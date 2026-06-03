@@ -204,7 +204,7 @@ export const LiteraturePortal = () => {
             placeholder="Buscar livros, autores, tópicos..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="max-w-2xl text-black"
+            className="max-w-2xl text-black placeholder:text-white placeholder:opacity-90"
           />
         </div>
       </section>
@@ -235,7 +235,7 @@ export const LiteraturePortal = () => {
                         id="filter-language"
                         value={filters.language}
                         onChange={(e) => setFilters({ ...filters, language: e.target.value })}
-                        className="w-full border rounded px-2 py-2"
+                        className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-200 transition bg-white"
                       >
                         <option value="pt">Português</option>
                         <option value="en">English</option>
@@ -251,7 +251,7 @@ export const LiteraturePortal = () => {
                         id="filter-license"
                         value={filters.license}
                         onChange={(e) => setFilters({ ...filters, license: e.target.value })}
-                        className="w-full border rounded px-2 py-2"
+                        className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-200 transition bg-white"
                       >
                         <option value="all">Todas</option>
                         <option value="public_domain">Domínio Público</option>
@@ -269,7 +269,7 @@ export const LiteraturePortal = () => {
                         value={filters.subject}
                         onChange={(e) => setFilters({ ...filters, subject: e.target.value })}
                         placeholder="História, literatura, educação"
-                        className="w-full border rounded px-2 py-2"
+                        className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-200 transition bg-white placeholder:text-gray-500"
                       />
                     </div>
 
@@ -280,7 +280,7 @@ export const LiteraturePortal = () => {
                         id="filter-source"
                         value={filters.source}
                         onChange={(e) => setFilters({ ...filters, source: e.target.value })}
-                        className="w-full border rounded px-2 py-2"
+                        className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-200 transition bg-white"
                       >
                         {sources.map(source => (
                           <option key={source.id} value={source.id}>{source.name}</option>
@@ -299,7 +299,7 @@ export const LiteraturePortal = () => {
                         id="filter-country"
                         value={filters.country}
                         onChange={(e) => setFilters({ ...filters, country: e.target.value })}
-                        className="w-full border rounded px-2 py-2"
+                        className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-200 transition bg-white"
                       >
                         <option value="all">Todos</option>
                         <option value="mozambique">Moçambique</option>
