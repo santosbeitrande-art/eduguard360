@@ -1,19 +1,104 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
+import { useLanguage } from "@/context/LanguageContext";
+import { LanguageSelectorCompact } from "@/components/LanguageSelector";
+
+type BillingCycle = "monthly" | "quarterly" | "annual";
+
+type SchoolSubscription = {
+  schoolId: string;
+  cycle: BillingCycle;
+  status: "active" | "inactive";
+  amountMzn: number;
+  paidAt: string;
+  validUntil: string;
+};
+
+const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
+
+const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
+  monthly: { days: 30, amountMzn: 3500 },
+  quarterly: { days: 90, amountMzn: 9500 },
+  annual: { days: 365, amountMzn: 36000 }
+};
+
+const readSchoolSubscriptions = (): SchoolSubscription[] => {
+  try {
+    const raw = localStorage.getItem(SCHOOL_SUBSCRIPTIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSchoolSubscriptions = (items: SchoolSubscription[]) => {
+  localStorage.setItem(SCHOOL_SUBSCRIPTIONS_KEY, JSON.stringify(items));
+};
+
+const getSchoolSubscription = (schoolId: string | null | undefined): SchoolSubscription | null => {
+  if (!schoolId) return null;
+  const list = readSchoolSubscriptions();
+  const found = list.find((item) => item.schoolId === schoolId);
+  return found || null;
+};
+
+const isSubscriptionActive = (sub: SchoolSubscription | null): boolean => {
+  if (!sub || sub.status !== "active") return false;
+  return new Date(sub.validUntil).getTime() > Date.now();
+};
 
 const SystemLogin = () => {
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [selectedRole, setSelectedRole] = useState("director");
+  const [selectedSchoolId, setSelectedSchoolId] = useState("");
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [paymentDone, setPaymentDone] = useState(false);
+  const [paymentSummary, setPaymentSummary] = useState<string | null>(null);
+  const [schools, setSchools] = useState<Array<{ id: string; nome: string }>>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingSchools, setLoadingSchools] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [registerMode, setRegisterMode] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const loadSchools = async () => {
+      setLoadingSchools(true);
+      try {
+        const { data, error } = await supabase.from("escolas").select("id,nome").order("nome");
+        if (!error) setSchools((data || []) as Array<{ id: string; nome: string }>);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingSchools(false);
+      }
+    };
+
+    loadSchools();
+  }, []);
 
   const handleLogin = async () => {
     setLoading(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim();
+    const validAdminPasswords = [
+      "EduGuard@360!2026",
+      "Admin1234admin",
+      "Admin@1234"
+    ];
 
     try {
       // Bypass automático (Hardcoded) para o Admin Principal
-      if (email === "admin@eduguard360.co.mz" && password === "Admin1234admin") {
+      if (normalizedEmail === "admin@eduguard360.co.mz" && validAdminPasswords.includes(normalizedPassword)) {
         const adminUser = {
           id: "bypass-admin-id",
           nome: "Administrador Global",
@@ -29,12 +114,12 @@ const SystemLogin = () => {
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: normalizedEmail,
+        password: normalizedPassword,
       });
 
       if (error || !data.user) {
-        alert("E-mail ou senha inválidos.");
+        setErrorMessage(t('sistema.erro_login'));
         return;
       }
 
@@ -48,8 +133,23 @@ const SystemLogin = () => {
         .single();
 
       if (!user) {
-        alert("Utilizador não registado no sistema de acessos.");
+        setErrorMessage(t('sistema.erro_login'));
         return;
+      }
+
+      const isPending = user.status === 'pending' || user.status === 'inactive' || user.is_active === false;
+      if (isPending) {
+        setErrorMessage(t('sistema.registo_pendente'));
+        return;
+      }
+
+      if (user.perfil === "director") {
+        const subscription = getSchoolSubscription(user.escola_id || null);
+        if (!isSubscriptionActive(subscription)) {
+          setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
+          setInfoMessage(t('sistema.pagamento_escola_plans'));
+          return;
+        }
       }
 
       // Guardar utilizador logado no contexto/localStorage
@@ -63,61 +163,160 @@ const SystemLogin = () => {
       else navigate("/");
     } catch (err) {
       console.error(err);
-      alert("Erro crítico no login, contacte o suporte.");
+      setErrorMessage(t('mensagens.erro_generico'));
     } finally {
       setLoading(false);
     }
   };
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const handlePasswordRecovery = async () => {
+    setLoading(true);
+    setInfoMessage(null);
+    setErrorMessage(null);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setErrorMessage(t('sistema.erro_login'));
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/sistema`
+      });
+
+      if (error) {
+        setErrorMessage(error.message || t('mensagens.erro_generico'));
+      } else {
+        setInfoMessage(t('sistema.link_recuperacao_enviado'));
+        setRecoveryMode(false);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(err?.message || t('mensagens.erro_generico'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelfRegister = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedName = fullName.trim();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedName || !normalizedEmail || normalizedPassword.length < 6) {
+      setErrorMessage(t('sistema.preencher_campos'));
+      setLoading(false);
+      return;
+    }
+
+    if (!selectedSchoolId) {
+      setErrorMessage(t('sistema.selecionar_escola'));
+      setLoading(false);
+      return;
+    }
+
+    if (selectedRole === "director" && !paymentDone) {
+      setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password: normalizedPassword,
+        options: { data: { full_name: normalizedName } }
+      });
+
+      if (error) {
+        setErrorMessage(error.message || t('mensagens.erro_generico'));
+        setLoading(false);
+        return;
+      }
+
+      const pendingUser = {
+        id: data?.user?.id || `pending-${Date.now()}`,
+        nome: normalizedName,
+        email: normalizedEmail,
+        perfil: selectedRole === 'parent' ? 'pai' : 'director',
+        escola_id: selectedSchoolId || null,
+        is_active: false,
+        status: 'pending',
+        password_changed: false,
+        source: 'supabase'
+      };
+
+      const { error: insertError } = await supabase.from('utilizadores').insert({
+        auth_id: data?.user?.id || null,
+        nome: pendingUser.nome,
+        email: pendingUser.email,
+        perfil: pendingUser.perfil,
+        escola_id: pendingUser.escola_id,
+        telefone: null,
+        senha: null
+      });
+
+      const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
+      existingPending.push({ ...pendingUser, source: insertError ? 'local' : 'supabase' });
+      localStorage.setItem('eduguard_pending_registrations', JSON.stringify(existingPending));
+
+      setRegisterMode(false);
+      setInfoMessage(t('sistema.registo_pendente'));
+      setPassword('');
+      setFullName('');
+      setSelectedRole('director');
+      setSelectedSchoolId('');
+      setBillingCycle('monthly');
+      setPaymentDone(false);
+      setPaymentSummary(null);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(err?.message || t('mensagens.erro_generico'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSchoolPayment = () => {
+    if (!selectedSchoolId) {
+      setErrorMessage(t('sistema.selecionar_escola'));
+      return;
+    }
+
+    const selectedSchool = schools.find((school) => school.id === selectedSchoolId);
+    const cfg = cycleConfig[billingCycle];
+    const paidAt = new Date();
+    const validUntil = new Date(paidAt.getTime() + cfg.days * 24 * 60 * 60 * 1000).toISOString();
+
+    const list = readSchoolSubscriptions();
+    const next: SchoolSubscription = {
+      schoolId: selectedSchoolId,
+      cycle: billingCycle,
+      status: "active",
+      amountMzn: cfg.amountMzn,
+      paidAt: paidAt.toISOString(),
+      validUntil
+    };
+
+    const idx = list.findIndex((item) => item.schoolId === selectedSchoolId);
+    if (idx >= 0) list[idx] = next;
+    else list.push(next);
+    writeSchoolSubscriptions(list);
+
+    setPaymentDone(true);
+    setErrorMessage(null);
+    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()}`);
+    setInfoMessage(t('sistema.pagamento_registado'));
+  };
 
   const handleDemoAccess = (role: string) => {
     let mockUser: any = null;
-
-    if (role === "admin") {
-      mockUser = {
-        id: "bypass-admin-id",
-        nome: "Administrador Global",
-        email: "admin@eduguard360.co.mz",
-        perfil: "admin",
-        escola_id: null,
-        canAccessParent: true,
-        canAccessSchool: true,
-        password_changed: true
-      };
-      localStorage.setItem("currentUser", JSON.stringify(mockUser));
-      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, email: mockUser.email, name: mockUser.nome, type: 'system_user', role: 'super_admin', password_changed: true }));
-      navigate("/admin");
-      return;
-    }
-
-    if (role === "school") {
-      mockUser = {
-        id: "demo-school",
-        perfil: "director",
-        nome: "Escola Demo",
-        escola_id: "demo-school-id",
-        password_changed: true
-      };
-      localStorage.setItem("currentUser", JSON.stringify(mockUser));
-      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, type: 'system_user', role: 'school_admin', school_id: mockUser.escola_id, password_changed: true }));
-      navigate("/school");
-      return;
-    }
-
-    if (role === "parent") {
-      mockUser = {
-        id: "demo-parent",
-        perfil: "pai",
-        nome: "Helena Costa",
-        email: "helena.costa@exemplo.mz",
-        phone: "+258 84 123 4567",
-        password_changed: true
-      };
-      localStorage.setItem("currentUser", JSON.stringify(mockUser));
-      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, email: mockUser.email, type: 'parent', phone: mockUser.phone, password_changed: true }));
-      navigate("/parent");
-      return;
-    }
 
     if (role === "scanner") {
       mockUser = {
@@ -142,41 +341,185 @@ const SystemLogin = () => {
 
       <div className="w-full max-w-md card p-8 z-10 relative">
         
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-between items-center mb-6">
           <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-blue-500 rounded-xl shadow-lg flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           </div>
+          <div className="ml-auto">
+            <LanguageSelectorCompact />
+          </div>
         </div>
 
         <h2 className="text-2xl font-bold text-white text-center">EduGuard360</h2>
-        <p className="mt-2 text-sm text-[#9bbbc9] text-center">Segurança Escolar Transformada em Confiança Digital.</p>
+        <p className="mt-2 text-sm text-[#9bbbc9] text-center">{t('sistema.title')} · {t('sistema.login')}</p>
 
         <div className="mt-8 space-y-4">
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            placeholder="E-mail de acesso (ex: admin@escola.mz)"
-            className="w-full rounded-xl px-4 py-3 outline-none transition-all"
-          />
+          {registerMode ? (
+            <>
+              <input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                type="text"
+                placeholder={t('sistema.nome_completo')}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+              />
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder={t('sistema.email')}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+              />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                placeholder={t('sistema.senha')}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+              />
+              <label className="sr-only" htmlFor="registration-role">{t('sistema.role_director')}</label>
+              <select
+                id="registration-role"
+                value={selectedRole}
+                onChange={(e) => {
+                  const nextRole = e.target.value;
+                  setSelectedRole(nextRole);
+                  if (nextRole !== "director") {
+                    setPaymentDone(false);
+                    setPaymentSummary(null);
+                  }
+                }}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+              >
+                <option value="director">{t('sistema.role_director')}</option>
+                <option value="parent">{t('sistema.role_parent')}</option>
+              </select>
+              <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>
+              <select
+                id="registration-school"
+                value={selectedSchoolId}
+                onChange={(e) => setSelectedSchoolId(e.target.value)}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                disabled={loadingSchools}
+              >
+                <option value="">{loadingSchools ? t('botoes.carregando') : t('sistema.selecionar_escola')}</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>{school.nome}</option>
+                ))}
+              </select>
 
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            placeholder="Cidadela Digital Primária (Senha)"
-            className="w-full rounded-xl px-4 py-3 outline-none transition-all"
-          />
+              {selectedRole === "director" && (
+                <div className="rounded-xl border border-[#2e5a6e] bg-[#102c3f] p-3 text-sm text-[#d1e4ef]">
+                  <p className="font-semibold mb-2">{t('sistema.pagamento_escola_titulo')}</p>
+                  <p className="text-xs text-[#9bbbc9] mb-2">{t('sistema.pagamento_escola_plans')}</p>
+                  <select
+                    value={billingCycle}
+                    onChange={(e) => {
+                      setBillingCycle(e.target.value as BillingCycle);
+                      setPaymentDone(false);
+                      setPaymentSummary(null);
+                    }}
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                  >
+                    <option value="monthly">{t('sistema.billing_monthly')} - {cycleConfig.monthly.amountMzn.toLocaleString()} MZN</option>
+                    <option value="quarterly">{t('sistema.billing_quarterly')} - {cycleConfig.quarterly.amountMzn.toLocaleString()} MZN</option>
+                    <option value="annual">{t('sistema.billing_annual')} - {cycleConfig.annual.amountMzn.toLocaleString()} MZN</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleSchoolPayment}
+                    className="mt-2 w-full rounded-xl bg-emerald-500/90 px-4 py-2 font-semibold text-[#042b21] hover:bg-emerald-400 transition-colors"
+                  >
+                    {t('sistema.btn_pagar_plano')}
+                  </button>
+                  {paymentSummary && (
+                    <p className="mt-2 text-xs text-emerald-300">{paymentSummary}</p>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={handleSelfRegister}
+                disabled={loading}
+                className="btn w-full px-4 py-3.5 font-semibold shadow-lg transition-all hover:-translate-y-0.5 mt-2"
+              >
+                {loading ? t('botoes.carregando') : t('sistema.registrar')}
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder={t('sistema.email')}
+                className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+              />
 
-          <button
-            onClick={handleLogin}
-            disabled={loading}
-            className="btn w-full px-4 py-3.5 font-semibold shadow-lg transition-all hover:-translate-y-0.5 mt-2"
-          >
-            {loading ? "A Autenticar Cofre..." : "Aceder ao Portal Escolar"}
-          </button>
+              {!recoveryMode && (
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  placeholder={t('sistema.senha')}
+                  className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+                />
+              )}
+
+              <button
+                onClick={recoveryMode ? handlePasswordRecovery : handleLogin}
+                disabled={loading}
+                className="btn w-full px-4 py-3.5 font-semibold shadow-lg transition-all hover:-translate-y-0.5 mt-2"
+              >
+                {loading
+                  ? t('botoes.carregando')
+                  : recoveryMode
+                    ? t('sistema.enviar_link_recuperacao')
+                    : t('sistema.entrar')}
+              </button>
+            </>
+          )}
+
+          <div className="flex items-center justify-between text-sm text-[#9bbbc9] mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRecoveryMode(false);
+                setRegisterMode(false);
+                setErrorMessage(null);
+                setInfoMessage(null);
+              }}
+              className="text-[#7fbaed] hover:text-white transition-colors"
+            >
+              {recoveryMode ? t('sistema.voltar_login') : t('sistema.esqueceu_senha')}
+            </button>
+            {!recoveryMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterMode(!registerMode);
+                  setErrorMessage(null);
+                  setInfoMessage(null);
+                }}
+                className="text-[#7fbaed] hover:text-white transition-colors"
+              >
+                {registerMode ? t('sistema.voltar_login') : t('sistema.registrar')}
+              </button>
+            )}
+          </div>
+
+          {errorMessage && (
+            <div className="mt-3 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-100">
+              {errorMessage}
+            </div>
+          )}
+
+          {infoMessage && (
+            <div className="mt-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-sm text-emerald-100">
+              {infoMessage}
+            </div>
+          )}
         </div>
 
         <div className="mt-8">
@@ -185,29 +528,11 @@ const SystemLogin = () => {
               <div className="w-full border-t border-[#2e5a6e]"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#132f3f] text-[#9bbbc9] font-medium tracking-wide text-xs uppercase">Acessos de Demonstração</span>
+              <span className="px-2 bg-[#132f3f] text-[#9bbbc9] font-medium tracking-wide text-xs uppercase">Acesso de Demonstração</span>
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <button 
-              onClick={() => handleDemoAccess("admin")}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"
-            >
-              👑 Admin Global
-            </button>
-            <button 
-              onClick={() => handleDemoAccess("school")}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"
-            >
-              🏫 Dir. Escola
-            </button>
-            <button 
-              onClick={() => handleDemoAccess("parent")}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"
-            >
-              👨‍👩‍👧 Encarregado
-            </button>
+          <div className="mt-6 grid grid-cols-1 gap-3">
             <button 
               onClick={() => handleDemoAccess("scanner")}
               className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"

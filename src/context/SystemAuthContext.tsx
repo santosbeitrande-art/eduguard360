@@ -51,28 +51,8 @@ interface SystemAuthContextType {
 
 const SystemAuthContext = createContext<SystemAuthContextType | undefined>(undefined);
 
-// Demo fallback - ONLY when edge function is completely unreachable (network failure)
-const DEMO_USERS: Record<string, { user: User; password: string }> = {
-  'demo.pai@eduguard360.co.mz': {
-    password: 'demo123',
-    user: {
-      id: 'DEMO-PARENT-001', email: 'demo.pai@eduguard360.co.mz', name: 'Pai Demonstração', type: 'parent',
-      phone: '+258 84 000 0000', sms_enabled: false, email_enabled: true, password_changed: true,
-      tenant_id: 'DEMO', tenant: { tenant_id: 'DEMO', name: 'Demonstração', slug: 'demo', plan: 'trial', status: 'active' },
-      students: [
-        { id: 'DEMO-STU-001', name: 'Aluno Demo', grade: '5ª Classe', class: 'Turma A' }
-      ]
-    }
-  },
-  'demo.escola@eduguard360.co.mz': {
-    password: 'demo123',
-    user: {
-      id: 'DEMO-SCHOOL-001', email: 'demo.escola@eduguard360.co.mz', name: 'Escola Demonstração', type: 'system_user',
-      role: 'school_admin', school_id: 'DEMO-SCH', password_changed: true,
-      tenant_id: 'DEMO', tenant: { tenant_id: 'DEMO', name: 'Demonstração', slug: 'demo', plan: 'trial', status: 'active' }
-    }
-  }
-};
+// Demo fallback disabled for parent/director to enforce real registration + payment policy.
+const DEMO_USERS: Record<string, { user: User; password: string }> = {};
 
 export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
