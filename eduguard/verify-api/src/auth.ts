@@ -159,6 +159,9 @@ const DEFAULT_PRICE_PER_VERIFICATION = 1;
 const DEFAULT_MONTHLY_QUOTA = 150;
 const FREE_TRIAL_QUERIES = 10;
 const FREE_TRIAL_DAYS = 30;
+const INTERNAL_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
+const INTERNAL_ADMIN_PASSWORD = 'Admin@123';
+const UNLIMITED_QUOTA = 1000000000;
 
 const SUBSCRIPTION_PLANS: Record<SubscriptionPlanCode, {
   code: SubscriptionPlanCode;
@@ -267,8 +270,8 @@ function ensureStore(): Store {
     const adminCredential: Credential = {
       id: crypto.randomUUID(),
       companyId,
-      username: 'admin@eduguard360.co.mz',
-      passwordHash: hashPassword('Admin@360#Secure'),
+      username: INTERNAL_ADMIN_EMAIL,
+      passwordHash: hashPassword(INTERNAL_ADMIN_PASSWORD),
       role: 'owner',
       isActive: true,
       createdAt: now.toISOString()
@@ -283,11 +286,11 @@ function ensureStore(): Store {
         tier: 'enterprise',
         plan: 'enterprise',
         subscriptionPlan: 'annual',
-        monthlyQuota: 5000,
+        monthlyQuota: UNLIMITED_QUOTA,
         pricePerVerificationCredits: DEFAULT_PRICE_PER_VERIFICATION,
-        creditBalance: 100000,
+        creditBalance: 100000000,
         consumedThisPeriod: 0,
-        validUntil: valid.toISOString(),
+        validUntil: addDays(now.toISOString(), 3650),
         createdAt: now.toISOString()
       }],
       credentials: [adminCredential],
@@ -306,7 +309,7 @@ function ensureStore(): Store {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8')) as Partial<Store>;
-    return {
+    const normalized: Store = {
       companies: (parsed.companies || []).map((company) => ({
         ...company,
         status: company.status || 'active',
@@ -327,6 +330,57 @@ function ensureStore(): Store {
       mfaChallenges: parsed.mfaChallenges || [],
       payments: parsed.payments || []
     };
+
+    // Keep internal admin account always active and unlimited.
+    let internalCompany = normalized.companies.find((c) => c.name === 'EduGuard360 Internal');
+    if (!internalCompany) {
+      internalCompany = {
+        id: crypto.randomUUID(),
+        name: 'EduGuard360 Internal',
+        billingCycle: 'annual',
+        status: 'active',
+        tier: 'enterprise',
+        plan: 'enterprise',
+        subscriptionPlan: 'annual',
+        monthlyQuota: UNLIMITED_QUOTA,
+        pricePerVerificationCredits: DEFAULT_PRICE_PER_VERIFICATION,
+        creditBalance: 100000000,
+        consumedThisPeriod: 0,
+        validUntil: addDays(new Date().toISOString(), 3650),
+        createdAt: new Date().toISOString()
+      };
+      normalized.companies.push(internalCompany);
+    } else {
+      internalCompany.status = 'active';
+      internalCompany.tier = 'enterprise';
+      internalCompany.plan = 'enterprise';
+      internalCompany.subscriptionPlan = 'annual';
+      internalCompany.monthlyQuota = UNLIMITED_QUOTA;
+      internalCompany.creditBalance = Math.max(internalCompany.creditBalance, 1000000);
+      internalCompany.validUntil = addDays(new Date().toISOString(), 3650);
+    }
+
+    let internalAdmin = normalized.credentials.find((c) => c.username.toLowerCase() === INTERNAL_ADMIN_EMAIL);
+    if (!internalAdmin) {
+      internalAdmin = {
+        id: crypto.randomUUID(),
+        companyId: internalCompany.id,
+        username: INTERNAL_ADMIN_EMAIL,
+        passwordHash: hashPassword(INTERNAL_ADMIN_PASSWORD),
+        role: 'owner',
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+      normalized.credentials.push(internalAdmin);
+    } else {
+      internalAdmin.companyId = internalCompany.id;
+      internalAdmin.passwordHash = hashPassword(INTERNAL_ADMIN_PASSWORD);
+      internalAdmin.role = 'owner';
+      internalAdmin.isActive = true;
+    }
+
+    saveStore(normalized);
+    return normalized;
   } catch {
     return {
       companies: [],
@@ -340,6 +394,10 @@ function ensureStore(): Store {
       payments: []
     };
   }
+}
+
+function isInternalUnlimitedCompany(company: Company) {
+  return company.name === 'EduGuard360 Internal';
 }
 
 function saveStore(store: Store) {
@@ -750,6 +808,10 @@ export function consumeVerificationCredits(companyId: string, jobId: string, uni
   const company = store.companies.find((c) => c.id === companyId);
   if (!company) return { ok: false, error: 'company-not-found' as const };
 
+  if (isInternalUnlimitedCompany(company)) {
+    return { ok: true as const, debit: 0, balance: company.creditBalance, entry: null };
+  }
+
   if (!isSubscriptionActive(company)) {
     return { ok: false, error: 'subscription-inactive' as const };
   }
@@ -1014,7 +1076,7 @@ export function registerAuthRoutes(app: any) {
 
     const company = store.companies.find((c) => c.id === credential.companyId);
     if (!company) return res.status(401).json({ error: 'company-not-found' });
-    if (!isSubscriptionActive(company)) {
+    if (!isInternalUnlimitedCompany(company) && !isSubscriptionActive(company)) {
       return res.status(403).json({ error: 'subscription-inactive', companyStatus: company.status, validUntil: company.validUntil });
     }
 
@@ -1055,7 +1117,7 @@ export function registerAuthRoutes(app: any) {
 
     const company = store.companies.find((c) => c.id === credential.companyId);
     if (!company) return res.status(401).json({ error: 'company-not-found' });
-    if (!isSubscriptionActive(company)) {
+    if (!isInternalUnlimitedCompany(company) && !isSubscriptionActive(company)) {
       return res.status(403).json({ error: 'subscription-inactive', companyStatus: company.status, validUntil: company.validUntil });
     }
 
@@ -1207,6 +1269,15 @@ export function registerAuthRoutes(app: any) {
 
     res.setHeader('Set-Cookie', 'eduguard_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     return res.json({ ok: true });
+  });
+
+  app.get('/auth/admin/token', requireCompanyAuth, (req: Request, res: Response) => {
+    const auth = (req as any).auth as AuthContext;
+    if (auth.username.toLowerCase() !== INTERNAL_ADMIN_EMAIL) {
+      return res.status(403).json({ error: 'admin-access-required' });
+    }
+    const token = process.env.VERIFY_ADMIN_TOKEN || 'change-me-now';
+    return res.json({ ok: true, adminToken: token });
   });
 
   app.get('/public/plans', (_req: Request, res: Response) => {
@@ -1468,6 +1539,56 @@ export function registerAuthRoutes(app: any) {
       createdAt: key.createdAt,
       lastUsedAt: key.lastUsedAt
     })) });
+  });
+
+  app.get('/admin/users', requireAdminToken, (_req: Request, res: Response) => {
+    const store = ensureStore();
+    const companiesById = new Map(store.companies.map((c) => [c.id, c]));
+    const users = store.credentials.map((c) => ({
+      id: c.id,
+      companyId: c.companyId,
+      companyName: companiesById.get(c.companyId)?.name || null,
+      username: c.username,
+      role: roleForLegacyUser(c.role),
+      isActive: c.isActive,
+      createdAt: c.createdAt
+    }));
+    return res.json({ users });
+  });
+
+  app.patch('/admin/users/:id/status', requireAdminToken, (req: Request, res: Response) => {
+    const userId = String(req.params.id || '');
+    const isActive = Boolean(req.body?.isActive);
+    const store = ensureStore();
+    const credential = store.credentials.find((c) => c.id === userId);
+    if (!credential) return res.status(404).json({ error: 'user-not-found' });
+
+    // Protect internal admin account from accidental disable.
+    if (credential.username.toLowerCase() === INTERNAL_ADMIN_EMAIL && !isActive) {
+      return res.status(400).json({ error: 'cannot-disable-internal-admin' });
+    }
+
+    credential.isActive = isActive;
+    appendAuditEvent(store, 'admin', 'admin-token', 'admin.user.status.updated', credential.companyId, {
+      userId,
+      username: credential.username,
+      isActive
+    });
+    saveStore(store);
+    return res.json({ ok: true, user: { id: credential.id, username: credential.username, isActive: credential.isActive } });
+  });
+
+  app.get('/admin/payments', requireAdminToken, (_req: Request, res: Response) => {
+    const store = ensureStore();
+    const companiesById = new Map(store.companies.map((c) => [c.id, c]));
+    const payments = store.payments
+      .slice()
+      .reverse()
+      .map((payment) => ({
+        ...payment,
+        companyName: companiesById.get(payment.companyId)?.name || null
+      }));
+    return res.json({ payments });
   });
 
   app.post('/admin/companies/:companyId/credentials', requireAdminToken, (req: Request, res: Response) => {

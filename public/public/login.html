@@ -146,10 +146,17 @@
     </main>
 
     <script>
-      const API_BASE = window.EDUGUARD_VERIFY_API_BASE || "https://api.eduguard360.co.mz";
+      const API_CANDIDATES = [
+        window.EDUGUARD_VERIFY_API_BASE || "",
+        localStorage.getItem("eduguard_verify_api_base") || "",
+        window.location.origin,
+        "https://api.eduguard360.co.mz"
+      ].filter(Boolean);
+      let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
       const LANG_KEY = "eduguard_verify_lang";
+      const ADMIN_TOKEN_KEY = "eduguard_verify_admin_token";
 
       const msg = document.getElementById("msg");
       const plansEl = document.getElementById("plans");
@@ -226,6 +233,20 @@
         });
       }
 
+      async function resolveApiBase() {
+        for (const candidate of API_CANDIDATES) {
+          try {
+            const res = await fetch(`${candidate}/health`, { method: "GET" });
+            if (res.ok) {
+              API_BASE = candidate;
+              localStorage.setItem("eduguard_verify_api_base", API_BASE);
+              return true;
+            }
+          } catch {}
+        }
+        return false;
+      }
+
       function applyLanguage() {
         const dict = copy[lang] || copy.pt;
         Object.keys(dict).forEach((id) => {
@@ -256,7 +277,9 @@
             </div>
           `).join("");
         } catch {
-          plansEl.textContent = lang === "pt" ? "Nao foi possivel carregar planos." : "Unable to load plans.";
+          plansEl.textContent = lang === "pt"
+            ? "Nao foi possivel carregar planos. Verifique ligacao com API de verificacao."
+            : "Unable to load plans. Check connectivity with verification API.";
         }
       }
 
@@ -340,6 +363,14 @@
           const data = await res.json();
 
           if (!res.ok) {
+            if (data?.error === "email-already-registered") {
+              setMessage(lang === "pt"
+                ? "Este email ja existe. Entre no painel com as mesmas credenciais."
+                : "This email is already registered. Sign in with existing credentials.");
+              document.getElementById("loginEmail").value = payload.email;
+              document.getElementById("loginPassword").focus();
+              return;
+            }
             setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (data.error || "unknown"));
             return;
           }
@@ -353,6 +384,42 @@
           setMessage(lang === "pt" ? "Erro de ligacao no cadastro." : "Connection error during signup.");
         }
       });
+
+      async function getAdminTokenForInternalAdmin() {
+        const loginEmail = String(document.getElementById("loginEmail").value || "").trim().toLowerCase();
+        if (loginEmail !== "admin@eduguard360.co.mz") return;
+        try {
+          const res = await api("/auth/admin/token", { method: "GET" });
+          const data = await res.json();
+          if (res.ok && data?.adminToken) {
+            localStorage.setItem(ADMIN_TOKEN_KEY, data.adminToken);
+            await loadAdminOverview();
+          }
+        } catch {}
+      }
+
+      async function loadAdminOverview() {
+        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+        if (!adminToken) return;
+
+        try {
+          const [usersRes, paymentsRes] = await Promise.all([
+            fetch(`${API_BASE}/admin/users`, { headers: { "x-admin-token": adminToken } }),
+            fetch(`${API_BASE}/admin/payments`, { headers: { "x-admin-token": adminToken } })
+          ]);
+
+          const usersData = await usersRes.json();
+          const paymentsData = await paymentsRes.json();
+
+          const usersCount = Array.isArray(usersData.users) ? usersData.users.length : 0;
+          const paymentsCount = Array.isArray(paymentsData.payments) ? paymentsData.payments.length : 0;
+          setMessage((lang === "pt"
+            ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
+            : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
+        } catch {
+          setMessage(lang === "pt" ? "Admin ligado, mas nao foi possivel carregar painel." : "Admin authenticated, but panel loading failed.");
+        }
+      }
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (!getToken()) {
@@ -404,9 +471,22 @@
         loadSubscriptionStatus();
       });
 
-      applyLanguage();
-      loadPlans();
-      loadSubscriptionStatus();
+      (async () => {
+        applyLanguage();
+        const ok = await resolveApiBase();
+        if (!ok) {
+          setMessage(lang === "pt"
+            ? "API nao encontrada. Configure a API em api.eduguard360.co.mz ou no mesmo dominio."
+            : "API not found. Configure the API at api.eduguard360.co.mz or same-origin.");
+          return;
+        }
+        await loadPlans();
+        await loadSubscriptionStatus();
+      })();
+
+      document.getElementById("loginForm").addEventListener("submit", async () => {
+        setTimeout(() => { getAdminTokenForInternalAdmin(); }, 300);
+      });
     </script>
   </body>
 </html>
