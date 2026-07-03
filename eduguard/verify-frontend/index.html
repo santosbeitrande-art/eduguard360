@@ -90,7 +90,7 @@
       <section class="panel">
         <form id="uploadForm">
           <label for="file" id="lblFile">Selecionar ficheiro</label>
-          <input type="file" id="file" name="file" />
+          <input type="file" id="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx" />
           <button class="btn" type="submit" id="btnVerify" style="margin-top:10px;">Verificar documento</button>
         </form>
         <div id="result" class="status" style="margin-top:10px;">Pronto para consulta.</div>
@@ -118,7 +118,13 @@
     </main>
 
     <script>
-      const API_BASE = window.EDUGUARD_VERIFY_API_BASE || "https://api.eduguard360.co.mz";
+      const API_CANDIDATES = [
+        window.EDUGUARD_VERIFY_API_BASE || "",
+        localStorage.getItem("eduguard_verify_api_base") || "",
+        "https://api.eduguard360.co.mz",
+        window.location.origin
+      ].filter(Boolean);
+      let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
       const LANG_KEY = "eduguard_verify_lang";
@@ -157,11 +163,60 @@
         return localStorage.getItem(TOKEN_KEY) || "";
       }
 
+      async function safeJson(response) {
+        try {
+          return await response.json();
+        } catch {
+          return null;
+        }
+      }
+
+      function isLikelyHtmlResponse(response) {
+        const contentType = String(response?.headers?.get("content-type") || "").toLowerCase();
+        return contentType.includes("text/html");
+      }
+
+      async function resolveApiBase() {
+        for (const candidate of API_CANDIDATES) {
+          try {
+            const res = await fetch(`${candidate}/health`, { method: "GET" });
+            const data = await safeJson(res);
+            if (res.ok && data?.ok === true && String(data?.service || "").includes("verify-api")) {
+              API_BASE = candidate;
+              localStorage.setItem("eduguard_verify_api_base", API_BASE);
+              return true;
+            }
+          } catch {}
+        }
+        return false;
+      }
+
       async function api(path, options = {}) {
         const token = getToken();
         const headers = Object.assign({}, options.headers || {});
         if (token) headers.Authorization = `Bearer ${token}`;
-        return fetch(`${API_BASE}${path}`, { ...options, headers });
+
+        const candidates = [API_BASE, ...API_CANDIDATES.filter((candidate) => candidate !== API_BASE)];
+        let lastError = null;
+
+        for (const candidate of candidates) {
+          try {
+            const response = await fetch(`${candidate}${path}`, { ...options, headers });
+
+            if (isLikelyHtmlResponse(response) && response.status < 500) {
+              continue;
+            }
+
+            API_BASE = candidate;
+            localStorage.setItem("eduguard_verify_api_base", API_BASE);
+            return response;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (lastError) throw lastError;
+        throw new Error("api-unreachable");
       }
 
       function setResult(text) {
@@ -214,7 +269,7 @@
       async function loadSubscriptionStatus() {
         try {
           const res = await api("/company/subscription/status");
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) {
             quotaEl.textContent = lang === "pt" ? "Sessao invalida. Entre novamente." : "Invalid session. Please sign in again.";
             return false;
@@ -238,7 +293,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refreshToken: refresh })
           });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) return false;
           localStorage.setItem(TOKEN_KEY, data.accessToken || "");
           if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
@@ -269,7 +324,7 @@
 
         try {
           const res = await api("/upload", { method: "POST", body: fd });
-          const data = await res.json();
+          const data = await safeJson(res);
 
           if (!res.ok) {
             if (data?.error === "verification-limit-reached" || data?.error === "subscription-inactive") {
@@ -302,9 +357,9 @@
               currency: "USD"
             })
           });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) {
-            setResult((lang === "pt" ? "Falha no pagamento: " : "Payment failed: ") + (data.error || "unknown"));
+            setResult((lang === "pt" ? "Falha no pagamento: " : "Payment failed: ") + (data?.error || "unknown"));
             return;
           }
 
@@ -338,6 +393,13 @@
 
       (async () => {
         applyLanguage();
+        const apiOk = await resolveApiBase();
+        if (!apiOk) {
+          quotaEl.textContent = lang === "pt"
+            ? "API de verificacao indisponivel. Tente novamente em instantes."
+            : "Verification API unavailable. Please retry in a moment.";
+          return;
+        }
         const ok = await ensureSession();
         if (!ok) return;
         await loadSubscriptionStatus();

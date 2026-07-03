@@ -288,22 +288,57 @@
         if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
       }
 
+      async function safeJson(response) {
+        try {
+          return await response.json();
+        } catch {
+          return null;
+        }
+      }
+
+      function isLikelyHtmlResponse(response) {
+        const contentType = String(response?.headers?.get("content-type") || "").toLowerCase();
+        return contentType.includes("text/html");
+      }
+
       async function api(path, options = {}) {
         const headers = Object.assign({}, options.headers || {});
         const token = getToken();
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        return fetch(`${API_BASE}${path}`, {
-          ...options,
-          headers
-        });
+        const candidates = [API_BASE, ...API_CANDIDATES.filter((candidate) => candidate !== API_BASE)];
+        let lastError = null;
+
+        for (const candidate of candidates) {
+          try {
+            const response = await fetch(`${candidate}${path}`, {
+              ...options,
+              headers
+            });
+
+            // On Vercel rewrites, wrong hosts can return HTML 200 instead of JSON API responses.
+            if (isLikelyHtmlResponse(response) && response.status < 500) {
+              continue;
+            }
+
+            API_BASE = candidate;
+            localStorage.setItem("eduguard_verify_api_base", API_BASE);
+            return response;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (lastError) throw lastError;
+        throw new Error("api-unreachable");
       }
 
       async function resolveApiBase() {
         for (const candidate of API_CANDIDATES) {
           try {
             const res = await fetch(`${candidate}/health`, { method: "GET" });
-            if (res.ok) {
+            const data = await safeJson(res);
+            if (res.ok && data?.ok === true && String(data?.service || "").includes("verify-api")) {
               API_BASE = candidate;
               localStorage.setItem("eduguard_verify_api_base", API_BASE);
               return true;
@@ -332,7 +367,8 @@
       async function loadPlans() {
         try {
           const res = await api("/public/plans");
-          const data = await res.json();
+          const data = await safeJson(res);
+          if (!res.ok || !data) throw new Error("plans-unavailable");
           const plans = data.plans || [];
           plansEl.innerHTML = plans.map((plan) => `
             <div class="plan">
@@ -358,7 +394,7 @@
 
         try {
           const res = await api("/company/subscription/status");
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) {
             accountStatus.textContent = lang === "pt" ? "Sessao expirada. Entre novamente." : "Session expired. Please sign in again.";
             return;
@@ -383,9 +419,9 @@
             },
             body: JSON.stringify({ isActive })
           });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) {
-            setMessage((lang === "pt" ? "Falha ao atualizar estado: " : "Status update failed: ") + (data.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha ao atualizar estado: " : "Status update failed: ") + (data?.error || "unknown"));
             return;
           }
           await loadAdminOverview();
@@ -409,10 +445,10 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          const data = await res.json();
+          const data = await safeJson(res);
 
           if (!res.ok) {
-            setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + (data.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + (data?.error || "unknown"));
             return;
           }
 
@@ -451,7 +487,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          const data = await res.json();
+          const data = await safeJson(res);
 
           if (!res.ok) {
             if (data?.error === "email-already-registered") {
@@ -462,7 +498,7 @@
               document.getElementById("loginPassword").focus();
               return;
             }
-            setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (data.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (data?.error || "unknown"));
             return;
           }
 
@@ -481,7 +517,7 @@
         if (loginEmail !== "admin@eduguard360.co.mz") return;
         try {
           const res = await api("/auth/admin/token", { method: "GET" });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (res.ok && data?.adminToken) {
             localStorage.setItem(ADMIN_TOKEN_KEY, data.adminToken);
             adminPanel.classList.remove("hidden");
@@ -500,8 +536,8 @@
             fetch(`${API_BASE}/admin/payments`, { headers: { "x-admin-token": adminToken } })
           ]);
 
-          const usersData = await usersRes.json();
-          const paymentsData = await paymentsRes.json();
+          const usersData = await safeJson(usersRes);
+          const paymentsData = await safeJson(paymentsRes);
 
           if (!usersRes.ok || !paymentsRes.ok) {
             hideAdminPanel();
@@ -570,9 +606,9 @@
               currency: "USD"
             })
           });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (!res.ok) {
-            setMessage((lang === "pt" ? "Falha no checkout: " : "Checkout failed: ") + (data.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha no checkout: " : "Checkout failed: ") + (data?.error || "unknown"));
             return;
           }
 
