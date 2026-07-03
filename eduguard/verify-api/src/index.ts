@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import mammoth from 'mammoth';
 import routes from './routes';
 import { analyzeDocument } from './forensic';
 import { contextualizeText } from './contextual';
@@ -80,6 +81,8 @@ function buildFraudSignals(forensic: any, contextual: any) {
 
 async function extractTextImmediately(filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
+  const textLikeExtensions = new Set(['.txt', '.csv', '.json', '.md']);
+  const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
 
   if (ext === '.pdf') {
     try {
@@ -90,6 +93,27 @@ async function extractTextImmediately(filePath: string) {
     } catch (error) {
       return '';
     }
+  }
+
+  if (textLikeExtensions.has(ext)) {
+    try {
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      return '';
+    }
+  }
+
+  if (ext === '.docx') {
+    try {
+      const output = await mammoth.extractRawText({ path: filePath });
+      return output?.value || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  if (!imageExtensions.has(ext)) {
+    throw new Error('unsupported-file-format');
   }
 
   const workerPath = path.join(__dirname, '..', '..', 'ocr-worker', 'worker.py');
@@ -140,6 +164,22 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
 
   try {
     const text = await extractTextImmediately(req.file.path);
+    if (!text || !String(text).trim()) {
+      refundVerificationCredits(auth.companyId, jobId, 'empty-text-extraction');
+      const failedJob = {
+        ...job,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: 'unsupported-or-empty-document'
+      };
+      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      return res.status(415).json({
+        jobId,
+        status: 'failed',
+        error: 'unsupported-or-empty-document',
+        supportedFormats: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff', 'txt', 'csv', 'json', 'md', 'docx']
+      });
+    }
     const forensic = analyzeDocument(req.file.path, text);
     const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
     const fraudSignals = buildFraudSignals(forensic, contextual);
