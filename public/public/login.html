@@ -208,6 +208,7 @@
       const LOCAL_ACCOUNTS_KEY = "eduguard_verify_local_accounts";
       const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
+      const INTERNAL_ADMIN_PASSWORD = "Admin@123";
 
       const msg = document.getElementById("msg");
       const plansEl = document.getElementById("plans");
@@ -289,6 +290,16 @@
 
       function normalizeEmail(email) {
         return String(email || "").trim().toLowerCase();
+      }
+
+      function describeAuthError(code) {
+        const value = String(code || "").trim().toLowerCase();
+        if (!value || value === "unknown") return lang === "pt" ? "servico indisponivel" : "service unavailable";
+        if (value === "invalid-credentials") return lang === "pt" ? "credenciais invalidas" : "invalid credentials";
+        if (value === "email-already-registered") return lang === "pt" ? "email ja registado" : "email already registered";
+        if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para admin interno" : "email reserved for internal admin";
+        if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligacao com API" : "API unreachable";
+        return value;
       }
 
       function readLocalAccounts() {
@@ -398,6 +409,24 @@
       function tryLocalLogin(emailRaw, passwordRaw) {
         const email = normalizeEmail(emailRaw);
         const password = String(passwordRaw || "");
+
+        if (email === INTERNAL_ADMIN_EMAIL && password === INTERNAL_ADMIN_PASSWORD) {
+          const adminAccount = findLocalAccount(email) || {
+            email,
+            password: INTERNAL_ADMIN_PASSWORD,
+            fullName: "Admin EduGuard",
+            companyName: "EduGuard360",
+            companyWebsite: "https://eduguard360.co.mz",
+            remainingQueries: 999999,
+            validUntil: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date().toISOString(),
+            isInternalAdmin: true
+          };
+          upsertLocalAccount(adminAccount);
+          setLocalSession(email);
+          return { ok: true, mode: "offline-admin" };
+        }
+
         const account = findLocalAccount(email);
         if (!account || account.password !== password) {
           return { ok: false, error: "invalid-credentials" };
@@ -583,7 +612,7 @@
               await loadSubscriptionStatus();
               return;
             }
-            setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + (data?.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
 
@@ -625,9 +654,11 @@
         };
 
         if (normalizeEmail(payload.email) === INTERNAL_ADMIN_EMAIL) {
+          document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
+          document.getElementById("loginPassword").focus();
           setMessage(lang === "pt"
-            ? "Este email e reservado para o admin interno. Use outro email para cadastro."
-            : "This email is reserved for internal admin. Use another email for signup.");
+            ? "Este email e reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e palavra-passe do admin."
+            : "This email is reserved for admin. Use the Sign in panel with admin@eduguard360.co.mz and admin password.");
           return;
         }
 
@@ -668,7 +699,7 @@
               return;
             }
 
-            setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (data?.error || "unknown"));
+            setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
 
@@ -690,7 +721,7 @@
             return;
           }
 
-          setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (local.error || "connection-error"));
+          setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(local.error || "connection-error"));
         }
       });
 
