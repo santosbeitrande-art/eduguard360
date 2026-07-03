@@ -13,6 +13,8 @@ type SchoolSubscription = {
   amountMzn: number;
   paidAt: string;
   validUntil: string;
+  provider?: "mpesa" | "emola";
+  phone?: string;
 };
 
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
@@ -55,8 +57,13 @@ const SystemLogin = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [selectedRole, setSelectedRole] = useState("director");
+  const [accessProfile, setAccessProfile] = useState("director");
   const [selectedSchoolId, setSelectedSchoolId] = useState("");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [paymentProvider, setPaymentProvider] = useState<"mpesa" | "emola">("mpesa");
+  const [paymentPhone, setPaymentPhone] = useState("");
+  const [paymentPin, setPaymentPin] = useState("");
+  const [awaitingPin, setAwaitingPin] = useState(false);
   const [paymentDone, setPaymentDone] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState<string | null>(null);
   const [schools, setSchools] = useState<Array<{ id: string; nome: string }>>([]);
@@ -143,6 +150,20 @@ const SystemLogin = () => {
         return;
       }
 
+      const perfil = String(user.perfil || '').toLowerCase();
+      if (accessProfile === 'director' && perfil !== 'director' && perfil !== 'admin') {
+        setErrorMessage(t('sistema.perfil_nao_autorizado'));
+        return;
+      }
+      if (accessProfile === 'parent' && perfil !== 'pai' && perfil !== 'admin') {
+        setErrorMessage(t('sistema.perfil_nao_autorizado'));
+        return;
+      }
+      if (accessProfile === 'teacher' && perfil !== 'professor' && perfil !== 'teacher' && perfil !== 'admin') {
+        setErrorMessage(t('sistema.perfil_nao_autorizado'));
+        return;
+      }
+
       if (user.perfil === "director") {
         const subscription = getSchoolSubscription(user.escola_id || null);
         if (!isSubscriptionActive(subscription)) {
@@ -159,6 +180,7 @@ const SystemLogin = () => {
       if (user.perfil === "admin") navigate("/admin");
       else if (user.perfil === "director") navigate("/school");
       else if (user.perfil === "pai") navigate("/parent");
+      else if (user.perfil === "professor" || user.perfil === "teacher") navigate("/school");
       else if (user.perfil === "scanner") navigate("/scanner");
       else navigate("/");
     } catch (err) {
@@ -244,7 +266,7 @@ const SystemLogin = () => {
         id: data?.user?.id || `pending-${Date.now()}`,
         nome: normalizedName,
         email: normalizedEmail,
-        perfil: selectedRole === 'parent' ? 'pai' : 'director',
+        perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : 'director',
         escola_id: selectedSchoolId || null,
         is_active: false,
         status: 'pending',
@@ -291,6 +313,25 @@ const SystemLogin = () => {
 
     const selectedSchool = schools.find((school) => school.id === selectedSchoolId);
     const cfg = cycleConfig[billingCycle];
+    const normalizedPhone = paymentPhone.replace(/\s+/g, "").trim();
+
+    if (!normalizedPhone || normalizedPhone.length < 9) {
+      setErrorMessage(t('sistema.pagamento_numero_obrigatorio'));
+      return;
+    }
+
+    if (!awaitingPin) {
+      setAwaitingPin(true);
+      setInfoMessage(`${t('sistema.pedido_pagamento_enviado')} ${normalizedPhone}. ${t('sistema.inserir_pin_confirmar')}`);
+      setErrorMessage(null);
+      return;
+    }
+
+    if (paymentPin.trim().length < 4) {
+      setErrorMessage(t('sistema.pin_invalido'));
+      return;
+    }
+
     const paidAt = new Date();
     const validUntil = new Date(paidAt.getTime() + cfg.days * 24 * 60 * 60 * 1000).toISOString();
 
@@ -301,7 +342,9 @@ const SystemLogin = () => {
       status: "active",
       amountMzn: cfg.amountMzn,
       paidAt: paidAt.toISOString(),
-      validUntil
+      validUntil,
+      provider: paymentProvider,
+      phone: normalizedPhone
     };
 
     const idx = list.findIndex((item) => item.schoolId === selectedSchoolId);
@@ -310,8 +353,10 @@ const SystemLogin = () => {
     writeSchoolSubscriptions(list);
 
     setPaymentDone(true);
+    setAwaitingPin(false);
+    setPaymentPin("");
     setErrorMessage(null);
-    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()}`);
+    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${paymentProvider.toUpperCase()} ${normalizedPhone} | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()} | ${t('sistema.destino_pagamento')} 844365114`);
     setInfoMessage(t('sistema.pagamento_registado'));
   };
 
@@ -353,7 +398,22 @@ const SystemLogin = () => {
         </div>
 
         <h2 className="text-2xl font-bold text-white text-center">EduGuard360</h2>
-        <p className="mt-2 text-sm text-[#9bbbc9] text-center">{t('sistema.title')} · {t('sistema.login')}</p>
+        <div className="mt-2 text-center">
+          <p className="text-sm text-[#9bbbc9]">{t('sistema.title')} · {t('sistema.login')}</p>
+          <div className="mt-2">
+            <label className="sr-only" htmlFor="access-profile">{t('sistema.selecionar_perfil_acesso')}</label>
+            <select
+              id="access-profile"
+              value={accessProfile}
+              onChange={(e) => setAccessProfile(e.target.value)}
+              className="mx-auto max-w-[280px] rounded-xl px-3 py-2 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
+            >
+              <option value="director">{t('sistema.role_director')}</option>
+              <option value="parent">{t('sistema.role_parent')}</option>
+              <option value="teacher">{t('sistema.role_teacher')}</option>
+            </select>
+          </div>
+        </div>
 
         <div className="mt-8 space-y-4">
           {registerMode ? (
@@ -395,6 +455,7 @@ const SystemLogin = () => {
               >
                 <option value="director">{t('sistema.role_director')}</option>
                 <option value="parent">{t('sistema.role_parent')}</option>
+                <option value="teacher">{t('sistema.role_teacher')}</option>
               </select>
               <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>
               <select
@@ -415,6 +476,19 @@ const SystemLogin = () => {
                   <p className="font-semibold mb-2">{t('sistema.pagamento_escola_titulo')}</p>
                   <p className="text-xs text-[#9bbbc9] mb-2">{t('sistema.pagamento_escola_plans')}</p>
                   <select
+                    value={paymentProvider}
+                    onChange={(e) => {
+                      setPaymentProvider(e.target.value as "mpesa" | "emola");
+                      setPaymentDone(false);
+                      setAwaitingPin(false);
+                      setPaymentPin("");
+                    }}
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                  >
+                    <option value="mpesa">M-Pesa</option>
+                    <option value="emola">eMola</option>
+                  </select>
+                  <select
                     value={billingCycle}
                     onChange={(e) => {
                       setBillingCycle(e.target.value as BillingCycle);
@@ -427,12 +501,31 @@ const SystemLogin = () => {
                     <option value="quarterly">{t('sistema.billing_quarterly')} - {cycleConfig.quarterly.amountMzn.toLocaleString()} MZN</option>
                     <option value="annual">{t('sistema.billing_annual')} - {cycleConfig.annual.amountMzn.toLocaleString()} MZN</option>
                   </select>
+                  <input
+                    value={paymentPhone}
+                    onChange={(e) => {
+                      setPaymentPhone(e.target.value);
+                      setPaymentDone(false);
+                    }}
+                    type="tel"
+                    placeholder={t('sistema.telefone_pagamento')}
+                    className="mt-2 w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
+                  />
+                  {awaitingPin && (
+                    <input
+                      value={paymentPin}
+                      onChange={(e) => setPaymentPin(e.target.value)}
+                      type="password"
+                      placeholder={t('sistema.pin_pagamento')}
+                      className="mt-2 w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={handleSchoolPayment}
                     className="mt-2 w-full rounded-xl bg-emerald-500/90 px-4 py-2 font-semibold text-[#042b21] hover:bg-emerald-400 transition-colors"
                   >
-                    {t('sistema.btn_pagar_plano')}
+                    {awaitingPin ? t('sistema.confirmar_com_pin') : t('sistema.btn_pagar_plano')}
                   </button>
                   {paymentSummary && (
                     <p className="mt-2 text-xs text-emerald-300">{paymentSummary}</p>
@@ -490,7 +583,7 @@ const SystemLogin = () => {
                 setErrorMessage(null);
                 setInfoMessage(null);
               }}
-              className="text-[#7fbaed] hover:text-white transition-colors"
+              className="rounded-lg bg-[#1ac77c]/90 px-3 py-1 font-semibold text-[#032b1c] hover:bg-[#34d18d] transition-colors"
             >
               {recoveryMode ? t('sistema.voltar_login') : t('sistema.esqueceu_senha')}
             </button>
@@ -502,7 +595,7 @@ const SystemLogin = () => {
                   setErrorMessage(null);
                   setInfoMessage(null);
                 }}
-                className="text-[#7fbaed] hover:text-white transition-colors"
+                className="rounded-lg bg-[#1ac77c]/90 px-3 py-1 font-semibold text-[#032b1c] hover:bg-[#34d18d] transition-colors"
               >
                 {registerMode ? t('sistema.voltar_login') : t('sistema.registrar')}
               </button>

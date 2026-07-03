@@ -58,6 +58,13 @@
       .plan { border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px; background: rgba(0,0,0,.15); }
       .muted { color: #b9d0e7; font-size: .92rem; }
       .hidden { display: none; }
+      .pay-box {
+        margin-top: 8px;
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 10px;
+        padding: 10px;
+        background: rgba(0,0,0,.15);
+      }
       .table-wrap { overflow: auto; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; margin-top: 8px; }
       table { width: 100%; border-collapse: collapse; min-width: 680px; }
       th, td { border-bottom: 1px solid rgba(255,255,255,.12); padding: 8px; text-align: left; font-size: .92rem; }
@@ -138,11 +145,17 @@
             <option value="annual">Annual</option>
           </select>
           <select id="providerSelect">
-            <option value="mock">Mock</option>
-            <option value="stripe">Stripe</option>
-            <option value="flutterwave">Flutterwave</option>
             <option value="mpesa">M-Pesa</option>
+            <option value="emola">eMola</option>
+            <option value="flutterwave">Flutterwave</option>
+            <option value="stripe">Stripe</option>
+            <option value="mock">Mock</option>
           </select>
+        </div>
+        <div id="mobilePayBox" class="pay-box hidden">
+          <div class="muted" id="mobilePayHint">Pagamento móvel para 844365114. Introduza o número e confirme com PIN.</div>
+          <input id="mobilePayPhone" type="tel" placeholder="84xxxxxxx" style="margin-top:8px;" />
+          <input id="mobilePayPin" class="hidden" type="password" placeholder="PIN" style="margin-top:8px;" />
         </div>
         <div class="actions">
           <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscricao</button>
@@ -218,9 +231,14 @@
       const adminPanel = document.getElementById("adminPanel");
       const usersBody = document.getElementById("usersBody");
       const paymentsBody = document.getElementById("paymentsBody");
+      const mobilePayBox = document.getElementById("mobilePayBox");
+      const mobilePayPhone = document.getElementById("mobilePayPhone");
+      const mobilePayPin = document.getElementById("mobilePayPin");
+      const MOBILE_DESTINATION = "844365114";
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
+      let awaitingMobilePin = false;
 
       const copy = {
         pt: {
@@ -230,6 +248,7 @@
           signupTitle: "Cadastrar nova conta",
           plansTitle: "Planos e pagamento",
           plansHint: "Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.",
+          mobilePayHint: "Pagamento móvel para 844365114. Introduza o número e confirme com PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblSignupName: "Nome completo",
@@ -254,6 +273,7 @@
           signupTitle: "Create account",
           plansTitle: "Plans and payment",
           plansHint: "After the 10 free checks are used, select a paid plan to renew access.",
+          mobilePayHint: "Mobile payment to 844365114. Enter your phone and confirm with PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblSignupName: "Full name",
@@ -514,6 +534,19 @@
         document.getElementById("langPt").classList.toggle("active", lang === "pt");
         document.getElementById("langEn").classList.toggle("active", lang === "en");
         localStorage.setItem(LANG_KEY, lang);
+        const mobileHint = document.getElementById("mobilePayHint");
+        if (mobileHint) mobileHint.textContent = dict.mobilePayHint;
+      }
+
+      function updateMobilePayVisibility() {
+        const provider = providerSelect.value;
+        const isMobile = provider === "mpesa" || provider === "emola";
+        mobilePayBox.classList.toggle("hidden", !isMobile);
+        if (!isMobile) {
+          awaitingMobilePin = false;
+          mobilePayPin.classList.add("hidden");
+          mobilePayPin.value = "";
+        }
       }
 
       async function loadPlans() {
@@ -814,6 +847,26 @@
           return;
         }
 
+        const selectedProvider = providerSelect.value;
+        const isMobileProvider = selectedProvider === "mpesa" || selectedProvider === "emola";
+        if (isMobileProvider) {
+          const phone = String(mobilePayPhone.value || "").replace(/\s+/g, "").trim();
+          if (!phone || phone.length < 9) {
+            setMessage(lang === "pt" ? "Informe numero de telefone valido para pagamento movel." : "Enter a valid phone number for mobile payment.");
+            return;
+          }
+          if (!awaitingMobilePin) {
+            awaitingMobilePin = true;
+            mobilePayPin.classList.remove("hidden");
+            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza PIN para confirmar cobranca para " : ". Enter PIN to confirm charge to ") + MOBILE_DESTINATION + ".");
+            return;
+          }
+          if (String(mobilePayPin.value || "").trim().length < 4) {
+            setMessage(lang === "pt" ? "PIN invalido." : "Invalid PIN.");
+            return;
+          }
+        }
+
         setMessage(lang === "pt" ? "A iniciar pagamento..." : "Starting checkout...");
         try {
           const res = await api("/company/subscription/checkout", {
@@ -821,7 +874,9 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               selectedPlan: planSelect.value,
-              provider: providerSelect.value,
+              provider: selectedProvider,
+              phone: mobilePayPhone.value,
+              destinationPhone: MOBILE_DESTINATION,
               currency: "USD"
             })
           });
@@ -838,11 +893,16 @@
           }
 
           setMessage(lang === "pt" ? "Subscricao renovada com sucesso." : "Subscription renewed successfully.");
+          awaitingMobilePin = false;
+          mobilePayPin.classList.add("hidden");
+          mobilePayPin.value = "";
           await loadSubscriptionStatus();
         } catch {
           setMessage(lang === "pt" ? "Erro de ligacao no checkout." : "Checkout connection error.");
         }
       });
+
+      providerSelect.addEventListener("change", updateMobilePayVisibility);
 
       document.getElementById("langPt").addEventListener("click", () => {
         lang = "pt";
@@ -876,6 +936,7 @@
         await loadPlans();
         await loadSubscriptionStatus();
         await loadAdminOverview();
+        updateMobilePayVisibility();
       })();
     </script>
   </body>
