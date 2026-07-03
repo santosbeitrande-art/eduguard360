@@ -205,6 +205,9 @@
       const REFRESH_KEY = "eduguard_verify_refresh_token";
       const LANG_KEY = "eduguard_verify_lang";
       const ADMIN_TOKEN_KEY = "eduguard_verify_admin_token";
+      const LOCAL_ACCOUNTS_KEY = "eduguard_verify_local_accounts";
+      const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
+      const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
 
       const msg = document.getElementById("msg");
       const plansEl = document.getElementById("plans");
@@ -216,6 +219,7 @@
       const paymentsBody = document.getElementById("paymentsBody");
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
+      let offlineMode = false;
 
       const copy = {
         pt: {
@@ -281,6 +285,125 @@
 
       function getToken() {
         return localStorage.getItem(TOKEN_KEY) || "";
+      }
+
+      function normalizeEmail(email) {
+        return String(email || "").trim().toLowerCase();
+      }
+
+      function readLocalAccounts() {
+        try {
+          const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function writeLocalAccounts(accounts) {
+        localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts));
+      }
+
+      function getLocalSession() {
+        try {
+          const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function setLocalSession(email) {
+        const payload = {
+          email: normalizeEmail(email),
+          mode: "offline",
+          signedAt: new Date().toISOString()
+        };
+        localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(payload));
+      }
+
+      function clearLocalSession() {
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+      }
+
+      function findLocalAccount(email) {
+        const target = normalizeEmail(email);
+        return readLocalAccounts().find((account) => normalizeEmail(account.email) === target) || null;
+      }
+
+      function upsertLocalAccount(account) {
+        const accounts = readLocalAccounts();
+        const idx = accounts.findIndex((item) => normalizeEmail(item.email) === normalizeEmail(account.email));
+        if (idx >= 0) {
+          accounts[idx] = account;
+        } else {
+          accounts.push(account);
+        }
+        writeLocalAccounts(accounts);
+      }
+
+      function getLocalStatusSummary() {
+        const session = getLocalSession();
+        if (!session?.email) return null;
+        const account = findLocalAccount(session.email);
+        if (!account) return null;
+        return {
+          name: account.companyName || account.fullName || account.email,
+          remainingQueries: Number(account.remainingQueries || 0),
+          validUntil: account.validUntil
+        };
+      }
+
+      function tryLocalSignup(payload) {
+        const email = normalizeEmail(payload.email);
+        if (email === INTERNAL_ADMIN_EMAIL) {
+          return { ok: false, error: "reserved-admin-email" };
+        }
+        if (findLocalAccount(email)) {
+          return { ok: false, error: "email-already-registered" };
+        }
+        if (!payload.fullName || !email || !payload.password) {
+          return { ok: false, error: "missing-signup-fields" };
+        }
+        if (!email.includes("@")) {
+          return { ok: false, error: "invalid-email" };
+        }
+        if (String(payload.password).length < 8) {
+          return { ok: false, error: "weak-password" };
+        }
+
+        const now = new Date();
+        const validUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const account = {
+          email,
+          password: String(payload.password),
+          fullName: String(payload.fullName || "").trim(),
+          companyName: String(payload.companyName || payload.fullName || "").trim(),
+          companyWebsite: String(payload.companyWebsite || "").trim(),
+          remainingQueries: 10,
+          validUntil,
+          createdAt: now.toISOString()
+        };
+
+        upsertLocalAccount(account);
+        setLocalSession(email);
+        return {
+          ok: true,
+          trial: { remaining: 10, validUntil },
+          mode: "offline"
+        };
+      }
+
+      function tryLocalLogin(emailRaw, passwordRaw) {
+        const email = normalizeEmail(emailRaw);
+        const password = String(passwordRaw || "");
+        const account = findLocalAccount(email);
+        if (!account || account.password !== password) {
+          return { ok: false, error: "invalid-credentials" };
+        }
+        setLocalSession(email);
+        return { ok: true, mode: "offline" };
       }
 
       function setTokens(accessToken, refreshToken) {
@@ -388,6 +511,11 @@
       async function loadSubscriptionStatus() {
         const token = getToken();
         if (!token) {
+          const localStatus = getLocalStatusSummary();
+          if (localStatus) {
+            accountStatus.textContent = `${localStatus.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${localStatus.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(localStatus.validUntil).toLocaleDateString()}${offlineMode ? (lang === "pt" ? " | modo local" : " | local mode") : ""}`;
+            return;
+          }
           accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
           return;
         }
@@ -448,6 +576,13 @@
           const data = await safeJson(res);
 
           if (!res.ok) {
+            const local = tryLocalLogin(payload.username, payload.password);
+            if (local.ok) {
+              offlineMode = true;
+              setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
+              await loadSubscriptionStatus();
+              return;
+            }
             setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + (data?.error || "unknown"));
             return;
           }
@@ -457,6 +592,13 @@
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
         } catch {
+          const local = tryLocalLogin(payload.username, payload.password);
+          if (local.ok) {
+            offlineMode = true;
+            setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
+            await loadSubscriptionStatus();
+            return;
+          }
           setMessage(lang === "pt" ? "Erro de ligacao." : "Connection error.");
         }
       });
@@ -464,6 +606,7 @@
       document.getElementById("btnLogout").addEventListener("click", async () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
+        clearLocalSession();
         hideAdminPanel();
         accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
         setMessage(lang === "pt" ? "Sessao terminada." : "Signed out.");
@@ -480,6 +623,13 @@
           email: document.getElementById("signupEmail").value,
           password: document.getElementById("signupPassword").value
         };
+
+        if (normalizeEmail(payload.email) === INTERNAL_ADMIN_EMAIL) {
+          setMessage(lang === "pt"
+            ? "Este email e reservado para o admin interno. Use outro email para cadastro."
+            : "This email is reserved for internal admin. Use another email for signup.");
+          return;
+        }
 
         try {
           const res = await api("/public/signup", {
@@ -498,6 +648,26 @@
               document.getElementById("loginPassword").focus();
               return;
             }
+
+            const local = tryLocalSignup(payload);
+            if (local.ok) {
+              offlineMode = true;
+              setMessage(lang === "pt"
+                ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
+                : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
+              document.getElementById("loginEmail").value = payload.email;
+              document.getElementById("loginPassword").value = payload.password;
+              await loadSubscriptionStatus();
+              return;
+            }
+
+            if (local.error === "email-already-registered") {
+              setMessage(lang === "pt"
+                ? "Este email ja existe no modo local. Entre com as mesmas credenciais."
+                : "This email already exists in local mode. Sign in with the same credentials.");
+              return;
+            }
+
             setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (data?.error || "unknown"));
             return;
           }
@@ -508,7 +678,19 @@
           document.getElementById("loginEmail").value = payload.email;
           document.getElementById("loginPassword").value = payload.password;
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao no cadastro." : "Connection error during signup.");
+          const local = tryLocalSignup(payload);
+          if (local.ok) {
+            offlineMode = true;
+            setMessage(lang === "pt"
+              ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
+              : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
+            document.getElementById("loginEmail").value = payload.email;
+            document.getElementById("loginPassword").value = payload.password;
+            await loadSubscriptionStatus();
+            return;
+          }
+
+          setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + (local.error || "connection-error"));
         }
       });
 
@@ -590,6 +772,12 @@
       }
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
+        if (offlineMode) {
+          setMessage(lang === "pt"
+            ? "Pagamento indisponivel em modo local. Assim que API voltar, podera pagar e sincronizar."
+            : "Payment unavailable in local mode. Once API is online, you can pay and sync.");
+          return;
+        }
         if (!getToken()) {
           setMessage(lang === "pt" ? "Entre primeiro para pagar e renovar." : "Sign in first to pay and renew.");
           return;
@@ -649,10 +837,10 @@
         applyLanguage();
         const ok = await resolveApiBase();
         if (!ok) {
+          offlineMode = true;
           setMessage(lang === "pt"
-            ? "API nao encontrada. Configure a API em api.eduguard360.co.mz ou no mesmo dominio."
-            : "API not found. Configure the API at api.eduguard360.co.mz or same-origin.");
-          return;
+            ? "API indisponivel. Modo independente ativo para cadastro/login e acesso local."
+            : "API unavailable. Independent mode active for local signup/login and access.");
         }
         await loadPlans();
         await loadSubscriptionStatus();
