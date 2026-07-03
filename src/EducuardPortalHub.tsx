@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '@/context/LanguageContext';
 import {
   BookOpen,
   Shield,
@@ -29,14 +30,15 @@ interface Portal {
 
 const EducuardPortalHub: React.FC = () => {
   const navigate = useNavigate();
+  const { language } = useLanguage();
   const [selectedPortal, setSelectedPortal] = useState<string | null>(null);
 
   const portals: Portal[] = [
     {
       id: 'security',
-      name: 'Segurança Escolar',
-      title: '🛡️ EduGuard Security',
-      description: 'Sistema de segurança e monitoramento da comunidade escolar',
+      name: language === 'pt' ? 'Seguranca Escolar' : 'School Security',
+      title: language === 'pt' ? 'EduGuard Security' : 'EduGuard Security',
+      description: language === 'pt' ? 'Sistema de seguranca e monitoramento da comunidade escolar' : 'School community safety and monitoring system',
       icon: <Shield className="w-12 h-12" />,
       color: 'from-blue-600 to-blue-700',
       route: '/sistema',
@@ -105,9 +107,9 @@ const EducuardPortalHub: React.FC = () => {
     },
     {
       id: 'literature',
-      name: 'Literatura Aberta',
-      title: '📖 Portal de Literatura',
-      description: 'Aceda livros, artigos e publicações abertas com busca avançada',
+      name: language === 'pt' ? 'Literatura Aberta' : 'Open Literature',
+      title: language === 'pt' ? 'Portal de Literatura' : 'Literature Portal',
+      description: language === 'pt' ? 'Aceda livros, artigos e publicacoes abertas com busca avancada' : 'Access open books and articles with advanced search',
       icon: <BookOpen className="w-12 h-12" />,
       color: 'from-amber-500 to-orange-500',
       route: '/literatura',
@@ -130,8 +132,8 @@ const EducuardPortalHub: React.FC = () => {
     {
       id: 'enterprise',
       name: 'Enterprise',
-      title: '🏢 EduGuard Enterprise',
-      description: 'Solução completa para gestão administrativa e academic de instituições',
+      title: 'EduGuard Enterprise',
+      description: language === 'pt' ? 'Solucao completa para gestao administrativa e academica de instituicoes' : 'Complete solution for administrative and academic management',
       icon: <Users className="w-12 h-12" />,
       color: 'from-green-600 to-emerald-600',
       route: '#',
@@ -148,8 +150,8 @@ const EducuardPortalHub: React.FC = () => {
     {
       id: 'analytics',
       name: 'Analytics',
-      title: '📊 EduGuard Analytics',
-      description: 'Análise avançada de dados educacionais e insights inteligentes',
+      title: 'EduGuard Analytics',
+      description: language === 'pt' ? 'Analise avancada de dados educacionais e insights inteligentes' : 'Advanced educational analytics and insights',
       icon: <TrendingUp className="w-12 h-12" />,
       color: 'from-orange-600 to-red-600',
       route: '#',
@@ -192,7 +194,7 @@ const EducuardPortalHub: React.FC = () => {
             onClick={() => navigate('/login')}
             className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg font-semibold transition-colors"
           >
-            Voltar
+            {language === 'pt' ? 'Voltar' : 'Back'}
           </button>
         </div>
       </header>
@@ -200,13 +202,15 @@ const EducuardPortalHub: React.FC = () => {
       {/* Hero Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
         <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-          Bem-vindo aos Portais EduGuard
+          {language === 'pt' ? 'Bem-vindo aos Portais EduGuard' : 'Welcome to EduGuard Portals'}
         </h2>
         <p className="text-xl text-gray-600 mb-2">
-          Escolha o serviço que deseja acessar
+          {language === 'pt' ? 'Escolha o servico que deseja acessar' : 'Choose the service you want to access'}
         </p>
         <p className="text-gray-500">
-          Soluções integradas para segurança, educação e desenvolvimento profissional em Moçambique
+          {language === 'pt'
+            ? 'Solucoes integradas para seguranca, educacao e desenvolvimento profissional em Mocambique'
+            : 'Integrated solutions for safety, education and professional growth in Mozambique'}
         </p>
       </div>
 
@@ -229,12 +233,12 @@ const EducuardPortalHub: React.FC = () => {
                 <div className="mb-4">
                   {portal.status === 'coming-soon' && (
                     <span className="inline-block px-3 py-1 text-xs font-semibold bg-amber-100 text-amber-700 rounded-full">
-                      ⏰ Em Breve
+                      {language === 'pt' ? 'Em Breve' : 'Coming Soon'}
                     </span>
                   )}
                   {portal.status === 'available' && (
                     <span className="inline-block px-3 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded-full">
-                      ✓ Disponível
+                      {language === 'pt' ? 'Disponivel' : 'Available'}
                     </span>
                   )}
                 </div>
@@ -301,13 +305,13 @@ const EducuardPortalHub: React.FC = () => {
                 >
                   {portal.status === 'available' ? (
                     <>
-                      Acessar Portal
+                      {language === 'pt' ? 'Acessar Portal' : 'Open Portal'}
                       <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                     </>
                   ) : (
                     <>
                       <Zap className="w-5 h-5" />
-                      Em Breve
+                      {language === 'pt' ? 'Em Breve' : 'Coming Soon'}
                     </>
                   )}
                 </button>
@@ -324,7 +328,9 @@ const EducuardPortalHub: React.FC = () => {
                 {portals.find((p) => p.id === selectedPortal)?.name}
               </h3>
               <p className="text-gray-600 mb-6">
-                Este portal estará disponível em breve. Deixe seu e-mail para ser notificado do lançamento.
+                {language === 'pt'
+                  ? 'Este portal estara disponivel em breve. Deixe seu e-mail para ser notificado do lancamento.'
+                  : 'This portal will be available soon. Leave your email to be notified when it launches.'}
               </p>
 
               <div className="space-y-3 mb-6">
@@ -334,7 +340,7 @@ const EducuardPortalHub: React.FC = () => {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
                 <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-semibold">
-                  Notifique-me
+                  {language === 'pt' ? 'Notifique-me' : 'Notify me'}
                 </button>
               </div>
 
@@ -342,7 +348,7 @@ const EducuardPortalHub: React.FC = () => {
                 onClick={() => setSelectedPortal(null)}
                 className="w-full text-gray-600 py-2 rounded-lg hover:bg-gray-100"
               >
-                Fechar
+                {language === 'pt' ? 'Fechar' : 'Close'}
               </button>
             </div>
           </div>

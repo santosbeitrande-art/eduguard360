@@ -1,6 +1,7 @@
 import { useState, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 
 // Novos componentes dos portais
 import EducuardNavigation from "@/components/EducuardNavigation";
@@ -9,6 +10,7 @@ import NewFeaturesNavigation from "@/components/NewFeaturesNavigation";
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { language } = useLanguage();
   const [schoolName, setSchoolName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -18,7 +20,12 @@ const LandingPage = () => {
     event.preventDefault();
 
     if (!schoolName.trim() || !contactEmail.trim()) {
-      setFeedback({ type: "error", message: "Por favor preencha o nome da escola e o e-mail de contacto." });
+      setFeedback({
+        type: "error",
+        message: language === "pt"
+          ? "Por favor preencha o nome da escola e o e-mail de contacto."
+          : "Please fill in the school name and contact email."
+      });
       return;
     }
 
@@ -49,14 +56,24 @@ const LandingPage = () => {
         throw new Error(result.message || "Falha ao enviar o pedido por email.");
       }
 
-      setFeedback({ type: "success", message: "Pedido enviado! O nosso administrador receberá o email imediatamente." });
+      setFeedback({
+        type: "success",
+        message: language === "pt"
+          ? "Pedido enviado! O nosso administrador recebera o email imediatamente."
+          : "Request sent. Our administrator will receive the email immediately."
+      });
       setSchoolName("");
       setContactEmail("");
     } catch (error) {
       const mailBody = encodeURIComponent(`Pedido de simulação gratuita para a escola ${schoolName}.\nE-mail de contacto: ${contactEmail}`);
       const mailto = `mailto:admin@eduguard360.co.mz?subject=${encodeURIComponent("Pedido de Simulação Gratuita EduGuard360")}&body=${mailBody}`;
       window.location.href = mailto;
-      setFeedback({ type: "success", message: "Não foi possível enviar automaticamente, mas o e-mail já foi aberto para completar o envio." });
+      setFeedback({
+        type: "success",
+        message: language === "pt"
+          ? "Nao foi possivel enviar automaticamente, mas o e-mail ja foi aberto para completar o envio."
+          : "Automatic submission failed, but your email app was opened to complete sending."
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -75,28 +92,38 @@ const LandingPage = () => {
         <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
         <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-5xl mx-auto leading-tight text-white z-10">
-          Segurança Escolar Transformada em <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2ecc71] to-emerald-400">Confiança Digital</span>.
+          {language === "pt" ? "Seguranca Escolar Transformada em " : "School Safety Transformed into "}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2ecc71] to-emerald-400">
+            {language === "pt" ? "Confianca Digital" : "Digital Trust"}
+          </span>
+          .
         </h1>
         <p className="mt-6 text-xl text-[#9bbbc9] max-w-2xl mx-auto leading-relaxed z-10">
-          O primeiro ecossistema inteligente em Moçambique que notifica os pais em tempo real através de QR Codes inteligentes quando os alunos entram ou saem da escola.
+          {language === "pt"
+            ? "O primeiro ecossistema inteligente em Mocambique que notifica os pais em tempo real atraves de QR Codes inteligentes quando os alunos entram ou saem da escola."
+            : "The first intelligent ecosystem in Mozambique that notifies parents in real time through smart QR Codes when students enter or leave school."}
         </p>
         <p className="mt-4 text-base text-[#a6c4d5] max-w-2xl mx-auto leading-relaxed z-10">
-          Portal já funcional: escolas, pais e administração podem aceder com credenciais e gerir a plataforma de forma segura.
+          {language === "pt"
+            ? "Portal ja funcional: escolas, pais e administracao podem aceder com credenciais e gerir a plataforma de forma segura."
+            : "Live portal: schools, parents and administrators can sign in securely with credentials."}
         </p>
         
         <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center z-10">
           <Link to="/portais" className="px-8 py-4 bg-[#132f3f] border border-[#2e5a6e] rounded-lg font-semibold hover:bg-[#1c3b4d] transition-colors text-white">
-            Explorar Portais
+            {language === "pt" ? "Explorar Portais" : "Explore Portals"}
           </Link>
           <a href="#adesao" className="btn px-8 py-4 font-semibold shadow-xl shadow-[#2ecc71]/20 flex items-center justify-center gap-2">
-            Simular na Minha Escola
+            {language === "pt" ? "Simular na Minha Escola" : "Request a Demo"}
           </a>
         </div>
 
         <div className="mt-8 max-w-3xl mx-auto bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-[#00000033]">
           <h2 className="text-2xl font-semibold text-white">Acesso Pais / Encarregados</h2>
           <p className="mt-3 text-gray-300">
-            Se já tiver uma conta de pai/encarregado, use o portal de acesso. Para testar imediatamente, pode entrar com a conta de demonstração de encarregado.
+            {language === "pt"
+              ? "Se ja tiver uma conta de pai/encarregado, use o portal de acesso. Para testar imediatamente, pode entrar com a conta de demonstracao de encarregado."
+              : "If you already have a parent account, use the access portal. For immediate testing, you can sign in with the demo parent account."}
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
             <button
@@ -121,10 +148,10 @@ const LandingPage = () => {
               }}
               className="btn px-8 py-4 bg-[#2ecc71] hover:bg-[#27ae60] text-black font-semibold shadow-xl shadow-[#2ecc71]/20"
             >
-              👨‍👩‍👧 Entrar como Pai Demo
+              {language === "pt" ? "Entrar como Pai Demo" : "Sign in as Demo Parent"}
             </button>
             <Link to="/sistema" className="px-8 py-4 bg-[#132f3f] border border-[#2e5a6e] rounded-lg font-semibold hover:bg-[#1c3b4d] transition-colors text-white flex items-center justify-center">
-              Aceder ao Portal de Login
+              {language === "pt" ? "Aceder ao Portal de Login" : "Open Login Portal"}
             </Link>
           </div>
         </div>
@@ -140,7 +167,9 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-[#2ecc71] tracking-wide uppercase text-sm mb-2">O Que É a EduGuard360?</h2>
-            <p className="text-4xl font-extrabold text-white">Tecnologia Simples para Paz de Espírito Total.</p>
+            <p className="text-4xl font-extrabold text-white">
+              {language === "pt" ? "Tecnologia Simples para Paz de Espirito Total." : "Simple Technology for Complete Peace of Mind."}
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -149,9 +178,11 @@ const LandingPage = () => {
               <div className="w-14 h-14 bg-blue-500/10 rounded-xl flex items-center justify-center mb-6">
                 <MapPin className="h-7 w-7 text-blue-400" />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Notificações em Tempo Real</h3>
+              <h3 className="text-2xl font-bold text-white mb-3">{language === "pt" ? "Notificacoes em Tempo Real" : "Real-time Notifications"}</h3>
               <p className="text-[#9bbbc9] leading-relaxed">
-                Assim que o aluno passa o seu cartão pelo nosso Scanner Profissional à entrada, os pais recebem uma notificação instantânea confirmando a sua chegada.
+                {language === "pt"
+                  ? "Assim que o aluno passa o seu cartao pelo nosso Scanner Profissional a entrada, os pais recebem uma notificacao instantanea confirmando a sua chegada."
+                  : "As soon as the student scans at the gate, parents instantly receive a confirmation notification."}
               </p>
             </div>
 
@@ -160,9 +191,11 @@ const LandingPage = () => {
               <div className="w-14 h-14 bg-[#2ecc71]/10 rounded-xl flex items-center justify-center mb-6">
                 <Eye className="h-7 w-7 text-[#2ecc71]" />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Controlo de Absentismo</h3>
+              <h3 className="text-2xl font-bold text-white mb-3">{language === "pt" ? "Controlo de Absentismo" : "Attendance Control"}</h3>
               <p className="text-[#9bbbc9] leading-relaxed">
-                As direções das escolas têm acesso a relatórios precisos sobre atrasos, faltas e presenças, simplificando radicalmente o trabalho administrativo diário.
+                {language === "pt"
+                  ? "As direcoes das escolas tem acesso a relatorios precisos sobre atrasos, faltas e presencas, simplificando o trabalho administrativo diario."
+                  : "School leadership gets precise reports on delays, absences and attendance, simplifying daily administration."}
               </p>
             </div>
 
@@ -171,9 +204,11 @@ const LandingPage = () => {
               <div className="w-14 h-14 bg-purple-500/10 rounded-xl flex items-center justify-center mb-6">
                 <Users className="h-7 w-7 text-purple-400" />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Acesso Exclusivo para Pais</h3>
+              <h3 className="text-2xl font-bold text-white mb-3">{language === "pt" ? "Acesso Exclusivo para Pais" : "Exclusive Parent Access"}</h3>
               <p className="text-[#9bbbc9] leading-relaxed">
-                Um portal web seguro onde cada encarregado de educação pode aceder ao histórico de movimentos e manter o seu perfil e as credenciais protegidas.
+                {language === "pt"
+                  ? "Um portal web seguro onde cada encarregado de educacao pode aceder ao historico de movimentos e manter o seu perfil protegido."
+                  : "A secure web portal where each guardian can access movement history and keep profile credentials protected."}
               </p>
             </div>
           </div>
@@ -185,12 +220,20 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
-              <h2 className="text-4xl font-extrabold text-white mb-6 leading-tight">A Nossa Visão: <br/><span className="text-[#2ecc71]">Transformar a Educação em Moçambique</span></h2>
+              <h2 className="text-4xl font-extrabold text-white mb-6 leading-tight">
+                {language === "pt" ? "A Nossa Visao:" : "Our Vision:"}
+                <br />
+                <span className="text-[#2ecc71]">{language === "pt" ? "Transformar a Educacao em Mocambique" : "Transform Education in Mozambique"}</span>
+              </h2>
               <p className="text-lg text-[#9bbbc9] mb-6 leading-relaxed">
-                A EduGuard360 não é apenas um sistema de controlo de acessos; é uma ponte de confiança inquebrável entre a escola e a casa. 
+                {language === "pt"
+                  ? "A EduGuard360 nao e apenas um sistema de controlo de acessos; e uma ponte de confianca entre a escola e a casa."
+                  : "EduGuard360 is not just an access-control system; it is a trust bridge between school and home."}
               </p>
               <p className="text-lg text-[#9bbbc9] leading-relaxed">
-                A nossa missão é eliminar o medo e a incerteza diária dos encarregados de educação, garantindo que todas as crianças chegam ao seu destino em segurança, impulsionando a responsabilidade e modernizando as infraestruturas escolares em todo o país através de tecnologia de ponta.
+                {language === "pt"
+                  ? "A nossa missao e eliminar o medo e a incerteza diaria dos encarregados de educacao, garantindo que todas as criancas chegam ao seu destino em seguranca."
+                  : "Our mission is to remove daily uncertainty for guardians, ensuring every child reaches destination safely while modernizing school infrastructure."}
               </p>
             </div>
             <div className="relative">
@@ -209,9 +252,13 @@ const LandingPage = () => {
           <div className="card p-10 md:p-16 border border-[#2e5a6e] text-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#2ecc71]/10 rounded-full blur-[80px]"></div>
             
-            <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-4 relative z-10">A Sua Escola Está Pronta Para o Futuro?</h2>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-4 relative z-10">
+              {language === "pt" ? "A Sua Escola Esta Pronta Para o Futuro?" : "Is Your School Ready for the Future?"}
+            </h2>
             <p className="text-[#9bbbc9] text-lg mb-8 max-w-2xl mx-auto relative z-10">
-              Inicie a transição para a modernidade hoje mesmo. Deixe o seu contacto e a nossa equipa agendará uma simulação presencial ou remota, sem compromisso.
+              {language === "pt"
+                ? "Inicie a transicao para a modernidade hoje mesmo. Deixe o seu contacto e a nossa equipa agendara uma simulacao sem compromisso."
+                : "Start your modernization today. Leave your contact and our team will schedule a no-obligation demo."}
             </p>
 
             <form onSubmit={handleDemoRequest} className="max-w-lg mx-auto flex flex-col gap-4 relative z-10">
@@ -219,7 +266,7 @@ const LandingPage = () => {
                 type="text" 
                 value={schoolName}
                 onChange={(e) => setSchoolName(e.target.value)}
-                placeholder="Nome da Escola ou Instituição" 
+                placeholder={language === "pt" ? "Nome da Escola ou Instituicao" : "School or Institution Name"}
                 className="w-full px-5 py-4 rounded-lg"
                 required
               />
@@ -227,7 +274,7 @@ const LandingPage = () => {
                 type="email" 
                 value={contactEmail}
                 onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="E-mail de Contacto da Direção" 
+                placeholder={language === "pt" ? "E-mail de Contacto da Direcao" : "School Management Contact Email"}
                 className="w-full px-5 py-4 rounded-lg"
                 required
               />
@@ -237,7 +284,9 @@ const LandingPage = () => {
                 </div>
               )}
               <button type="submit" disabled={isSubmitting} className="btn w-full px-8 py-4 font-bold text-lg mt-2">
-                {isSubmitting ? 'A enviar...' : 'Solicitar Simulação Gratuita'}
+                {isSubmitting
+                  ? (language === "pt" ? 'A enviar...' : 'Sending...')
+                  : (language === "pt" ? 'Solicitar Simulacao Gratuita' : 'Request Free Demo')}
               </button>
             </form>
           </div>
@@ -259,7 +308,7 @@ const LandingPage = () => {
             </div>
 
             <div>
-              <h4 className="text-white font-bold text-lg mb-6">Contactos Diretos</h4>
+              <h4 className="text-white font-bold text-lg mb-6">{language === "pt" ? "Contactos Diretos" : "Direct Contacts"}</h4>
               <ul className="space-y-4">
                 <li className="flex items-center gap-3 text-[#9bbbc9]">
                   <Mail className="h-5 w-5 text-[#2ecc71]" />
@@ -273,23 +322,23 @@ const LandingPage = () => {
             </div>
 
             <div>
-              <h4 className="text-white font-bold text-lg mb-6">Acesso Rápido</h4>
+              <h4 className="text-white font-bold text-lg mb-6">{language === "pt" ? "Acesso Rapido" : "Quick Access"}</h4>
               <ul className="space-y-3">
-                <li><Link to="/portais" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Portal Hub</Link></li>
+                <li><Link to="/portais" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">{language === "pt" ? "Portal Hub" : "Portal Hub"}</Link></li>
                 <li><Link to="/edumarket" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">EduMarket</Link></li>
-                <li><Link to="/sistema" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Portal de Acesso (Escolas e Pais)</Link></li>
-                <li><a href="#sobre" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Como Funciona</a></li>
-                <li><a href="#" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">Política de Privacidade</a></li>
+                <li><Link to="/sistema" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">{language === "pt" ? "Portal de Acesso (Escolas e Pais)" : "Access Portal (Schools and Parents)"}</Link></li>
+                <li><a href="#sobre" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">{language === "pt" ? "Como Funciona" : "How It Works"}</a></li>
+                <li><a href="#" className="text-[#9bbbc9] hover:text-[#2ecc71] transition-colors">{language === "pt" ? "Politica de Privacidade" : "Privacy Policy"}</a></li>
               </ul>
             </div>
           </div>
 
           <div className="pt-8 border-t border-[#1c3b4d] flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-[#9bbbc9]">
-              &copy; {new Date().getFullYear()} EduGuard360. Todos os direitos reservados.
+              &copy; {new Date().getFullYear()} EduGuard360. {language === "pt" ? "Todos os direitos reservados." : "All rights reserved."}
             </p>
             <p className="text-sm text-[#9bbbc9]">
-              Desenvolvido em Moçambique.
+              {language === "pt" ? "Desenvolvido em Mocambique." : "Built in Mozambique."}
             </p>
           </div>
         </div>
