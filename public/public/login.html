@@ -57,6 +57,14 @@
       .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
       .plan { border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px; background: rgba(0,0,0,.15); }
       .muted { color: #b9d0e7; font-size: .92rem; }
+      .hidden { display: none; }
+      .table-wrap { overflow: auto; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; margin-top: 8px; }
+      table { width: 100%; border-collapse: collapse; min-width: 680px; }
+      th, td { border-bottom: 1px solid rgba(255,255,255,.12); padding: 8px; text-align: left; font-size: .92rem; }
+      th { background: rgba(255,255,255,.08); }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+      .tag.ok { background: rgba(16,185,129,.22); color: #8ef7d6; }
+      .tag.off { background: rgba(239,68,68,.25); color: #fecaca; }
       @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .plans { grid-template-columns: 1fr; } }
     </style>
   </head>
@@ -142,6 +150,46 @@
         </div>
       </section>
 
+      <section id="adminPanel" class="panel hidden" style="margin-top:12px;">
+        <div class="row" style="justify-content:space-between;">
+          <h2 id="adminPanelTitle">Painel administrativo (somente admin)</h2>
+          <button class="ghost" type="button" id="btnAdminRefresh">Atualizar</button>
+        </div>
+        <p class="muted" id="adminPanelHint">Visivel apenas depois de login com credenciais do admin.</p>
+
+        <h3 id="usersTitle" style="margin:10px 0 6px;">Utilizadores</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Empresa</th>
+                <th>Perfil</th>
+                <th>Estado</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </div>
+
+        <h3 id="paymentsTitle" style="margin:14px 0 6px;">Pagamentos</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Empresa</th>
+                <th>Provider</th>
+                <th>Valor</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="status" id="msg" style="margin-top:12px;">Pronto.</div>
     </main>
 
@@ -163,6 +211,9 @@
       const accountStatus = document.getElementById("accountStatus");
       const planSelect = document.getElementById("planSelect");
       const providerSelect = document.getElementById("providerSelect");
+      const adminPanel = document.getElementById("adminPanel");
+      const usersBody = document.getElementById("usersBody");
+      const paymentsBody = document.getElementById("paymentsBody");
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
 
@@ -185,7 +236,11 @@
           btnLogout: "Sair",
           btnSignup: "Criar conta",
           btnCheckout: "Pagar e renovar subscricao",
-          btnPortal: "Abrir portal de consulta"
+          btnPortal: "Abrir portal de consulta",
+          adminPanelTitle: "Painel administrativo (somente admin)",
+          adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
+          usersTitle: "Utilizadores",
+          paymentsTitle: "Pagamentos"
         },
         en: {
           titleMain: "EduGuard Verify AI",
@@ -205,9 +260,20 @@
           btnLogout: "Logout",
           btnSignup: "Create account",
           btnCheckout: "Pay and renew subscription",
-          btnPortal: "Open verification portal"
+          btnPortal: "Open verification portal",
+          adminPanelTitle: "Administrative panel (admin only)",
+          adminPanelHint: "Visible only after admin credential login.",
+          usersTitle: "Users",
+          paymentsTitle: "Payments"
         }
       };
+
+      function hideAdminPanel() {
+        adminPanel.classList.add("hidden");
+        usersBody.innerHTML = "";
+        paymentsBody.innerHTML = "";
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+      }
 
       function setMessage(text) {
         msg.textContent = text;
@@ -305,6 +371,29 @@
         }
       }
 
+      async function updateUserStatus(userId, isActive) {
+        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+        if (!adminToken) return;
+        try {
+          const res = await fetch(`${API_BASE}/admin/users/${userId}/status`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-admin-token": adminToken
+            },
+            body: JSON.stringify({ isActive })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao atualizar estado: " : "Status update failed: ") + (data.error || "unknown"));
+            return;
+          }
+          await loadAdminOverview();
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligacao no painel admin." : "Admin panel connection error.");
+        }
+      }
+
       document.getElementById("loginForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         setMessage(lang === "pt" ? "A autenticar..." : "Signing in...");
@@ -330,6 +419,7 @@
           setTokens(data.accessToken, data.refreshToken);
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
+          await getAdminTokenForInternalAdmin(payload.username);
         } catch {
           setMessage(lang === "pt" ? "Erro de ligacao." : "Connection error.");
         }
@@ -338,6 +428,7 @@
       document.getElementById("btnLogout").addEventListener("click", async () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
+        hideAdminPanel();
         accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
         setMessage(lang === "pt" ? "Sessao terminada." : "Signed out.");
       });
@@ -385,14 +476,15 @@
         }
       });
 
-      async function getAdminTokenForInternalAdmin() {
-        const loginEmail = String(document.getElementById("loginEmail").value || "").trim().toLowerCase();
+      async function getAdminTokenForInternalAdmin(loginEmailRaw) {
+        const loginEmail = String(loginEmailRaw || "").trim().toLowerCase();
         if (loginEmail !== "admin@eduguard360.co.mz") return;
         try {
           const res = await api("/auth/admin/token", { method: "GET" });
           const data = await res.json();
           if (res.ok && data?.adminToken) {
             localStorage.setItem(ADMIN_TOKEN_KEY, data.adminToken);
+            adminPanel.classList.remove("hidden");
             await loadAdminOverview();
           }
         } catch {}
@@ -411,8 +503,48 @@
           const usersData = await usersRes.json();
           const paymentsData = await paymentsRes.json();
 
-          const usersCount = Array.isArray(usersData.users) ? usersData.users.length : 0;
-          const paymentsCount = Array.isArray(paymentsData.payments) ? paymentsData.payments.length : 0;
+          if (!usersRes.ok || !paymentsRes.ok) {
+            hideAdminPanel();
+            return;
+          }
+
+          const users = Array.isArray(usersData.users) ? usersData.users : [];
+          const payments = Array.isArray(paymentsData.payments) ? paymentsData.payments : [];
+
+          usersBody.innerHTML = users.map((u) => `
+            <tr>
+              <td>${u.username || "-"}</td>
+              <td>${u.companyName || "-"}</td>
+              <td>${u.role || "-"}</td>
+              <td><span class="tag ${u.isActive ? "ok" : "off"}">${u.isActive ? "Active" : "Inactive"}</span></td>
+              <td>
+                ${u.username === "admin@eduguard360.co.mz"
+                  ? "-"
+                  : `<button class="ghost" data-userid="${u.id}" data-next="${u.isActive ? "false" : "true"}">${u.isActive ? (lang === "pt" ? "Desativar" : "Disable") : (lang === "pt" ? "Ativar" : "Enable")}</button>`}
+              </td>
+            </tr>
+          `).join("");
+
+          paymentsBody.innerHTML = payments.map((p) => `
+            <tr>
+              <td>${p.createdAt ? new Date(p.createdAt).toLocaleString() : "-"}</td>
+              <td>${p.companyName || "-"}</td>
+              <td>${p.provider || "-"}</td>
+              <td>${p.amount || 0} ${p.currency || ""}</td>
+              <td><span class="tag ${p.status === "succeeded" ? "ok" : "off"}">${p.status || "unknown"}</span></td>
+            </tr>
+          `).join("");
+
+          usersBody.querySelectorAll("button[data-userid]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const userId = btn.getAttribute("data-userid");
+              const next = btn.getAttribute("data-next") === "true";
+              updateUserStatus(userId, next);
+            });
+          });
+
+          const usersCount = users.length;
+          const paymentsCount = payments.length;
           setMessage((lang === "pt"
             ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
             : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
@@ -462,6 +594,7 @@
         applyLanguage();
         loadPlans();
         loadSubscriptionStatus();
+        loadAdminOverview();
       });
 
       document.getElementById("langEn").addEventListener("click", () => {
@@ -469,6 +602,11 @@
         applyLanguage();
         loadPlans();
         loadSubscriptionStatus();
+        loadAdminOverview();
+      });
+
+      document.getElementById("btnAdminRefresh").addEventListener("click", () => {
+        loadAdminOverview();
       });
 
       (async () => {
@@ -482,11 +620,8 @@
         }
         await loadPlans();
         await loadSubscriptionStatus();
+        await loadAdminOverview();
       })();
-
-      document.getElementById("loginForm").addEventListener("submit", async () => {
-        setTimeout(() => { getAdminTokenForInternalAdmin(); }, 300);
-      });
     </script>
   </body>
 </html>
