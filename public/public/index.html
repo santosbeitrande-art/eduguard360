@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EduGuard Verify AI | Trust Every Document</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        background: linear-gradient(135deg, #07131f, #0f2b45 45%, #1d4d78);
+        color: #f4f7fb;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
+      .hero { display: grid; grid-template-columns: 1.2fr .8fr; gap: 24px; align-items: center; }
+      .card { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 20px; padding: 24px; box-shadow: 0 18px 60px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+      h1 { font-size: 2.2rem; margin: 0 0 10px; }
+      p { line-height: 1.6; color: #dfe8f2; }
+      .pill { display: inline-block; padding: 8px 12px; border-radius: 999px; background: #20c7a0; color: #07231d; font-weight: 700; margin-bottom: 16px; }
+      button, input[type="file"] { font: inherit; }
+      .file-label { display: block; margin-bottom: 8px; font-weight: 700; }
+      button {
+        margin-top: 12px; padding: 12px 16px; border: 0; border-radius: 999px; background: linear-gradient(90deg, #20c7a0, #22a8e0); color: white; cursor: pointer; font-weight: 700;
+      }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+      .mini { padding: 16px; border-radius: 16px; background: rgba(255,255,255,.06); }
+      .status { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.08); }
+      .report { display: grid; gap: 16px; }
+      .report-section {
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 16px;
+        padding: 16px;
+        background: rgba(255,255,255,.06);
+      }
+      .report-section h4 { margin: 0 0 8px; font-size: 1rem; }
+      .report-section ul { margin: 8px 0 0 18px; padding: 0; }
+      .report-section li { margin: 4px 0; }
+      .report-meta {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255,255,255,.12);
+        font-size: .95rem;
+        color: #dfe8f2;
+      }
+      @media (max-width: 780px) { .hero, .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="hero">
+        <div class="card">
+          <div class="pill">Trust Every Document</div>
+          <h1>EduGuard Verify AI</h1>
+          <p>Plataforma SaaS de confianca documental baseada em IA para validar autenticidade de documentos sem depender de integracoes externas.</p>
+          <form id="uploadForm">
+            <label for="file" class="file-label">Selecionar ficheiro</label>
+            <input type="file" id="file" name="file" />
+            <button type="submit">Verificar documento</button>
+          </form>
+          <div class="status" id="result">Envie um documento PDF/Imagem para iniciar a verificacao.</div>
+        </div>
+        <div class="card">
+          <h3>O que a plataforma faz</h3>
+          <ul>
+            <li>OCR e extracao de texto</li>
+            <li>Analise forense e metadados</li>
+            <li>Detecao de sinais de IA</li>
+            <li>Contextualizacao via busca e verificacao externa</li>
+          </ul>
+        </div>
+      </section>
+      <section class="grid">
+        <div class="mini"><strong>Verificacao Passiva</strong><br/>Analisa assinaturas, carimbos, metadados e manipulacoes.</div>
+        <div class="mini"><strong>Verificacao Contextual</strong><br/>Valida entidades e dados publicos associados.</div>
+        <div class="mini"><strong>Fraud Intelligence</strong><br/>Partilha assinaturas anonimas de fraude e padroes suspeitos.</div>
+      </section>
+    </div>
+
+    <script>
+      const API_BASE = window.EDUGUARD_VERIFY_API_BASE || "https://api.eduguard360.co.mz";
+      const apiUrl = (path) => `${API_BASE}${path}`;
+
+      const form = document.getElementById('uploadForm');
+      const resultEl = document.getElementById('result');
+      const fileInput = document.getElementById('file');
+
+      const renderResult = (title, details = '') => {
+        resultEl.innerHTML = details
+          ? `<strong>${title}</strong><br>${details}`
+          : `<strong>${title}</strong>`;
+      };
+
+      const formatVerificationReport = (result) => {
+        const authenticityScore = result?.summary?.authenticityScore;
+        const aiLikelihood = result?.summary?.aiLikelihood || 'unknown';
+        const dateConsistency = result?.summary?.dateConsistency || 'unknown';
+        const textPreview = result?.text ? String(result.text).trim().replace(/\s+/g, ' ').slice(0, 180) : '';
+        const textSuffix = result?.text && String(result.text).length > 180 ? '...' : '';
+        const verdicts = result?.verdicts || {};
+        const contextualCount = (result?.contextual?.checks || []).length;
+        const contextualDomains = (result?.contextual?.found?.domains || []).length;
+        const contextualEmails = (result?.contextual?.found?.emails || []).length;
+
+        const passiveVerdict = verdicts.passive === 'found'
+          ? 'Foram encontrados sinais a analisar em Verificacao Passiva.'
+          : 'Nao foram encontrados sinais relevantes em Verificacao Passiva.';
+
+        const contextualVerdict = verdicts.contextual === 'found'
+          ? `Foram encontradas entidades ou dados publicos associados (${contextualDomains} dominios, ${contextualEmails} emails, ${contextualCount} validacoes).`
+          : 'Nao foram encontradas entidades publicas relevantes para validacao contextual.';
+
+        const aiVerdict = verdicts.ai === 'found'
+          ? 'Foram encontrados sinais ou indicios de utilizacao de IA na elaboracao do documento.'
+          : aiLikelihood === 'unknown'
+            ? 'Nao foi possivel concluir sinais de IA com confianca suficiente.'
+            : 'Nao foram encontrados sinais relevantes de utilizacao de IA.';
+
+        const fraudVerdict = verdicts.fraud === 'found'
+          ? 'Foram encontradas assinaturas anonimas ou padroes suspeitos compativeis com fraude.'
+          : 'Nao foram encontradas assinaturas anonimas nem padroes suspeitos de fraude nesta analise.';
+
+        return `
+          <div class="report">
+            <div class="report-section">
+              <h4>Verificacao Passiva</h4>
+              <div>Analisa assinaturas, carimbos, metadados e manipulacoes.</div>
+              <div class="report-meta">${passiveVerdict}</div>
+            </div>
+            <div class="report-section">
+              <h4>Verificacao Contextual</h4>
+              <div>Valida entidades e dados publicos associados.</div>
+              <div class="report-meta">${contextualVerdict}</div>
+            </div>
+            <div class="report-section">
+              <h4>Fraud Intelligence</h4>
+              <div>Partilha assinaturas anonimas de fraude e padroes suspeitos.</div>
+              <div class="report-meta">${fraudVerdict}</div>
+            </div>
+            <div class="report-section">
+              <h4>Capacidades executadas</h4>
+              <ul>
+                <li>OCR e extracao de texto</li>
+                <li>Analise forense e metadados</li>
+                <li>Detecao de sinais de IA</li>
+                <li>Contextualizacao via busca e verificacao externa</li>
+              </ul>
+              <div class="report-meta">
+                ${aiVerdict}<br>
+                ${authenticityScore !== undefined ? `Pontuacao de autenticidade: <strong>${authenticityScore}/100</strong><br>` : ''}
+                IA: <strong>${aiLikelihood}</strong><br>
+                Consistencia de datas: <strong>${dateConsistency}</strong>
+                ${textPreview ? `<br><br>Texto extraido: ${textPreview}${textSuffix}` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      };
+
+      const fetchJobStatus = async (jobId) => {
+        try {
+          const statusRes = await fetch(apiUrl(`/status/${jobId}`));
+          if (!statusRes.ok) {
+            renderResult('Upload concluido', `Job <code>${jobId}</code> criado, mas ainda nao foi possivel ler o estado de processamento.`);
+            return;
+          }
+
+          const statusData = await statusRes.json();
+          const statusLabel = statusData.status || 'desconhecido';
+          const createdAt = statusData.createdAt ? new Date(statusData.createdAt).toLocaleString('pt-MZ') : 'sem data';
+          renderResult(
+            'Documento recebido com sucesso',
+            `Job <code>${jobId}</code> criado. Estado atual: <strong>${statusLabel}</strong>. Registado em ${createdAt}.${statusData.result ? `<br><br>${formatVerificationReport(statusData.result)}` : ''}`
+          );
+        } catch (error) {
+          renderResult('Upload concluido', `Job <code>${jobId}</code> criado, mas ocorreu um erro ao consultar o estado.`);
+        }
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!fileInput.files.length) {
+          renderResult('Escolha um ficheiro para continuar');
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+
+        renderResult('A enviar documento...', 'Aguarde enquanto preparamos a verificacao.');
+
+        try {
+          const res = await fetch(apiUrl('/upload'), { method: 'POST', body: fd });
+          const data = await res.json();
+
+          if (!res.ok) {
+            const message = data?.error || 'Falha ao enviar o documento.';
+            renderResult('Nao foi possivel verificar o documento', message);
+            return;
+          }
+
+          if (!data.jobId) {
+            renderResult('Resposta recebida', JSON.stringify(data));
+            return;
+          }
+
+          if (data.result) {
+            renderResult(
+              'Analise concluida imediatamente',
+              `Job <code>${data.jobId}</code> processado com sucesso.<br><br>${formatVerificationReport(data.result)}`
+            );
+            return;
+          }
+
+          renderResult('Documento enviado', `Job <code>${data.jobId}</code> criado. A obter confirmacao do estado...`);
+          await fetchJobStatus(data.jobId);
+        } catch (error) {
+          renderResult('Erro de ligacao', 'Nao foi possivel contactar o servidor de verificacao.');
+        }
+      });
+    </script>
+  </body>
+</html>

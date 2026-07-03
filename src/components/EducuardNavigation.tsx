@@ -1,6 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GraduationCap, Menu, X, ChevronDown } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
+import { LanguageSelectorCompact } from '@/components/LanguageSelector';
 
 interface NavProps {
   variant?: 'light' | 'dark';
@@ -9,6 +11,7 @@ interface NavProps {
 export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t, language } = useLanguage();
   const [isOpen, setIsOpen] = React.useState(false);
   const [showPortalsMenu, setShowPortalsMenu] = React.useState(false);
 
@@ -17,17 +20,18 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
                         location.pathname.includes('/sistema');
 
   const navItems = [
-    { label: 'Início', href: '/' },
-    { label: 'Sobre', href: '#about' },
-    { label: 'Contacto', href: '#contact' },
+    { label: t('nav.inicio'), href: '/' },
+    { label: t('nav.sobre'), href: '#about' },
+    { label: t('nav.contacto'), href: '#contactos' },
   ];
 
   const portals = [
-    { label: '🛡️ Segurança Escolar', href: '/sistema' },
+    { label: language === 'pt' ? '🛡️ Segurança Escolar' : '🛡️ School Security', href: '/sistema' },
     { label: '📚 EduMarket', href: '/edumarket' },
-    { label: '📖 Literatura Aberta', href: '/literatura' },
-    { label: '🏢 Enterprise (Em breve)', href: '#' },
-    { label: '📊 Analytics (Em breve)', href: '#' },
+    { label: language === 'pt' ? '📖 Literatura Aberta' : '📖 Open Literature', href: '/literatura' },
+    { label: '🔐 EduGuard Verify AI', href: '/public/login', external: true },
+    { label: language === 'pt' ? '🏢 Enterprise (Em breve)' : '🏢 Enterprise (Coming soon)', href: '#' },
+    { label: language === 'pt' ? '📊 Analytics (Em breve)' : '📊 Analytics (Coming soon)', href: '#' },
   ];
 
   return (
@@ -49,6 +53,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
 
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center gap-8">
+            <LanguageSelectorCompact />
             {navItems.map((item) => (
               <a
                 key={item.label}
@@ -64,7 +69,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
             {/* Portals Dropdown */}
             <div className="relative group">
               <button className="flex items-center gap-2 font-medium py-2 px-3 rounded-lg hover:bg-gray-100/50 transition-colors">
-                Portais
+                {t('nav.portais')}
                 <ChevronDown className="w-4 h-4" />
               </button>
 
@@ -75,6 +80,10 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
                       key={portal.label}
                       onClick={() => {
                         if (!portal.href.startsWith('#')) {
+                          if (portal.external) {
+                            window.location.assign(portal.href);
+                            return;
+                          }
                           navigate(portal.href);
                         }
                       }}
@@ -97,7 +106,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
               onClick={() => navigate('/portais')}
               className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg hover:shadow-lg transition-shadow font-medium"
             >
-              Acessar Portais
+              {language === 'pt' ? 'Acessar Portais' : 'Access Portals'}
             </button>
           </div>
 
@@ -128,7 +137,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
                 onClick={() => setShowPortalsMenu(!showPortalsMenu)}
                 className="w-full text-left py-2 px-4 font-medium hover:bg-gray-100/50 rounded-lg flex items-center justify-between"
               >
-                Portais
+                {t('nav.portais')}
                 <ChevronDown className={`w-4 h-4 transition-transform ${showPortalsMenu ? 'rotate-180' : ''}`} />
               </button>
 
@@ -139,6 +148,10 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
                       key={portal.label}
                       onClick={() => {
                         if (!portal.href.startsWith('#')) {
+                          if (portal.external) {
+                            window.location.assign(portal.href);
+                            return;
+                          }
                           navigate(portal.href);
                           setIsOpen(false);
                         }
@@ -164,7 +177,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
               }}
               className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg hover:shadow-lg transition-shadow font-medium"
             >
-              Acessar Portais
+              {language === 'pt' ? 'Acessar Portais' : 'Access Portals'}
             </button>
           </div>
         )}

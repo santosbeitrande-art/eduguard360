@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LanguageProvider } from "@/context/LanguageContext";
+import GlobalFloatingActions from "@/components/GlobalFloatingActions";
 
 // Páginas principais
 import SystemLogin from "@/pages/system/SystemLogin";
@@ -57,6 +58,8 @@ function App() {
 
         {/* Página inicial Pública */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/public" element={<LandingPage />} />
+        <Route path="/public/*" element={<LandingPage />} />
 
         {/* Portal Hub - Acesso central aos portais */}
         <Route path="/portais" element={<EducuardPortalHub />} />
@@ -120,6 +123,7 @@ function App() {
         <Route path="*" element={<NotFound />} />
 
       </Routes>
+      <GlobalFloatingActions />
       </BrowserRouter>
     </LanguageProvider>
   );

@@ -20,6 +20,7 @@ interface Portal {
   icon: React.ReactNode;
   color: string;
   route: string;
+  external?: boolean;
   features: string[];
   status: 'available' | 'coming-soon';
   badge?: 'Novo' | 'Popular' | 'Beta';
@@ -75,6 +76,31 @@ const EducuardPortalHub: React.FC = () => {
         { label: 'Cursos', value: '300+' },
         { label: 'Educadores', value: '500+' },
         { label: 'Alunos', value: '10K+' },
+      ],
+    },
+    {
+      id: 'verify-ai',
+      name: 'Verify AI',
+      title: 'AI EduGuard Verify',
+      description: 'Verificacao inteligente de autenticidade documental para entidades e empresas',
+      icon: <Lock className="w-12 h-12" />,
+      color: 'from-cyan-600 to-sky-700',
+      route: '/public/login',
+      external: true,
+      status: 'available',
+      badge: 'Novo',
+      features: [
+        'Verificacao passiva e contextual',
+        'Deteccao de sinais de IA',
+        'Fraud intelligence empresarial',
+        'Subscricao por planos',
+        'Onboarding de entidades',
+        'Portal dedicado de verificacao',
+      ],
+      stats: [
+        { label: 'Planos', value: '4' },
+        { label: 'Setores', value: '5+' },
+        { label: 'Disponibilidade', value: '24/7' },
       ],
     },
     {
@@ -141,6 +167,10 @@ const EducuardPortalHub: React.FC = () => {
 
   const handlePortalAccess = (portal: Portal) => {
     if (portal.status === 'available') {
+      if (portal.external) {
+        window.location.assign(portal.route);
+        return;
+      }
       navigate(portal.route);
     } else {
       setSelectedPortal(portal.id);

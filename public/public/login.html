@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EduGuard Verify AI | Planos e Acesso Empresarial</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700;800&display=swap');
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: 'Space Grotesk', sans-serif;
+        background:
+          radial-gradient(circle at 10% 12%, rgba(39, 195, 172, 0.26), transparent 32%),
+          radial-gradient(circle at 88% 16%, rgba(47, 146, 223, 0.24), transparent 28%),
+          linear-gradient(145deg, #041120 0%, #0a2e49 48%, #0a3b57 100%);
+        color: #eef7ff;
+        overflow-x: hidden;
+      }
+
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 20px 36px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        gap: 18px;
+      }
+
+      .panel {
+        position: relative;
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 22px;
+        padding: 26px;
+        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.35);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 0.86rem;
+        letter-spacing: 0.03em;
+        background: rgba(29, 196, 165, 0.19);
+        color: #b7ffef;
+        border: 1px solid rgba(95, 255, 219, 0.3);
+      }
+
+      h1 {
+        margin: 12px 0 8px;
+        font-size: clamp(1.9rem, 2.5vw, 2.45rem);
+        line-height: 1.14;
+      }
+
+      p {
+        margin: 0 0 12px;
+        color: #c4d9ee;
+        font-size: 1rem;
+      }
+
+      .plans {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .plan {
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 14px;
+        background: rgba(3, 27, 47, 0.45);
+        padding: 12px;
+      }
+
+      .plan strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #dcf3ff;
+      }
+
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 1.25rem;
+      }
+
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      label {
+        font-weight: 700;
+        font-size: 0.94rem;
+        color: #d8ebfb;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: rgba(0, 0, 0, 0.2);
+        color: #fff;
+        font-family: inherit;
+      }
+
+      textarea {
+        min-height: 68px;
+        resize: vertical;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .btn {
+        width: 100%;
+        margin-top: 6px;
+        padding: 12px;
+        border: 0;
+        border-radius: 11px;
+        font-weight: 800;
+        font-size: 0.96rem;
+        cursor: pointer;
+        background: linear-gradient(90deg, #17cfaa, #2da7ea);
+        color: #032437;
+      }
+
+      .btn.alt {
+        background: rgba(255, 255, 255, 0.16);
+        color: #eaf7ff;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+      }
+
+      .msg {
+        margin-top: 10px;
+        min-height: 20px;
+        color: #bce8ff;
+        font-size: 0.95rem;
+      }
+
+      .note {
+        margin-top: 10px;
+        font-size: 0.86rem;
+        color: #bdd9f3;
+      }
+
+      @media (max-width: 760px) {
+        .hero { grid-template-columns: 1fr; }
+        .plans { grid-template-columns: 1fr; }
+        .actions { grid-template-columns: 1fr; }
+      }
+
+      button {
+        font-family: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <article class="panel">
+          <span class="badge">Apenas Entidades com Subscricao Ativa</span>
+          <h1>EduGuard Verify AI<br>Planos e Acesso Empresarial</h1>
+          <p>Escolha um plano, registe a sua entidade e ative via pagamento. Apenas subscricoes ativas acedem ao portal de verificacao.</p>
+
+          <div class="plans" id="plans"></div>
+
+          <div class="note">Gateways suportados: Stripe, PayPal, M-Pesa e Flutterwave. Ativacao automatica via webhook de pagamento.</div>
+        </article>
+
+        <aside class="panel">
+          <h2>Entrar no Portal</h2>
+          <form id="loginForm" class="grid">
+            <label for="username">Utilizador</label>
+            <input id="username" name="username" type="email" autocomplete="username" required />
+            <label for="password">Senha</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+            <button class="btn" type="submit">Entrar com Subscricao Ativa</button>
+          </form>
+
+          <hr style="border:0;border-top:1px solid rgba(255,255,255,.17);margin:16px 0">
+
+          <h2>Registo da Entidade</h2>
+          <form id="requestForm" class="grid">
+            <label for="companyName">Nome da Entidade</label>
+            <input id="companyName" name="companyName" required />
+            <label for="institutionType">Tipo</label>
+            <input id="institutionType" name="institutionType" placeholder="Banco, Universidade, Seguradora..." required />
+            <label for="contactName">Responsavel</label>
+            <input id="contactName" name="contactName" required />
+            <label for="contactEmail">Email</label>
+            <input id="contactEmail" name="contactEmail" type="email" required />
+            <label for="selectedPlan">Plano</label>
+            <select id="selectedPlan" name="selectedPlan">
+              <option value="starter">Starter</option>
+              <option value="business" selected>Business</option>
+              <option value="enterprise">Enterprise</option>
+              <option value="annual">Annual</option>
+            </select>
+            <label for="notes">Observacoes</label>
+            <textarea id="notes" name="notes" placeholder="Informacoes adicionais para validacao."></textarea>
+            <div class="actions">
+              <button class="btn" type="submit">Solicitar Acesso</button>
+              <button class="btn alt" type="button" id="plansBtn">Ver Planos</button>
+            </div>
+          </form>
+
+          <div id="msg" class="msg"></div>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const API_BASE = window.EDUGUARD_VERIFY_API_BASE || "https://api.eduguard360.co.mz";
+      const apiUrl = (path) => `${API_BASE}${path}`;
+
+      const msg = document.getElementById('msg');
+      const plansEl = document.getElementById('plans');
+      const requestForm = document.getElementById('requestForm');
+      const loginForm = document.getElementById('loginForm');
+      const plansBtn = document.getElementById('plansBtn');
+
+      const formatLimit = (value) => value === 'unlimited' ? 'Ilimitado' : `${value} documentos`;
+
+      async function loadPlans() {
+        try {
+          const res = await fetch(apiUrl('/public/plans'));
+          const data = await res.json();
+          if (!res.ok || !Array.isArray(data.plans)) throw new Error('plans-not-available');
+
+          plansEl.innerHTML = data.plans.map((plan) => `
+            <div class="plan">
+              <strong>${plan.name}</strong>
+              Duracao: ${plan.durationDays} dias<br>
+              Limite: ${formatLimit(plan.verificationLimit)}<br>
+              Preco estimado: ${plan.priceUsd} USD
+            </div>
+          `).join('');
+        } catch {
+          plansEl.innerHTML = `
+            <div class="plan"><strong>Starter</strong>7 dias · 50 documentos · 25 USD</div>
+            <div class="plan"><strong>Business</strong>30 dias · 300 documentos · 80 USD</div>
+            <div class="plan"><strong>Enterprise</strong>90 dias · 1000 documentos · 200 USD</div>
+            <div class="plan"><strong>Annual</strong>365 dias · Ilimitado · 600 USD</div>
+          `;
+        }
+      }
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        msg.textContent = 'A autenticar...';
+
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        try {
+          const res = await fetch(apiUrl('/auth/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+            credentials: 'include'
+          });
+          const data = await res.json();
+
+          if (!res.ok) {
+            if (data?.error === 'subscription-inactive') {
+              msg.textContent = 'Subscricao inativa/expirada. Renove o plano para aceder ao servico.';
+              return;
+            }
+            msg.textContent = 'Credenciais invalidas ou conta sem ativacao.';
+            return;
+          }
+
+          msg.textContent = 'Subscricao ativa confirmada. A redirecionar para o portal...';
+          setTimeout(() => { window.location.href = '/public'; }, 300);
+        } catch {
+          msg.textContent = 'Falha de ligacao ao servidor.';
+        }
+      });
+
+      requestForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        msg.textContent = 'A registar entidade...';
+
+        const payload = {
+          companyName: document.getElementById('companyName').value,
+          institutionType: document.getElementById('institutionType').value,
+          contactName: document.getElementById('contactName').value,
+          contactEmail: document.getElementById('contactEmail').value,
+          selectedPlan: document.getElementById('selectedPlan').value,
+          notes: document.getElementById('notes').value
+        };
+
+        try {
+          const res = await fetch(apiUrl('/public/entity-requests'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+
+          if (!res.ok) {
+            msg.textContent = 'Nao foi possivel concluir o registo da entidade.';
+            return;
+          }
+
+          msg.textContent = `Pedido submetido com sucesso (ID: ${data.request.id}). Aguarde aprovacao e ativacao do pagamento.`;
+          requestForm.reset();
+        } catch {
+          msg.textContent = 'Falha de ligacao ao servidor durante o registo.';
+        }
+      });
+
+      plansBtn.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+
+      loadPlans();
+    </script>
+  </body>
+</html>

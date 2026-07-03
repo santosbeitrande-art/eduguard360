@@ -4,6 +4,18 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/public",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/public/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/public/login",
+      "destination": "/public/login.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
