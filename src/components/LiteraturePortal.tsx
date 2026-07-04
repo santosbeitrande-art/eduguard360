@@ -73,6 +73,51 @@ const safeShare = async (title: string, url: string) => {
   }
 };
 
+const isMobileDevice = () => /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+
+const triggerDirectDownload = (url: string, suggestedFileName: string) => {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  anchor.download = suggestedFileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+};
+
+const mobileFriendlyDownload = async (url: string, fileName: string) => {
+  const isSameOrigin = (() => {
+    try {
+      return new URL(url, window.location.origin).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  })();
+
+  if (isSameOrigin) {
+    try {
+      const response = await fetch(url, { credentials: 'omit' });
+      if (response.ok) {
+        const blob = await response.blob();
+        const objectUrl = window.URL.createObjectURL(blob);
+        triggerDirectDownload(objectUrl, fileName);
+        window.URL.revokeObjectURL(objectUrl);
+        return;
+      }
+    } catch {
+      // Fallback para link direto
+    }
+  }
+
+  triggerDirectDownload(url, fileName);
+  if (isMobileDevice()) {
+    setTimeout(() => {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }, 200);
+  }
+};
+
 const fallbackBooks = [
   {
     id: 'dom-quixote',
@@ -87,55 +132,55 @@ const fallbackBooks = [
     download_format: 'txt'
   },
   {
-    id: 'carta-a-maria',
-    title: 'Carta a Maria',
-    authors: 'Pepetela',
-    source: 'Repoarte',
-    license: 'Creative Commons',
+    id: 'pride-and-prejudice',
+    title: 'Pride and Prejudice',
+    authors: 'Jane Austen',
+    source: 'Project Gutenberg',
+    license: 'Domínio Público',
     cover_image_url: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=800',
-    file_url: 'https://example.com/carta-a-maria.pdf',
-    file_format: 'pdf',
-    download_url: 'https://example.com/carta-a-maria.pdf',
-    download_format: 'pdf'
+    file_url: 'https://www.gutenberg.org/ebooks/1342',
+    file_format: 'web',
+    download_url: 'https://www.gutenberg.org/files/1342/1342-0.txt',
+    download_format: 'txt'
   },
   {
-    id: 'history-of-mozambique',
-    title: 'História de Moçambique',
-    authors: 'M. Chissano',
-    source: 'Open Library',
-    license: 'Open Access',
+    id: 'sherlock-holmes',
+    title: 'The Adventures of Sherlock Holmes',
+    authors: 'Arthur Conan Doyle',
+    source: 'Project Gutenberg',
+    license: 'Domínio Público',
     cover_image_url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
-    file_url: 'https://example.com/history-of-mozambique.pdf',
-    file_format: 'pdf',
-    download_url: 'https://example.com/history-of-mozambique.pdf',
-    download_format: 'pdf'
+    file_url: 'https://www.gutenberg.org/ebooks/1661',
+    file_format: 'web',
+    download_url: 'https://www.gutenberg.org/files/1661/1661-0.txt',
+    download_format: 'txt'
   }
 ];
 
 const repoarteFallbackBooks = [
   {
-    id: 'rei-gazimba',
-    title: 'O Rei Gazimba',
-    authors: 'Mia Couto',
-    source: 'Repoarte',
-    license: 'Creative Commons',
+    id: 'os-lusiadas',
+    title: 'Os Lusíadas',
+    authors: 'Luís de Camões',
+    source: 'Project Gutenberg',
+    license: 'Domínio Público',
     cover_image_url: 'https://images.unsplash.com/photo-1507842217343-583f7270bfba?w=800',
-    file_url: 'https://example.com/o-rei-gazimba.pdf',
-    file_format: 'pdf',
-    download_url: 'https://example.com/o-rei-gazimba.pdf',
-    download_format: 'pdf'
+    file_url: 'https://www.gutenberg.org/ebooks/3333',
+    file_format: 'web',
+    download_url: 'https://www.gutenberg.org/files/3333/3333-0.txt',
+    download_format: 'txt'
   },
   {
-    id: 'sobre-a-idade-da-terrinha',
-    title: 'Sobre a Idade da Terrinha',
-    authors: 'Paulina Chiziane',
-    source: 'Repoarte',
-    license: 'Creative Commons',
+    id: 'mensagem',
+    title: 'Mensagem',
+    authors: 'Fernando Pessoa',
+    source: 'Domínio Público',
+    license: 'Domínio Público',
     cover_image_url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
-    file_url: 'https://example.com/sobre-a-idade-da-terrinha.pdf',
-    file_format: 'pdf',
-    download_url: 'https://example.com/sobre-a-idade-da-terrinha.pdf',
-    download_format: 'pdf'
+    file_url: 'https://www.gutenberg.org/ebooks/34184',
+    file_format: 'web',
+    download_url: 'https://www.gutenberg.org/files/34184/34184-0.txt',
+    download_format: 'txt'
   }
 ];
 
@@ -290,7 +335,7 @@ export const LiteraturePortal = () => {
             placeholder="Buscar livros, autores, tópicos..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="max-w-2xl text-black placeholder:text-white placeholder:opacity-90"
+            className="max-w-2xl bg-white/95 text-black placeholder:text-gray-500"
           />
         </div>
       </section>
@@ -522,7 +567,7 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
   const bookLink = resolveBookLink(book);
   const downloadTarget = getBookDownloadTarget(book);
 
-  // Função robusta de download
+  // Download com fallback mobile para links externos
   const handleDownload = async (e: React.MouseEvent) => {
     e.preventDefault();
     
@@ -533,28 +578,10 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
 
     setDownloading(true);
     try {
-      // Tentar download direto
-      const response = await fetch(downloadTarget.url, {
-        mode: 'cors',
-        credentials: 'omit',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro ao baixar: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      const safeFileName = `${book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
+      await mobileFriendlyDownload(downloadTarget.url, safeFileName);
     } catch (error) {
       console.error('Erro no download:', error);
-      // Fallback: abrir em nova aba
       window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
     } finally {
       setDownloading(false);
@@ -591,19 +618,21 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
         </div>
 
         {/* Botões */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-stretch">
           {isInternalBook(book) ? (
-            <Button size="sm" className="flex-1" asChild>
+            <Button size="sm" className="flex-1 h-10 text-sm font-semibold" asChild>
               <Link to={bookLink}>Ler Online</Link>
             </Button>
           ) : (
-            <Button size="sm" className="flex-1" asChild>
+            <Button size="sm" className="flex-1 h-10 text-sm font-semibold" asChild>
               <a href={bookLink} target="_blank" rel="noreferrer">Ler Online</a>
             </Button>
           )}
           <Button 
             size="sm" 
             variant="outline"
+            className="h-10 w-10 text-slate-700"
+            aria-label={saved ? 'Remover dos guardados' : 'Guardar livro'}
             onClick={() => setSaved(!saved)}
           >
             <Heart size={16} fill={saved ? 'currentColor' : 'none'} />
@@ -611,6 +640,8 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
           <Button 
             size="sm" 
             variant="outline"
+            className="h-10 w-10 text-slate-700"
+            aria-label="Partilhar livro"
             onClick={() => safeShare(book.title, bookLink)}
           >
             <Share2 size={16} />
@@ -620,9 +651,9 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
         {/* Download / Acesso */}
         {downloadTarget ? (
           <Button 
-            variant="ghost" 
+            variant="outline" 
             size="sm" 
-            className="w-full mt-2 hover:bg-amber-50" 
+            className="w-full mt-2 h-10 text-sm font-semibold border-amber-300 text-amber-700 hover:bg-amber-50" 
             onClick={handleDownload}
             disabled={downloading}
           >
@@ -668,7 +699,7 @@ export const LiteratureReader = ({ bookId }) => {
   const [downloading, setDownloading] = useState(false);
   const downloadTarget = getBookDownloadTarget(book);
 
-  // Função robusta de download para LiteratureReader
+  // Download com melhor compatibilidade para telemóvel
   const handleDownload = async () => {
     if (!downloadTarget?.url || !book?.title) {
       alert('URL do arquivo não disponível');
@@ -677,24 +708,8 @@ export const LiteratureReader = ({ bookId }) => {
 
     setDownloading(true);
     try {
-      const response = await fetch(downloadTarget.url, {
-        mode: 'cors',
-        credentials: 'omit',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro ao baixar: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${book.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      const safeFileName = `${book.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
+      await mobileFriendlyDownload(downloadTarget.url, safeFileName);
     } catch (error) {
       console.error('Erro no download:', error);
       window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
@@ -833,7 +848,7 @@ export const LiteratureReader = ({ bookId }) => {
             {downloadTarget ? (
               <Button 
                 variant="default" 
-                className="w-full bg-amber-600 hover:bg-amber-700" 
+                className="w-full h-10 text-sm font-semibold bg-amber-600 hover:bg-amber-700" 
                 onClick={handleDownload}
                 disabled={downloading}
               >
@@ -843,7 +858,7 @@ export const LiteratureReader = ({ bookId }) => {
             ) : (
               <p className="text-xs text-center text-gray-500">Sem ficheiro para download nesta fonte.</p>
             )}
-            <Button variant="outline" className="w-full" onClick={() => safeShare(book.title, book.openlibrary_url || book.file_url)}>
+            <Button variant="outline" className="w-full h-10 text-sm font-semibold" onClick={() => safeShare(book.title, book.openlibrary_url || book.file_url)}>
               Partilhar
             </Button>
           </TabsContent>
