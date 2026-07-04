@@ -11,6 +11,68 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Download, BookOpen, Share2, Heart, MapPin, Shield } from 'lucide-react';
 
+const DOWNLOADABLE_FORMATS = new Set(['pdf', 'epub', 'txt', 'doc', 'docx', 'rtf', 'mobi', 'zip']);
+
+const inferFileFormatFromUrl = (url?: string) => {
+  if (!url) return null;
+  const cleanUrl = url.split('?')[0].toLowerCase();
+  const parts = cleanUrl.split('.');
+  if (parts.length < 2) return null;
+  const extension = parts[parts.length - 1];
+  return extension || null;
+};
+
+const isLikelyDownloadableUrl = (url?: string) => {
+  if (!url) return false;
+  const format = inferFileFormatFromUrl(url);
+  if (format && DOWNLOADABLE_FORMATS.has(format)) return true;
+  return /download|\/files\//i.test(url);
+};
+
+const getBookDownloadTarget = (book: any) => {
+  if (book.download_url && isLikelyDownloadableUrl(book.download_url)) {
+    return {
+      url: book.download_url,
+      format: book.download_format || inferFileFormatFromUrl(book.download_url) || book.file_format || 'file'
+    };
+  }
+
+  if (book.file_url && isLikelyDownloadableUrl(book.file_url)) {
+    return {
+      url: book.file_url,
+      format: book.file_format || inferFileFormatFromUrl(book.file_url) || 'file'
+    };
+  }
+
+  if (book.file_format && DOWNLOADABLE_FORMATS.has(String(book.file_format).toLowerCase()) && book.file_url) {
+    return {
+      url: book.file_url,
+      format: book.file_format
+    };
+  }
+
+  return null;
+};
+
+const safeShare = async (title: string, url: string) => {
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url });
+      return;
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      alert('Link copiado para a área de transferência.');
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    console.warn('Partilha cancelada ou indisponível.', error);
+  }
+};
+
 const fallbackBooks = [
   {
     id: 'dom-quixote',
@@ -19,8 +81,10 @@ const fallbackBooks = [
     source: 'Project Gutenberg',
     license: 'Domínio Público',
     cover_image_url: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=800',
-    file_url: 'https://www.gutenberg.org/ebooks/9968.txt.utf-8',
-    file_format: 'txt'
+    file_url: 'https://www.gutenberg.org/ebooks/9968',
+    file_format: 'web',
+    download_url: 'https://www.gutenberg.org/files/9968/9968-0.txt',
+    download_format: 'txt'
   },
   {
     id: 'carta-a-maria',
@@ -30,7 +94,9 @@ const fallbackBooks = [
     license: 'Creative Commons',
     cover_image_url: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=800',
     file_url: 'https://example.com/carta-a-maria.pdf',
-    file_format: 'pdf'
+    file_format: 'pdf',
+    download_url: 'https://example.com/carta-a-maria.pdf',
+    download_format: 'pdf'
   },
   {
     id: 'history-of-mozambique',
@@ -40,7 +106,9 @@ const fallbackBooks = [
     license: 'Open Access',
     cover_image_url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
     file_url: 'https://example.com/history-of-mozambique.pdf',
-    file_format: 'pdf'
+    file_format: 'pdf',
+    download_url: 'https://example.com/history-of-mozambique.pdf',
+    download_format: 'pdf'
   }
 ];
 
@@ -53,7 +121,9 @@ const repoarteFallbackBooks = [
     license: 'Creative Commons',
     cover_image_url: 'https://images.unsplash.com/photo-1507842217343-583f7270bfba?w=800',
     file_url: 'https://example.com/o-rei-gazimba.pdf',
-    file_format: 'pdf'
+    file_format: 'pdf',
+    download_url: 'https://example.com/o-rei-gazimba.pdf',
+    download_format: 'pdf'
   },
   {
     id: 'sobre-a-idade-da-terrinha',
@@ -63,7 +133,9 @@ const repoarteFallbackBooks = [
     license: 'Creative Commons',
     cover_image_url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
     file_url: 'https://example.com/sobre-a-idade-da-terrinha.pdf',
-    file_format: 'pdf'
+    file_format: 'pdf',
+    download_url: 'https://example.com/sobre-a-idade-da-terrinha.pdf',
+    download_format: 'pdf'
   }
 ];
 
@@ -101,24 +173,39 @@ export const LiteraturePortal = () => {
       : 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=800',
     file_url: buildOpenLibraryUrl(doc.key),
     file_format: doc.ebook_count_i ? 'html' : 'web',
+    download_url: null,
+    download_format: null,
     publish_year: doc.first_publish_year,
     subjects: doc.subject?.slice(0, 3).join(', ') || '',
     languages: doc.language?.map((lang: string) => lang).join(', ') || 'pt'
   });
 
-  const mapGutenbergDoc = (doc: any) => ({
-    id: String(doc.id),
-    title: doc.title || 'Título desconhecido',
-    authors: Array.isArray(doc.authors) ? doc.authors.map((a: any) => a.name).join(', ') : 'Autor desconhecido',
-    source: 'Project Gutenberg',
-    license: 'Domínio Público',
-    cover_image_url: doc.formats['image/jpeg'] || 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=800',
-    file_url: doc.formats['text/html; charset=utf-8'] || doc.formats['text/plain; charset=utf-8'] || doc.formats['application/pdf'] || `https://www.gutenberg.org/ebooks/${doc.id}`,
-    file_format: doc.formats['application/pdf'] ? 'pdf' : 'html',
-    publish_year: doc.download_count || null,
-    subjects: doc.subject?.slice(0, 3).join(', ') || '',
-    languages: doc.languages?.join(', ') || 'en'
-  });
+  const mapGutenbergDoc = (doc: any) => {
+    const formats = doc.formats || {};
+    const htmlUrl = formats['text/html; charset=utf-8'] || formats['text/html'];
+    const textUrl = formats['text/plain; charset=utf-8'] || formats['text/plain'];
+    const pdfUrl = formats['application/pdf'];
+    const epubUrl = formats['application/epub+zip'];
+    const readUrl = htmlUrl || textUrl || `https://www.gutenberg.org/ebooks/${doc.id}`;
+    const downloadUrl = pdfUrl || epubUrl || textUrl || null;
+    const downloadFormat = pdfUrl ? 'pdf' : epubUrl ? 'epub' : textUrl ? 'txt' : null;
+
+    return {
+      id: String(doc.id),
+      title: doc.title || 'Título desconhecido',
+      authors: Array.isArray(doc.authors) ? doc.authors.map((a: any) => a.name).join(', ') : 'Autor desconhecido',
+      source: 'Project Gutenberg',
+      license: 'Domínio Público',
+      cover_image_url: formats['image/jpeg'] || 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=800',
+      file_url: readUrl,
+      file_format: htmlUrl ? 'html' : textUrl ? 'txt' : 'web',
+      download_url: downloadUrl,
+      download_format: downloadFormat,
+      publish_year: doc.download_count || null,
+      subjects: doc.subject?.slice(0, 3).join(', ') || '',
+      languages: doc.languages?.join(', ') || 'en'
+    };
+  };
 
   useEffect(() => {
     fetchLiterature();
@@ -147,7 +234,7 @@ export const LiteraturePortal = () => {
         const response = await fetch(gutenbergUrl.toString());
         const data = await response.json();
         const items = Array.isArray(data.results)
-          ? data.results.map(mapGutenbergDoc).slice(0, 24)
+          ? data.results.map(mapGutenbergDoc)
           : [];
 
         setBooks(items.length ? items : fallbackBooks);
@@ -156,7 +243,7 @@ export const LiteraturePortal = () => {
 
       const openLibraryUrl = new URL('https://openlibrary.org/search.json');
       openLibraryUrl.searchParams.set('q', query);
-      openLibraryUrl.searchParams.set('limit', '24');
+      openLibraryUrl.searchParams.set('limit', '120');
       if (targetLanguage) {
         openLibraryUrl.searchParams.set('language', targetLanguage);
       }
@@ -172,8 +259,7 @@ export const LiteraturePortal = () => {
       const docs = Array.isArray(data.docs) ? data.docs : [];
       const items = docs
         .filter((doc) => doc.key && doc.title)
-        .map(mapOpenLibraryDoc)
-        .slice(0, 24);
+        .map(mapOpenLibraryDoc);
 
       if (filters.source === 'repoarte') {
         const repoItems = items.filter((item) => item.title.toLowerCase().includes('moçambique') || item.authors.toLowerCase().includes('mozambique'));
@@ -361,7 +447,15 @@ export const LiteraturePortal = () => {
                   <p className="text-gray-600">
                     Explore obras de autores moçambicanos clássicos e contemporâneos.
                   </p>
-                  <Button className="w-full">Ver Autores</Button>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setFilters({ ...filters, source: 'repoarte', country: 'mozambique', subject: 'autores moçambicanos clássicos contemporâneos' });
+                      setActiveTab('explore');
+                    }}
+                  >
+                    Ver Autores
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -373,7 +467,15 @@ export const LiteraturePortal = () => {
                   <p className="text-gray-600">
                     Teses, dissertações e publicações académicas de instituições nacionais.
                   </p>
-                  <Button className="w-full">Aceder Repoarte</Button>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setFilters({ ...filters, source: 'repoarte', country: 'mozambique', subject: 'literatura moçambicana' });
+                      setActiveTab('explore');
+                    }}
+                  >
+                    Aceder Repoarte
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -385,7 +487,15 @@ export const LiteraturePortal = () => {
                   <p className="text-gray-600">
                     Artigos sobre desenvolvimento em Moçambique e região.
                   </p>
-                  <Button className="w-full">Pesquisar</Button>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setFilters({ ...filters, source: 'all', country: 'mozambique', subject: 'desenvolvimento moçambique' });
+                      setActiveTab('explore');
+                    }}
+                  >
+                    Pesquisar
+                  </Button>
                 </CardContent>
               </Card>
             </div>
@@ -410,12 +520,13 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const bookLink = resolveBookLink(book);
+  const downloadTarget = getBookDownloadTarget(book);
 
   // Função robusta de download
   const handleDownload = async (e: React.MouseEvent) => {
     e.preventDefault();
     
-    if (!book.file_url) {
+    if (!downloadTarget?.url) {
       alert('URL do arquivo não disponível');
       return;
     }
@@ -423,7 +534,7 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
     setDownloading(true);
     try {
       // Tentar download direto
-      const response = await fetch(book.file_url, {
+      const response = await fetch(downloadTarget.url, {
         mode: 'cors',
         credentials: 'omit',
       });
@@ -436,7 +547,7 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${book.file_format || 'pdf'}`;
+      link.download = `${book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -444,7 +555,7 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
     } catch (error) {
       console.error('Erro no download:', error);
       // Fallback: abrir em nova aba
-      window.open(book.file_url, '_blank');
+      window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
     } finally {
       setDownloading(false);
     }
@@ -483,11 +594,11 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
         <div className="flex gap-2">
           {isInternalBook(book) ? (
             <Button size="sm" className="flex-1" asChild>
-              <Link to={bookLink}>Ver</Link>
+              <Link to={bookLink}>Ler Online</Link>
             </Button>
           ) : (
             <Button size="sm" className="flex-1" asChild>
-              <a href={bookLink} target="_blank" rel="noreferrer">Ver</a>
+              <a href={bookLink} target="_blank" rel="noreferrer">Ler Online</a>
             </Button>
           )}
           <Button 
@@ -500,23 +611,27 @@ export const LiteratureCard = ({ book, resolveBookLink, isInternalBook }) => {
           <Button 
             size="sm" 
             variant="outline"
-            onClick={() => navigator.share({ title: book.title, url: window.location.href })}
+            onClick={() => safeShare(book.title, bookLink)}
           >
             <Share2 size={16} />
           </Button>
         </div>
 
         {/* Download / Acesso */}
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="w-full mt-2 hover:bg-amber-50" 
-          onClick={handleDownload}
-          disabled={downloading || !book.file_url}
-        >
-          <Download size={16} className={`mr-1 ${downloading ? 'animate-spin' : ''}`} />
-          {downloading ? 'Baixando...' : `Baixar ${book.file_format?.toUpperCase() || 'PDF'}`}
-        </Button>
+        {downloadTarget ? (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full mt-2 hover:bg-amber-50" 
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            <Download size={16} className={`mr-1 ${downloading ? 'animate-spin' : ''}`} />
+            {downloading ? 'Baixando...' : `Baixar ${String(downloadTarget.format).toUpperCase()}`}
+          </Button>
+        ) : (
+          <p className="mt-2 text-xs text-gray-500 text-center">Download indisponível para esta obra. Leitura online ativa.</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -551,17 +666,18 @@ export const LiteratureReader = ({ bookId }) => {
   const [authors, setAuthors] = useState<string>('Autor desconhecido');
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [downloading, setDownloading] = useState(false);
+  const downloadTarget = getBookDownloadTarget(book);
 
   // Função robusta de download para LiteratureReader
   const handleDownload = async () => {
-    if (!book?.file_url) {
+    if (!downloadTarget?.url || !book?.title) {
       alert('URL do arquivo não disponível');
       return;
     }
 
     setDownloading(true);
     try {
-      const response = await fetch(book.file_url, {
+      const response = await fetch(downloadTarget.url, {
         mode: 'cors',
         credentials: 'omit',
       });
@@ -574,14 +690,14 @@ export const LiteratureReader = ({ bookId }) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${book.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${book.file_format || 'pdf'}`;
+      link.download = `${book.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${downloadTarget.format || 'file'}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Erro no download:', error);
-      window.open(book.file_url, '_blank');
+      window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
     } finally {
       setDownloading(false);
     }
@@ -603,7 +719,9 @@ export const LiteratureReader = ({ bookId }) => {
           ...gutenbergBook,
           id: bookId,
           file_url: gutenbergBook.file_url,
-          file_format: gutenbergBook.file_format
+          file_format: gutenbergBook.file_format,
+          download_url: gutenbergBook.download_url,
+          download_format: gutenbergBook.download_format
         });
         return;
       }
@@ -638,7 +756,9 @@ export const LiteratureReader = ({ bookId }) => {
           ? `https://covers.openlibrary.org/b/id/${data.covers[0]}-L.jpg`
           : 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=800',
         file_url: `https://openlibrary.org/works/${bookId}`,
-        file_format: 'web'
+        file_format: 'web',
+        download_url: null,
+        download_format: null
       });
     } catch (error) {
       console.warn('Erro ao carregar livro. Usando fallback se disponível.', error);
@@ -707,19 +827,23 @@ export const LiteratureReader = ({ bookId }) => {
             </div>
             <Button className="w-full" asChild>
               <a href={book.openlibrary_url || book.file_url} target="_blank" rel="noreferrer">
-                {book.openlibrary_url ? 'Abrir na página do livro' : 'Abrir obra'}
+                {book.openlibrary_url ? 'Ler online na página do livro' : 'Ler obra online'}
               </a>
             </Button>
-            <Button 
-              variant="default" 
-              className="w-full bg-amber-600 hover:bg-amber-700" 
-              onClick={handleDownload}
-              disabled={downloading || !book.file_url}
-            >
-              <Download size={16} className={`mr-2 ${downloading ? 'animate-spin' : ''}`} />
-              {downloading ? 'Baixando...' : 'Baixar Arquivo'}
-            </Button>
-            <Button variant="outline" className="w-full" onClick={() => navigator.share?.({ title: book.title, url: book.openlibrary_url || book.file_url })}>
+            {downloadTarget ? (
+              <Button 
+                variant="default" 
+                className="w-full bg-amber-600 hover:bg-amber-700" 
+                onClick={handleDownload}
+                disabled={downloading}
+              >
+                <Download size={16} className={`mr-2 ${downloading ? 'animate-spin' : ''}`} />
+                {downloading ? 'Baixando...' : `Baixar ${String(downloadTarget.format).toUpperCase()}`}
+              </Button>
+            ) : (
+              <p className="text-xs text-center text-gray-500">Sem ficheiro para download nesta fonte.</p>
+            )}
+            <Button variant="outline" className="w-full" onClick={() => safeShare(book.title, book.openlibrary_url || book.file_url)}>
               Partilhar
             </Button>
           </TabsContent>
