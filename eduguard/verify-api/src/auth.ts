@@ -98,7 +98,7 @@ interface LedgerEntry {
 interface PaymentRecord {
   id: string;
   companyId: string;
-  provider: 'stripe' | 'flutterwave' | 'mpesa' | 'mock';
+  provider: 'stripe' | 'flutterwave' | 'mpesa' | 'emola' | 'mock';
   amount: number;
   currency: string;
   status: 'pending' | 'succeeded' | 'failed';
@@ -108,6 +108,24 @@ interface PaymentRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+type PaymentProvider = PaymentRecord['provider'];
+
+type ExternalCheckoutResult = {
+  status: 'pending' | 'succeeded' | 'failed';
+  externalReference: string | null;
+  checkoutUrl: string | null;
+  error?: string;
+  raw?: unknown;
+};
+
+type MpesaChargeOptions = {
+  phone?: string;
+  destinationPhone?: string;
+  selectedPlan?: SubscriptionPlanCode;
+  purchaser?: string;
+  paymentId?: string;
+};
 
 interface AuditEvent {
   id: string;
@@ -206,6 +224,167 @@ function parseSubscriptionPlan(raw: unknown): SubscriptionPlanCode {
     return value;
   }
   return 'business';
+}
+
+function normalizeMsisdn(raw: unknown) {
+  const value = String(raw || '').replace(/\s+/g, '').trim();
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('258') && digits.length >= 12) return digits;
+  if (digits.length >= 9) return `258${digits.slice(-9)}`;
+  return digits;
+}
+
+function getMpesaConfig() {
+  return {
+    apiBaseUrl: String(process.env.MPESA_API_BASE_URL || '').trim(),
+    checkoutPath: String(process.env.MPESA_CHECKOUT_PATH || '/payments/charge').trim(),
+    statusPath: String(process.env.MPESA_STATUS_PATH || '/payments/status').trim(),
+    apiKey: String(process.env.MPESA_API_KEY || '').trim(),
+    bearerToken: String(process.env.MPESA_BEARER_TOKEN || '').trim(),
+    serviceProviderCode: String(process.env.MPESA_SERVICE_PROVIDER_CODE || '').trim(),
+    callbackUrl: String(process.env.MPESA_ASYNC_RESPONSE_URL || '').trim(),
+    webhookToken: String(process.env.MPESA_WEBHOOK_TOKEN || '').trim(),
+    destinationMsisdn: normalizeMsisdn(process.env.MPESA_DESTINATION_MSISDN || '844365114')
+  };
+}
+
+function resolveProvider(providerRaw: unknown): PaymentProvider {
+  const provider = String(providerRaw || 'mock').trim().toLowerCase();
+  if (provider === 'stripe' || provider === 'flutterwave' || provider === 'mpesa' || provider === 'mock' || provider === 'emola') {
+    return provider;
+  }
+  return 'mock';
+}
+
+async function callMpesaCheckout(company: Company, amount: number, currency: string, options: MpesaChargeOptions): Promise<ExternalCheckoutResult> {
+  const cfg = getMpesaConfig();
+  if (!cfg.apiBaseUrl) {
+    return { status: 'failed', externalReference: null, checkoutUrl: null, error: 'mpesa-not-configured' };
+  }
+
+  const sourceMsisdn = normalizeMsisdn(options.phone);
+  const destinationMsisdn = normalizeMsisdn(options.destinationPhone || cfg.destinationMsisdn);
+  if (!sourceMsisdn || !destinationMsisdn) {
+    return { status: 'failed', externalReference: null, checkoutUrl: null, error: 'mpesa-msisdn-required' };
+  }
+
+  const txReference = `mpesa_${options.paymentId || crypto.randomUUID().slice(0, 8)}_${Date.now()}`;
+  const endpoint = `${cfg.apiBaseUrl.replace(/\/$/, '')}${cfg.checkoutPath.startsWith('/') ? cfg.checkoutPath : `/${cfg.checkoutPath}`}`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (cfg.apiKey) headers['X-API-Key'] = cfg.apiKey;
+  if (cfg.bearerToken) headers['Authorization'] = `Bearer ${cfg.bearerToken}`;
+
+  const payload = {
+    amount,
+    currency,
+    customerMsisdn: sourceMsisdn,
+    destinationMsisdn,
+    serviceProviderCode: cfg.serviceProviderCode || undefined,
+    thirdPartyReference: txReference,
+    transactionReference: txReference,
+    callbackUrl: cfg.callbackUrl || undefined,
+    metadata: {
+      companyId: company.id,
+      companyName: company.name,
+      selectedPlan: options.selectedPlan,
+      purchaser: options.purchaser,
+      paymentId: options.paymentId
+    }
+  };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => null) as any;
+  if (!response.ok) {
+    return {
+      status: 'failed',
+      externalReference: data?.transactionReference || txReference,
+      checkoutUrl: null,
+      error: data?.error || data?.message || 'mpesa-charge-failed',
+      raw: data
+    };
+  }
+
+  const accepted = String(data?.status || data?.state || '').toLowerCase();
+  const isSucceeded = accepted === 'success' || accepted === 'succeeded' || accepted === 'successful';
+  const externalReference = String(data?.transactionReference || data?.output_TransactionID || data?.id || txReference);
+
+  return {
+    status: isSucceeded ? 'succeeded' : 'pending',
+    externalReference,
+    checkoutUrl: null,
+    raw: data
+  };
+}
+
+async function queryMpesaStatus(externalReference: string) {
+  const cfg = getMpesaConfig();
+  if (!cfg.apiBaseUrl) {
+    return { ok: false as const, error: 'mpesa-not-configured' };
+  }
+
+  const endpoint = `${cfg.apiBaseUrl.replace(/\/$/, '')}${cfg.statusPath.startsWith('/') ? cfg.statusPath : `/${cfg.statusPath}`}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (cfg.apiKey) headers['X-API-Key'] = cfg.apiKey;
+  if (cfg.bearerToken) headers['Authorization'] = `Bearer ${cfg.bearerToken}`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ transactionReference: externalReference })
+  });
+
+  const payload = await response.json().catch(() => null) as any;
+  if (!response.ok) {
+    return { ok: false as const, error: payload?.error || payload?.message || 'mpesa-status-query-failed', payload };
+  }
+
+  const statusRaw = String(payload?.status || payload?.state || payload?.transactionStatus || '').toLowerCase();
+  const succeeded = statusRaw === 'success' || statusRaw === 'succeeded' || statusRaw === 'successful';
+  const failed = statusRaw === 'failed' || statusRaw === 'cancelled' || statusRaw === 'rejected';
+
+  return {
+    ok: true as const,
+    status: succeeded ? 'succeeded' as const : failed ? 'failed' as const : 'pending' as const,
+    payload
+  };
+}
+
+function isValidMpesaWebhook(req: Request) {
+  const cfg = getMpesaConfig();
+  if (!cfg.webhookToken) return true;
+  const token = String(req.header('x-webhook-token') || req.header('x-mpesa-webhook-token') || '').trim();
+  const authHeader = String(req.header('authorization') || '').trim();
+  const bearer = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+  return token === cfg.webhookToken || bearer === cfg.webhookToken;
+}
+
+function applySuccessfulPayment(store: Store, payment: PaymentRecord, metadata: Record<string, unknown> = {}) {
+  if (payment.status === 'succeeded') return;
+  const company = store.companies.find((item) => item.id === payment.companyId);
+  if (!company) return;
+
+  payment.status = 'succeeded';
+  payment.updatedAt = new Date().toISOString();
+  payment.metadata = { ...(payment.metadata || {}), ...metadata };
+
+  const selectedPlanRaw = payment.metadata?.selectedPlan;
+  if (selectedPlanRaw) {
+    const selectedPlan = parseSubscriptionPlan(selectedPlanRaw);
+    applySubscriptionPlan(company, selectedPlan);
+  } else {
+    appendLedgerEntry(store, company, 'credit_grant', payment.amount, `Topup confirmado por reconciliacao ${payment.provider}`, payment.id);
+  }
 }
 
 function planAsCompanyPlan(plan: SubscriptionPlanCode): CompanyPlan {
@@ -579,7 +758,7 @@ function resolveMfaChallenge(store: Store, challengeId: string) {
   return { ok: true as const, challenge };
 }
 
-async function createExternalPayment(provider: PaymentRecord['provider'], amount: number, currency: string, company: Company) {
+async function createExternalPayment(provider: PaymentProvider, amount: number, currency: string, company: Company, options: MpesaChargeOptions = {}): Promise<ExternalCheckoutResult> {
   const normalizedCurrency = currency.toUpperCase();
   const successUrl = process.env.PAYMENT_SUCCESS_URL || 'http://localhost:4000/public';
   const cancelUrl = process.env.PAYMENT_CANCEL_URL || 'http://localhost:4000/public';
@@ -671,13 +850,13 @@ async function createExternalPayment(provider: PaymentRecord['provider'], amount
   }
 
   if (provider === 'mpesa') {
-    // M-Pesa integration starts pending and expects webhook confirmation.
-    const reference = `mpesa_${crypto.randomBytes(8).toString('hex')}`;
-    return {
-      status: 'pending' as const,
-      externalReference: reference,
-      checkoutUrl: null
-    };
+    return callMpesaCheckout(company, amount, normalizedCurrency, options);
+  }
+
+  if (provider === 'emola') {
+    // eMola flow currently follows async webhook model similar to M-Pesa.
+    const reference = `emola_${crypto.randomBytes(8).toString('hex')}`;
+    return { status: 'pending', externalReference: reference, checkoutUrl: null };
   }
 
   return { status: 'failed' as const, externalReference: null, checkoutUrl: null, error: 'unsupported-provider' };
@@ -1917,10 +2096,12 @@ export function registerAuthRoutes(app: any) {
     }
 
     const selectedPlan = parseSubscriptionPlan(req.body?.selectedPlan);
-    const provider = String(req.body?.provider || 'mock').trim().toLowerCase() as PaymentRecord['provider'];
+    const provider = resolveProvider(req.body?.provider || 'mock');
     const currency = String(req.body?.currency || 'USD').trim().toUpperCase();
+    const phone = String(req.body?.phone || '').trim();
+    const destinationPhone = String(req.body?.destinationPhone || '').trim();
 
-    if (!['stripe', 'flutterwave', 'mpesa', 'mock'].includes(provider)) {
+    if (!['stripe', 'flutterwave', 'mpesa', 'emola', 'mock'].includes(provider)) {
       return res.status(400).json({ error: 'invalid-provider' });
     }
 
@@ -1944,11 +2125,24 @@ export function registerAuthRoutes(app: any) {
       updatedAt: new Date().toISOString()
     };
 
-    const checkout = await createExternalPayment(provider, amount, currency, company);
+    const checkout = await createExternalPayment(provider, amount, currency, company, {
+      phone,
+      destinationPhone,
+      selectedPlan,
+      purchaser: auth.username,
+      paymentId: payment.id
+    });
     if (checkout.externalReference) payment.externalReference = checkout.externalReference;
     if (checkout.checkoutUrl) payment.checkoutUrl = checkout.checkoutUrl;
     payment.status = checkout.status;
     payment.updatedAt = new Date().toISOString();
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      phone: normalizeMsisdn(phone),
+      destinationPhone: normalizeMsisdn(destinationPhone || getMpesaConfig().destinationMsisdn),
+      mpesaRaw: checkout.raw || null,
+      mpesaError: checkout.error || null
+    };
     store.payments.push(payment);
 
     if (checkout.status === 'succeeded') {
@@ -2018,10 +2212,12 @@ export function registerAuthRoutes(app: any) {
       return res.status(403).json({ error: 'billing-role-required' });
     }
 
-    const provider = String(req.body?.provider || 'mock').trim().toLowerCase() as PaymentRecord['provider'];
+    const provider = resolveProvider(req.body?.provider || 'mock');
     const amount = Number(req.body?.amount ?? 0);
     const currency = String(req.body?.currency || 'MZN').trim().toUpperCase();
-    if (!['stripe', 'flutterwave', 'mpesa', 'mock'].includes(provider)) {
+    const phone = String(req.body?.phone || '').trim();
+    const destinationPhone = String(req.body?.destinationPhone || '').trim();
+    if (!['stripe', 'flutterwave', 'mpesa', 'emola', 'mock'].includes(provider)) {
       return res.status(400).json({ error: 'invalid-provider' });
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -2043,11 +2239,23 @@ export function registerAuthRoutes(app: any) {
       updatedAt: new Date().toISOString()
     };
 
-    const checkout = await createExternalPayment(provider, amount, currency, company);
+    const checkout = await createExternalPayment(provider, amount, currency, company, {
+      phone,
+      destinationPhone,
+      purchaser: auth.username,
+      paymentId: payment.id
+    });
     if (checkout.externalReference) payment.externalReference = checkout.externalReference;
     if (checkout.checkoutUrl) payment.checkoutUrl = checkout.checkoutUrl;
     payment.status = checkout.status;
     payment.updatedAt = new Date().toISOString();
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      phone: normalizeMsisdn(phone),
+      destinationPhone: normalizeMsisdn(destinationPhone || getMpesaConfig().destinationMsisdn),
+      mpesaRaw: checkout.raw || null,
+      mpesaError: checkout.error || null
+    };
 
     store.payments.push(payment);
 
@@ -2081,6 +2289,10 @@ export function registerAuthRoutes(app: any) {
 
   app.post('/webhooks/payments/:provider', (req: Request, res: Response) => {
     const provider = String(req.params.provider || '').toLowerCase();
+    if (provider === 'mpesa' && !isValidMpesaWebhook(req)) {
+      return res.status(401).json({ error: 'invalid-webhook-token' });
+    }
+
     const externalReference = String(req.body?.externalReference || req.body?.tx_ref || req.body?.id || '').trim();
     const statusRaw = String(req.body?.status || '').toLowerCase();
     const succeeded = Boolean(req.body?.succeeded === true || statusRaw === 'successful' || statusRaw === 'success');
@@ -2097,17 +2309,12 @@ export function registerAuthRoutes(app: any) {
     const company = store.companies.find((item) => item.id === payment.companyId);
     if (!company) return res.status(404).json({ error: 'company-not-found' });
 
-    payment.status = succeeded ? 'succeeded' : 'failed';
-    payment.updatedAt = new Date().toISOString();
-    payment.metadata = req.body || {};
-
-    if (payment.status === 'succeeded') {
-      appendLedgerEntry(store, company, 'credit_grant', payment.amount, `Topup confirmado por webhook ${provider}`, payment.id);
-      const selectedPlanRaw = payment.metadata?.selectedPlan;
-      const selectedPlan = parseSubscriptionPlan(selectedPlanRaw);
-      if (selectedPlanRaw) {
-        applySubscriptionPlan(company, selectedPlan);
-      }
+    if (succeeded) {
+      applySuccessfulPayment(store, payment, req.body || {});
+    } else {
+      payment.status = 'failed';
+      payment.updatedAt = new Date().toISOString();
+      payment.metadata = { ...(payment.metadata || {}), ...(req.body || {}) };
     }
 
     appendAuditEvent(store, 'system', `webhook:${provider}`, 'payment.webhook.received', company.id, {
@@ -2116,7 +2323,95 @@ export function registerAuthRoutes(app: any) {
       externalReference
     });
     saveStore(store);
-    return res.json({ ok: true, paymentStatus: payment.status, balance: company.creditBalance });
+    return res.json({ ok: true, paymentStatus: payment.status, balance: company.creditBalance, externalReference });
+  });
+
+  app.post('/admin/payments/reconcile', requireAdminToken, async (req: Request, res: Response) => {
+    const provider = resolveProvider(req.body?.provider || 'mpesa');
+    const maxItemsRaw = Number(req.body?.maxItems ?? 50);
+    const maxItems = Number.isFinite(maxItemsRaw) ? Math.min(Math.max(maxItemsRaw, 1), 200) : 50;
+
+    const store = ensureStore();
+    const pending = store.payments
+      .filter((payment) => payment.status === 'pending' && payment.provider === provider)
+      .slice(0, maxItems);
+
+    const results: Array<{ paymentId: string; externalReference?: string; status: string; detail?: string }> = [];
+    for (const payment of pending) {
+      if (!payment.externalReference) {
+        results.push({ paymentId: payment.id, status: 'skipped', detail: 'missing-external-reference' });
+        continue;
+      }
+
+      if (provider !== 'mpesa') {
+        results.push({ paymentId: payment.id, externalReference: payment.externalReference, status: 'skipped', detail: 'reconciliation-not-implemented-for-provider' });
+        continue;
+      }
+
+      const query = await queryMpesaStatus(payment.externalReference);
+      if (!query.ok) {
+        results.push({ paymentId: payment.id, externalReference: payment.externalReference, status: 'error', detail: query.error });
+        continue;
+      }
+
+      if (query.status === 'succeeded') {
+        applySuccessfulPayment(store, payment, { reconciliation: query.payload, reconciledAt: new Date().toISOString() });
+      } else if (query.status === 'failed') {
+        payment.status = 'failed';
+        payment.updatedAt = new Date().toISOString();
+        payment.metadata = { ...(payment.metadata || {}), reconciliation: query.payload, reconciledAt: new Date().toISOString() };
+      }
+
+      results.push({ paymentId: payment.id, externalReference: payment.externalReference, status: query.status });
+    }
+
+    appendAuditEvent(store, 'admin', 'admin-token', 'admin.payments.reconciled', undefined, {
+      provider,
+      processed: results.length,
+      maxItems
+    });
+    saveStore(store);
+    return res.json({ ok: true, provider, processed: results.length, results });
+  });
+
+  app.post('/company/payments/:paymentId/reconcile', requireCompanyAuth, async (req: Request, res: Response) => {
+    const auth = (req as any).auth as AuthContext;
+    const paymentId = String(req.params.paymentId || '').trim();
+    const store = ensureStore();
+    const payment = store.payments.find((item) => item.id === paymentId && item.companyId === auth.companyId);
+    if (!payment) return res.status(404).json({ error: 'payment-not-found' });
+    if (!payment.externalReference) return res.status(400).json({ error: 'missing-external-reference' });
+    if (payment.provider !== 'mpesa') return res.status(400).json({ error: 'provider-not-supported-for-reconciliation' });
+
+    const query = await queryMpesaStatus(payment.externalReference);
+    if (!query.ok) return res.status(502).json({ error: query.error });
+
+    if (query.status === 'succeeded') {
+      applySuccessfulPayment(store, payment, { reconciliation: query.payload, reconciledAt: new Date().toISOString() });
+    } else if (query.status === 'failed') {
+      payment.status = 'failed';
+      payment.updatedAt = new Date().toISOString();
+      payment.metadata = { ...(payment.metadata || {}), reconciliation: query.payload, reconciledAt: new Date().toISOString() };
+    }
+
+    appendAuditEvent(store, auth.principalType === 'api-key' ? 'api-key' : 'user', auth.username, 'company.payment.reconciled', payment.companyId, {
+      paymentId: payment.id,
+      status: query.status,
+      externalReference: payment.externalReference
+    });
+    saveStore(store);
+
+    return res.json({
+      ok: true,
+      payment: {
+        id: payment.id,
+        provider: payment.provider,
+        status: payment.status,
+        externalReference: payment.externalReference,
+        updatedAt: payment.updatedAt
+      },
+      reconciliationStatus: query.status
+    });
   });
 
   app.get('/company/payments', requireCompanyAuth, (req: Request, res: Response) => {
