@@ -17,7 +17,14 @@ type SchoolSubscription = {
   phone?: string;
 };
 
+type SchoolTrial = {
+  schoolId: string;
+  startedAt: string;
+  validUntil: string;
+};
+
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
+const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -49,6 +56,43 @@ const getSchoolSubscription = (schoolId: string | null | undefined): SchoolSubsc
 const isSubscriptionActive = (sub: SchoolSubscription | null): boolean => {
   if (!sub || sub.status !== "active") return false;
   return new Date(sub.validUntil).getTime() > Date.now();
+};
+
+const readSchoolTrials = (): SchoolTrial[] => {
+  try {
+    const raw = localStorage.getItem(SCHOOL_TRIALS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSchoolTrials = (items: SchoolTrial[]) => {
+  localStorage.setItem(SCHOOL_TRIALS_KEY, JSON.stringify(items));
+};
+
+const ensureSchoolTrial = (schoolId: string): SchoolTrial => {
+  const trials = readSchoolTrials();
+  const existing = trials.find((item) => item.schoolId === schoolId);
+  if (existing) return existing;
+
+  const startedAt = new Date().toISOString();
+  const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const created: SchoolTrial = { schoolId, startedAt, validUntil };
+  trials.push(created);
+  writeSchoolTrials(trials);
+  return created;
+};
+
+const getSchoolTrial = (schoolId: string | null | undefined): SchoolTrial | null => {
+  if (!schoolId) return null;
+  return readSchoolTrials().find((item) => item.schoolId === schoolId) || null;
+};
+
+const isTrialActive = (trial: SchoolTrial | null): boolean => {
+  if (!trial) return false;
+  return new Date(trial.validUntil).getTime() > Date.now();
 };
 
 const SystemLogin = () => {
@@ -164,12 +208,21 @@ const SystemLogin = () => {
         return;
       }
 
-      if (user.perfil === "director") {
-        const subscription = getSchoolSubscription(user.escola_id || null);
-        if (!isSubscriptionActive(subscription)) {
+      const schoolId = user.escola_id || null;
+      if (schoolId && perfil !== 'admin') {
+        const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
+        const subscription = getSchoolSubscription(schoolId);
+        const trialActive = isTrialActive(trial);
+        const subscriptionActive = isSubscriptionActive(subscription);
+
+        if (!trialActive && !subscriptionActive) {
           setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
           setInfoMessage(t('sistema.pagamento_escola_plans'));
           return;
+        }
+
+        if (trialActive && !subscriptionActive) {
+          setInfoMessage(`${t('sistema.trial_ativo_ate')}: ${new Date(trial.validUntil).toLocaleDateString()}`);
         }
       }
 
@@ -243,11 +296,7 @@ const SystemLogin = () => {
       return;
     }
 
-    if (selectedRole === "director" && !paymentDone) {
-      setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
-      setLoading(false);
-      return;
-    }
+    ensureSchoolTrial(selectedSchoolId);
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -356,7 +405,7 @@ const SystemLogin = () => {
     setAwaitingPin(false);
     setPaymentPin("");
     setErrorMessage(null);
-    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${paymentProvider.toUpperCase()} ${normalizedPhone} | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()} | ${t('sistema.destino_pagamento')} 844365114`);
+    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${paymentProvider.toUpperCase()} ${normalizedPhone} | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()}`);
     setInfoMessage(t('sistema.pagamento_registado'));
   };
 

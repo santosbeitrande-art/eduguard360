@@ -153,7 +153,7 @@
           </select>
         </div>
         <div id="mobilePayBox" class="pay-box hidden">
-          <div class="muted" id="mobilePayHint">Pagamento móvel para 844365114. Introduza o número e confirme com PIN.</div>
+          <div class="muted" id="mobilePayHint">Pagamento móvel seguro. Introduza o número e confirme com PIN.</div>
           <input id="mobilePayPhone" type="tel" placeholder="84xxxxxxx" style="margin-top:8px;" />
           <input id="mobilePayPin" class="hidden" type="password" placeholder="PIN" style="margin-top:8px;" />
         </div>
@@ -234,7 +234,6 @@
       const mobilePayBox = document.getElementById("mobilePayBox");
       const mobilePayPhone = document.getElementById("mobilePayPhone");
       const mobilePayPin = document.getElementById("mobilePayPin");
-      const MOBILE_DESTINATION = "844365114";
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
@@ -248,7 +247,7 @@
           signupTitle: "Cadastrar nova conta",
           plansTitle: "Planos e pagamento",
           plansHint: "Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.",
-          mobilePayHint: "Pagamento móvel para 844365114. Introduza o número e confirme com PIN.",
+          mobilePayHint: "Pagamento móvel seguro. Introduza o número e confirme com PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblSignupName: "Nome completo",
@@ -273,7 +272,7 @@
           signupTitle: "Create account",
           plansTitle: "Plans and payment",
           plansHint: "After the 10 free checks are used, select a paid plan to renew access.",
-          mobilePayHint: "Mobile payment to 844365114. Enter your phone and confirm with PIN.",
+          mobilePayHint: "Secure mobile payment. Enter your phone and confirm with PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblSignupName: "Full name",
@@ -858,7 +857,7 @@
           if (!awaitingMobilePin) {
             awaitingMobilePin = true;
             mobilePayPin.classList.remove("hidden");
-            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza PIN para confirmar cobranca para " : ". Enter PIN to confirm charge to ") + MOBILE_DESTINATION + ".");
+            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza PIN para confirmar cobranca." : ". Enter PIN to confirm the charge."));
             return;
           }
           if (String(mobilePayPin.value || "").trim().length < 4) {
@@ -876,7 +875,6 @@
               selectedPlan: planSelect.value,
               provider: selectedProvider,
               phone: mobilePayPhone.value,
-              destinationPhone: MOBILE_DESTINATION,
               currency: "USD"
             })
           });
