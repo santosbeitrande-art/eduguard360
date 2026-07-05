@@ -9,6 +9,8 @@ import mammoth from 'mammoth';
 import routes from './routes';
 import { analyzeDocument } from './forensic';
 import { contextualizeText } from './contextual';
+import { analyzeCaseDocuments, type CaseDocumentInput } from './document_intelligence';
+import { evaluateFraudRisk } from './risk';
 import {
   consumeVerificationCredits,
   registerAuthRoutes,
@@ -29,6 +31,44 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(JOBS_DIR)) fs.mkdirSync(JOBS_DIR, { recursive: true });
 const FRAUD_DIR = path.join(__dirname, '..', '..', 'eduguard_fraud');
 if (!fs.existsSync(FRAUD_DIR)) fs.mkdirSync(FRAUD_DIR, { recursive: true });
+const INTERNAL_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
+const TRAINING_DIR = path.join(FRAUD_DIR, 'training_examples');
+const TRAINING_FILES_DIR = path.join(TRAINING_DIR, 'files');
+const TRAINING_INDEX_FILE = path.join(TRAINING_DIR, 'examples.json');
+if (!fs.existsSync(TRAINING_DIR)) fs.mkdirSync(TRAINING_DIR, { recursive: true });
+if (!fs.existsSync(TRAINING_FILES_DIR)) fs.mkdirSync(TRAINING_FILES_DIR, { recursive: true });
+
+type TrainingCategory = 'high-risk-fraud' | 'high-authenticity';
+
+interface TrainingExampleRecord {
+  id: string;
+  category: TrainingCategory;
+  originalFileName: string;
+  storedFileName: string;
+  storedPath: string;
+  uploadedBy: string;
+  companyId: string;
+  reasons: string[];
+  notes: string;
+  createdAt: string;
+  analysis: {
+    authenticityScore: number;
+    likelyFraud: boolean;
+    riskLevel: string;
+    aiLikelihood: string;
+    dateConsistency: string;
+    indicatorCount: number;
+    indicators: Array<{ code: string; severity: string; reason: string }>;
+  };
+}
+
+interface TrainingFilterOptions {
+  auth: AuthContext;
+  category?: string;
+  search?: string;
+  limit?: number;
+  scopeAll?: boolean;
+}
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
@@ -36,47 +76,179 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-function buildFraudSignals(forensic: any, contextual: any) {
-  const reasons: string[] = [];
-  const indicators: Array<{ code: string; severity: 'low' | 'medium' | 'high'; reason: string }> = [];
-
-  if (forensic?.checks?.dateConsistency === 'inconsistent') {
-    indicators.push({
-      code: 'date-inconsistency',
-      severity: 'high',
-      reason: 'Datas encontradas no documento divergem de metadados de modificacao do ficheiro.'
-    });
-    reasons.push('Inconsistencia de datas entre OCR e metadados.');
+function readTrainingExamples(): TrainingExampleRecord[] {
+  if (!fs.existsSync(TRAINING_INDEX_FILE)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TRAINING_INDEX_FILE, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
+}
 
-  if (forensic?.checks?.aiLikelihood === 'likely-ai') {
-    indicators.push({
-      code: 'ai-likely',
-      severity: 'medium',
-      reason: 'Heuristicas linguisticas indicam padrao de texto possivelmente gerado por IA.'
-    });
-    reasons.push('Padrao de escrita com forte indicio de IA.');
+function writeTrainingExamples(examples: TrainingExampleRecord[]) {
+  fs.writeFileSync(TRAINING_INDEX_FILE, JSON.stringify(examples, null, 2));
+}
+
+function sanitizeFileName(fileName: string) {
+  return String(fileName || 'document')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 120);
+}
+
+function parseReasons(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 12);
   }
+  const text = String(raw || '');
+  return text
+    .split(/\n|\r|;|\|/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
 
-  const contextualDomains = (contextual?.found?.domains || []).length;
-  const contextualEmails = (contextual?.found?.emails || []).length;
-  if (contextualDomains === 0 && contextualEmails === 0) {
-    indicators.push({
-      code: 'no-context-evidence',
-      severity: 'low',
-      reason: 'Nao foram encontradas evidencias contextuais publicas para corroborar o conteudo analisado.'
-    });
-    reasons.push('Sem corroboracao contextual publica relevante.');
+function requireInternalAdmin(auth: AuthContext) {
+  return String(auth.username || '').toLowerCase() === INTERNAL_ADMIN_EMAIL;
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
   }
+  return text;
+}
 
-  const isFraudLikely = indicators.some((item) => item.severity === 'high')
-    || indicators.filter((item) => item.severity === 'medium').length >= 2;
+function buildTrainingCsv(rows: TrainingExampleRecord[]) {
+  const header = [
+    'id',
+    'createdAt',
+    'category',
+    'companyId',
+    'uploadedBy',
+    'originalFileName',
+    'authenticityScore',
+    'riskLevel',
+    'likelyFraud',
+    'aiLikelihood',
+    'dateConsistency',
+    'indicatorCount',
+    'reasons',
+    'notes'
+  ];
+
+  const lines = rows.map((item) => [
+    item.id,
+    item.createdAt,
+    item.category,
+    item.companyId,
+    item.uploadedBy,
+    item.originalFileName,
+    item.analysis.authenticityScore,
+    item.analysis.riskLevel,
+    item.analysis.likelyFraud,
+    item.analysis.aiLikelihood,
+    item.analysis.dateConsistency,
+    item.analysis.indicatorCount,
+    item.reasons.join(' | '),
+    item.notes
+  ].map((cell) => escapeCsvCell(cell)).join(','));
+
+  return [header.join(','), ...lines].join('\n');
+}
+
+function summarizeTrainingStats(rows: TrainingExampleRecord[]) {
+  return {
+    total: rows.length,
+    fraudExamples: rows.filter((item) => item.category === 'high-risk-fraud').length,
+    authenticExamples: rows.filter((item) => item.category === 'high-authenticity').length
+  };
+}
+
+function queryTrainingExamples(options: TrainingFilterOptions) {
+  const all = readTrainingExamples();
+  const category = String(options.category || '').trim().toLowerCase();
+  const search = String(options.search || '').trim().toLowerCase();
+  const limitRaw = Number(options.limit || 50);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50;
+
+  const allowAllScope = options.scopeAll && requireInternalAdmin(options.auth);
+  const byScope = allowAllScope ? all : all.filter((item) => item.companyId === options.auth.companyId);
+
+  const byCategory = category === 'high-risk-fraud' || category === 'high-authenticity'
+    ? byScope.filter((item) => item.category === category)
+    : byScope;
+
+  const bySearch = search
+    ? byCategory.filter((item) => {
+      const haystack = [
+        item.originalFileName,
+        item.uploadedBy,
+        item.notes,
+        item.reasons.join(' '),
+        item.analysis.indicators.map((indicator) => `${indicator.code} ${indicator.reason}`).join(' ')
+      ].join(' ').toLowerCase();
+      return haystack.includes(search);
+    })
+    : byCategory;
 
   return {
-    likelyFraud: isFraudLikely,
-    indicators,
-    reasons
+    items: bySearch.slice(0, limit),
+    totalScope: byScope.length,
+    totalFiltered: bySearch.length,
+    stats: summarizeTrainingStats(byScope)
   };
+}
+
+async function createTrainingExampleRecord(auth: AuthContext, file: Express.Multer.File, payload: { category?: unknown; reasons?: unknown; notes?: unknown }) {
+  const rawCategory = String(payload.category || '').trim().toLowerCase();
+  const category: TrainingCategory = rawCategory === 'high-authenticity' ? 'high-authenticity' : 'high-risk-fraud';
+  const reasons = parseReasons(payload.reasons);
+  const notes = String(payload.notes || '').trim().slice(0, 2000);
+
+  if (!reasons.length) {
+    throw new Error('reasons-required');
+  }
+
+  const text = await extractTextImmediately(file.path);
+  const forensic = analyzeDocument(file.path, text || '');
+  const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
+  const risk = evaluateFraudRisk(forensic, contextual);
+
+  const storedFileName = `${Date.now()}-${uuidv4()}-${sanitizeFileName(file.originalname)}`;
+  const finalPath = path.join(TRAINING_FILES_DIR, storedFileName);
+  fs.copyFileSync(file.path, finalPath);
+
+  const record: TrainingExampleRecord = {
+    id: uuidv4(),
+    category,
+    originalFileName: file.originalname,
+    storedFileName,
+    storedPath: finalPath,
+    uploadedBy: auth.username,
+    companyId: auth.companyId,
+    reasons,
+    notes,
+    createdAt: new Date().toISOString(),
+    analysis: {
+      authenticityScore: Number(forensic?.summary?.authenticityScore ?? forensic?.score ?? 0),
+      likelyFraud: Boolean(risk.likelyFraud),
+      riskLevel: String(risk.riskLevel || 'unknown'),
+      aiLikelihood: String(forensic?.summary?.aiLikelihood || 'unknown'),
+      dateConsistency: String(forensic?.summary?.dateConsistency || 'unknown'),
+      indicatorCount: Array.isArray(risk.indicators) ? risk.indicators.length : 0,
+      indicators: Array.isArray(risk.indicators)
+        ? risk.indicators.map((item) => ({ code: String(item.code), severity: String(item.severity), reason: String(item.reason) }))
+        : []
+    }
+  };
+
+  const all = readTrainingExamples();
+  all.unshift(record);
+  writeTrainingExamples(all.slice(0, 2000));
+  return record;
 }
 
 async function extractTextImmediately(filePath: string) {
@@ -182,7 +354,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
     }
     const forensic = analyzeDocument(req.file.path, text);
     const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
-    const fraudSignals = buildFraudSignals(forensic, contextual);
+    const fraudSignals = evaluateFraudRisk(forensic, contextual);
     const aiSignals = forensic.checks?.aiLikelihood === 'likely-ai' || forensic.checks?.aiLikelihood === 'possible-ai';
     const contextualSignals = (contextual.checks || []).length > 0 || ((contextual.found?.domains || []).length > 0) || ((contextual.found?.emails || []).length > 0);
     const passiveIssuesFound = forensic.checks?.dateConsistency === 'inconsistent' || forensic.checks?.aiLikelihood === 'likely-ai' || forensic.score < 45;
@@ -194,6 +366,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       trust: {
         authenticityPercentage: forensic.summary?.authenticityScore ?? forensic.score,
         likelyFraud: fraudSignals.likelyFraud,
+        riskLevel: fraudSignals.riskLevel,
         fraudReasons: fraudSignals.reasons,
         indicators: fraudSignals.indicators
       },
@@ -227,6 +400,270 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
     fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
     return res.status(500).json({ jobId, status: 'failed', error: failedJob.error });
   }
+});
+
+app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (req, res) => {
+  const files = (req.files as Express.Multer.File[]) || [];
+  if (!files.length) return res.status(400).json({ error: 'no files' });
+
+  const auth = (req as any).auth as AuthContext;
+  const jobId = uuidv4();
+  const creditCost = files.length;
+
+  const billing = consumeVerificationCredits(auth.companyId, jobId, creditCost);
+  if (!billing.ok) {
+    const status = billing.error === 'insufficient-credits' || billing.error === 'verification-limit-reached' ? 402 : 403;
+    return res.status(status).json({ error: billing.error, details: billing });
+  }
+
+  const job = {
+    id: jobId,
+    companyId: auth.companyId,
+    createdBy: auth.username,
+    principalType: auth.principalType,
+    status: 'processing',
+    fileCount: files.length,
+    billing: {
+      debit: billing.debit,
+      balanceAfterDebit: billing.balance,
+      ledgerId: 'entry' in billing ? (billing.entry?.id ?? null) : null
+    },
+    createdAt: new Date().toISOString(),
+    startedAt: new Date().toISOString()
+  };
+  fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(job, null, 2));
+
+  try {
+    const documentResults: Array<{
+      fileName: string;
+      filePath: string;
+      status: 'done' | 'failed';
+      textLength: number;
+      forensic?: any;
+      error?: string;
+    }> = [];
+    const caseInputs: CaseDocumentInput[] = [];
+    const textChunks: string[] = [];
+
+    for (const file of files) {
+      const text = await extractTextImmediately(file.path);
+      if (!text || !String(text).trim()) {
+        documentResults.push({
+          fileName: file.originalname,
+          filePath: file.path,
+          status: 'failed',
+          textLength: 0,
+          error: 'unsupported-or-empty-document'
+        });
+        continue;
+      }
+
+      const forensic = analyzeDocument(file.path, text);
+      documentResults.push({
+        fileName: file.originalname,
+        filePath: file.path,
+        status: 'done',
+        textLength: text.length,
+        forensic
+      });
+
+      caseInputs.push({
+        fileName: file.originalname,
+        text,
+        forensicScore: Number(forensic?.score || 0),
+        extracted: forensic?.checks?.extractedFields
+      });
+
+      textChunks.push(text.slice(0, 20000));
+    }
+
+    const successfulDocs = documentResults.filter((item) => item.status === 'done');
+    if (!successfulDocs.length) {
+      refundVerificationCredits(auth.companyId, jobId, 'all-documents-empty-or-unsupported');
+      const failedJob = {
+        ...job,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: 'unsupported-or-empty-document',
+        documents: documentResults
+      };
+      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      return res.status(415).json({
+        jobId,
+        status: 'failed',
+        error: 'unsupported-or-empty-document',
+        documents: documentResults
+      });
+    }
+
+    const caseAnalysis = analyzeCaseDocuments(caseInputs);
+    const contextual = await contextualizeText(textChunks.join('\n'));
+    const likelyFraud = caseAnalysis.indicators.some((item) => item.severity === 'high')
+      || caseAnalysis.indicators.filter((item) => item.severity === 'medium').length >= 2;
+
+    const result = {
+      documents: documentResults,
+      case: caseAnalysis,
+      contextual,
+      trust: {
+        authenticityPercentage: caseAnalysis.score,
+        likelyFraud,
+        fraudReasons: caseAnalysis.indicators.map((item) => item.reason),
+        indicators: caseAnalysis.indicators
+      },
+      verdicts: {
+        passive: caseAnalysis.indicators.length > 0 ? 'found' : 'not_found',
+        contextual: (contextual.checks || []).length > 0 ? 'found' : 'not_found',
+        ai: documentResults.some((item) => item.forensic?.checks?.aiLikelihood === 'likely-ai' || item.forensic?.checks?.aiLikelihood === 'possible-ai') ? 'found' : 'not_found',
+        fraud: likelyFraud ? 'found' : 'not_found'
+      },
+      status: 'done'
+    };
+
+    const completedJob = {
+      ...job,
+      status: 'done',
+      finishedAt: new Date().toISOString(),
+      result
+    };
+
+    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(completedJob, null, 2));
+    return res.json({ jobId, status: 'done', result });
+  } catch (error: any) {
+    refundVerificationCredits(auth.companyId, jobId, 'upload-case-failed');
+    const failedJob = {
+      ...job,
+      status: 'failed',
+      finishedAt: new Date().toISOString(),
+      error: String(error?.message || error)
+    };
+
+    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+    return res.status(500).json({ jobId, status: 'failed', error: failedJob.error });
+  }
+});
+
+app.post('/training-examples', requireCompanyAuth, upload.single('file'), async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!req.file) return res.status(400).json({ error: 'no-file' });
+
+  try {
+    const record = await createTrainingExampleRecord(auth, req.file, {
+      category: req.body?.category,
+      reasons: req.body?.reasons,
+      notes: req.body?.notes
+    });
+
+    return res.json({ ok: true, record });
+  } catch (error: any) {
+    if (String(error?.message || error) === 'reasons-required') {
+      return res.status(400).json({ error: 'reasons-required' });
+    }
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.get('/training-examples', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const scopeAll = String(req.query?.scope || '').trim().toLowerCase() === 'all';
+  const response = queryTrainingExamples({
+    auth,
+    category: req.query?.category as string,
+    search: req.query?.search as string,
+    limit: Number(req.query?.limit || 50),
+    scopeAll
+  });
+
+  return res.json({
+    examples: response.items,
+    stats: response.stats,
+    totalScope: response.totalScope,
+    totalFiltered: response.totalFiltered
+  });
+});
+
+app.delete('/training-examples/:id', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'invalid-id' });
+
+  const all = readTrainingExamples();
+  const idx = all.findIndex((item) => item.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'not-found' });
+
+  const item = all[idx];
+  const canDelete = item.companyId === auth.companyId || requireInternalAdmin(auth);
+  if (!canDelete) return res.status(403).json({ error: 'forbidden' });
+
+  all.splice(idx, 1);
+  writeTrainingExamples(all);
+
+  try {
+    if (item.storedPath && fs.existsSync(item.storedPath)) {
+      fs.unlinkSync(item.storedPath);
+    }
+  } catch {
+    // keep operation non-fatal if file cleanup fails
+  }
+
+  return res.json({ ok: true, removedId: id });
+});
+
+app.get('/training-examples/export.csv', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const scopeAll = String(req.query?.scope || '').trim().toLowerCase() === 'all';
+  const response = queryTrainingExamples({
+    auth,
+    category: req.query?.category as string,
+    search: req.query?.search as string,
+    limit: Number(req.query?.limit || 500),
+    scopeAll
+  });
+
+  const csv = buildTrainingCsv(response.items);
+  const fileName = `training-examples-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  return res.status(200).send(csv);
+});
+
+app.post('/admin/training-examples', requireCompanyAuth, upload.single('file'), async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+  if (!req.file) return res.status(400).json({ error: 'no-file' });
+
+  try {
+    const record = await createTrainingExampleRecord(auth, req.file, {
+      category: req.body?.category,
+      reasons: req.body?.reasons,
+      notes: req.body?.notes
+    });
+    return res.json({ ok: true, record });
+  } catch (error: any) {
+    if (String(error?.message || error) === 'reasons-required') {
+      return res.status(400).json({ error: 'reasons-required' });
+    }
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.get('/admin/training-examples', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+  const response = queryTrainingExamples({
+    auth,
+    category: req.query?.category as string,
+    search: req.query?.search as string,
+    limit: Number(req.query?.limit || 100),
+    scopeAll: true
+  });
+
+  return res.json({
+    examples: response.items,
+    stats: response.stats,
+    totalScope: response.totalScope,
+    totalFiltered: response.totalFiltered
+  });
 });
 
 app.get('/status/:id', requireCompanyAuth, (req, res) => {

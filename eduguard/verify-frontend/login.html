@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>EduGuard Verify AI | Login e Cadastro</title>
     <style>
       body {
@@ -53,6 +56,17 @@
         border-radius: 10px;
         padding: 10px 12px;
       }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: rgba(0,0,0,.2);
+        color: #fff;
+        border: 1px solid rgba(255,255,255,.24);
+        border-radius: 10px;
+        padding: 10px 12px;
+        min-height: 90px;
+        resize: vertical;
+      }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
       .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
       .plan { border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px; background: rgba(0,0,0,.15); }
@@ -72,7 +86,23 @@
       .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
       .tag.ok { background: rgba(16,185,129,.22); color: #8ef7d6; }
       .tag.off { background: rgba(239,68,68,.25); color: #fecaca; }
+      .training-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+      .training-card {
+        border: 1px solid rgba(255,255,255,.15);
+        border-radius: 12px;
+        padding: 10px;
+        background: rgba(0,0,0,.15);
+      }
+      .stats-line {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.15);
+        background: rgba(255,255,255,.04);
+        font-size: .9rem;
+      }
       @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .plans { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) { .training-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -201,6 +231,66 @@
             <tbody id="paymentsBody"></tbody>
           </table>
         </div>
+
+        <h3 id="trainingTitle" style="margin:14px 0 6px;">Treino de fraude e autenticidade</h3>
+        <p class="muted" id="trainingHint">Somente o admin interno pode carregar documentos de referencia para calibracao.</p>
+
+        <div class="training-grid">
+          <div class="training-card">
+            <h4 id="fraudUploadTitle" style="margin:0 0 8px;">Exemplos de fraude alta</h4>
+            <label for="fraudExampleFile" id="fraudFileLabel">Documento suspeito/falso</label>
+            <input id="fraudExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
+            <label for="fraudReasons" id="fraudReasonsLabel">Motivos de alto risco (uma linha por motivo)</label>
+            <textarea id="fraudReasons" placeholder="Exemplo: assinatura incoerente&#10;Exemplo: NUIT invalido"></textarea>
+            <label for="fraudNotes" id="fraudNotesLabel">Notas adicionais (opcional)</label>
+            <textarea id="fraudNotes" placeholder="Contexto do caso"></textarea>
+            <button class="btn" id="btnUploadFraudExample" type="button" style="margin-top:8px;">Guardar exemplo de fraude</button>
+          </div>
+
+          <div class="training-card">
+            <h4 id="authUploadTitle" style="margin:0 0 8px;">Exemplos de alta autenticidade</h4>
+            <label for="authExampleFile" id="authFileLabel">Documento autentico de referencia</label>
+            <input id="authExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
+            <label for="authReasons" id="authReasonsLabel">Motivos de baixa suspeita (uma linha por motivo)</label>
+            <textarea id="authReasons" placeholder="Exemplo: emissor confirmado&#10;Exemplo: dados consistentes"></textarea>
+            <label for="authNotes" id="authNotesLabel">Notas adicionais (opcional)</label>
+            <textarea id="authNotes" placeholder="Contexto do caso"></textarea>
+            <button class="btn" id="btnUploadAuthExample" type="button" style="margin-top:8px;">Guardar exemplo autentico</button>
+          </div>
+        </div>
+
+        <div id="trainingStats" class="stats-line">A carregar estatisticas...</div>
+
+        <div class="actions" style="margin-top:8px;">
+          <select id="trainingCategoryFilter">
+            <option value="">Todas categorias</option>
+            <option value="high-risk-fraud">Fraude alta</option>
+            <option value="high-authenticity">Alta autenticidade</option>
+          </select>
+          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" />
+        </div>
+        <div class="actions" style="margin-top:8px;">
+          <button class="ghost" id="btnTrainingFilter" type="button">Aplicar filtro</button>
+          <button class="ghost" id="btnTrainingExportCsv" type="button">Exportar CSV</button>
+        </div>
+
+        <h3 id="trainingListTitle" style="margin:14px 0 6px;">Historico de exemplos carregados</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Categoria</th>
+                <th>Documento</th>
+                <th>Score</th>
+                <th>Risco</th>
+                <th>Motivos</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="trainingExamplesBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <div class="status" id="msg" style="margin-top:12px;">Pronto.</div>
@@ -231,6 +321,10 @@
       const adminPanel = document.getElementById("adminPanel");
       const usersBody = document.getElementById("usersBody");
       const paymentsBody = document.getElementById("paymentsBody");
+      const trainingExamplesBody = document.getElementById("trainingExamplesBody");
+      const trainingStats = document.getElementById("trainingStats");
+      const trainingCategoryFilter = document.getElementById("trainingCategoryFilter");
+      const trainingSearchInput = document.getElementById("trainingSearchInput");
       const mobilePayBox = document.getElementById("mobilePayBox");
       const mobilePayPhone = document.getElementById("mobilePayPhone");
       const mobilePayPin = document.getElementById("mobilePayPin");
@@ -238,6 +332,10 @@
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
       let awaitingMobilePin = false;
+      let trainingQueryState = {
+        category: "",
+        search: ""
+      };
 
       const copy = {
         pt: {
@@ -263,7 +361,23 @@
           adminPanelTitle: "Painel administrativo (somente admin)",
           adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
           usersTitle: "Utilizadores",
-          paymentsTitle: "Pagamentos"
+          paymentsTitle: "Pagamentos",
+          trainingTitle: "Treino de fraude e autenticidade",
+          trainingHint: "Somente o admin interno pode carregar documentos de referencia para calibracao.",
+          fraudUploadTitle: "Exemplos de fraude alta",
+          fraudFileLabel: "Documento suspeito/falso",
+          fraudReasonsLabel: "Motivos de alto risco (uma linha por motivo)",
+          fraudNotesLabel: "Notas adicionais (opcional)",
+          btnUploadFraudExample: "Guardar exemplo de fraude",
+          authUploadTitle: "Exemplos de alta autenticidade",
+          authFileLabel: "Documento autentico de referencia",
+          authReasonsLabel: "Motivos de baixa suspeita (uma linha por motivo)",
+          authNotesLabel: "Notas adicionais (opcional)",
+          btnUploadAuthExample: "Guardar exemplo autentico",
+          trainingListTitle: "Historico de exemplos carregados",
+          btnTrainingFilter: "Aplicar filtro",
+          btnTrainingExportCsv: "Exportar CSV",
+          trainingSearchInput: "Pesquisar por documento, motivo ou nota"
         },
         en: {
           titleMain: "EduGuard Verify AI",
@@ -288,7 +402,23 @@
           adminPanelTitle: "Administrative panel (admin only)",
           adminPanelHint: "Visible only after admin credential login.",
           usersTitle: "Users",
-          paymentsTitle: "Payments"
+          paymentsTitle: "Payments",
+          trainingTitle: "Fraud and authenticity training",
+          trainingHint: "Only the internal admin can upload reference documents for calibration.",
+          fraudUploadTitle: "High-risk fraud examples",
+          fraudFileLabel: "Suspicious/fake document",
+          fraudReasonsLabel: "High-risk reasons (one line per reason)",
+          fraudNotesLabel: "Additional notes (optional)",
+          btnUploadFraudExample: "Save fraud example",
+          authUploadTitle: "High-authenticity examples",
+          authFileLabel: "Authentic reference document",
+          authReasonsLabel: "Low-risk reasons (one line per reason)",
+          authNotesLabel: "Additional notes (optional)",
+          btnUploadAuthExample: "Save authentic example",
+          trainingListTitle: "Uploaded examples history",
+          btnTrainingFilter: "Apply filter",
+          btnTrainingExportCsv: "Export CSV",
+          trainingSearchInput: "Search by document, reason, or note"
         }
       };
 
@@ -296,7 +426,198 @@
         adminPanel.classList.add("hidden");
         usersBody.innerHTML = "";
         paymentsBody.innerHTML = "";
+        trainingExamplesBody.innerHTML = "";
+        trainingStats.textContent = "-";
         localStorage.removeItem(ADMIN_TOKEN_KEY);
+      }
+
+      function getRiskLabel(value) {
+        const normalized = String(value || "").toLowerCase();
+        if (normalized === "high") return lang === "pt" ? "Elevado" : "High";
+        if (normalized === "medium") return lang === "pt" ? "Médio" : "Medium";
+        return lang === "pt" ? "Baixo" : "Low";
+      }
+
+      function getCategoryLabel(category) {
+        if (category === "high-authenticity") {
+          return lang === "pt" ? "Alta autenticidade" : "High authenticity";
+        }
+        return lang === "pt" ? "Fraude alta" : "High-risk fraud";
+      }
+
+      async function loadTrainingExamples() {
+        const token = getToken();
+        if (!token) return;
+
+        try {
+          const params = new URLSearchParams();
+          params.set("limit", "80");
+          params.set("scope", "all");
+          if (trainingQueryState.category) params.set("category", trainingQueryState.category);
+          if (trainingQueryState.search) params.set("search", trainingQueryState.search);
+          const res = await api(`/training-examples?${params.toString()}`);
+          const data = await safeJson(res);
+          if (!res.ok || !data) {
+            trainingStats.textContent = lang === "pt" ? "Falha ao carregar exemplos de treino." : "Failed to load training examples.";
+            trainingExamplesBody.innerHTML = "";
+            return;
+          }
+
+          const examples = Array.isArray(data.examples) ? data.examples : [];
+          const stats = data.stats || { total: examples.length, fraudExamples: 0, authenticExamples: 0 };
+          const filtered = Number(data.totalFiltered || examples.length);
+          trainingStats.textContent = (lang === "pt"
+            ? `Total geral: ${stats.total || 0} | Fraude alta: ${stats.fraudExamples || 0} | Alta autenticidade: ${stats.authenticExamples || 0} | Resultado filtro: ${filtered}`
+            : `Global total: ${stats.total || 0} | High-risk fraud: ${stats.fraudExamples || 0} | High authenticity: ${stats.authenticExamples || 0} | Filter result: ${filtered}`);
+
+          trainingExamplesBody.innerHTML = examples.map((entry) => {
+            const reasons = Array.isArray(entry.reasons) && entry.reasons.length
+              ? entry.reasons.map((reason) => `<li>${reason}</li>`).join("")
+              : `<li>${lang === "pt" ? "Sem motivos declarados" : "No reasons provided"}</li>`;
+
+            return `
+              <tr>
+                <td>${entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "-"}</td>
+                <td>${getCategoryLabel(entry.category)}</td>
+                <td>${entry.originalFileName || "-"}</td>
+                <td>${entry?.analysis?.authenticityScore ?? 0}%</td>
+                <td>${getRiskLabel(entry?.analysis?.riskLevel)}</td>
+                <td><ul>${reasons}</ul></td>
+                <td><button class="ghost" data-training-delete="${entry.id}">${lang === "pt" ? "Remover" : "Remove"}</button></td>
+              </tr>
+            `;
+          }).join("");
+
+          trainingExamplesBody.querySelectorAll("button[data-training-delete]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const id = btn.getAttribute("data-training-delete");
+              if (!id) return;
+              const confirmed = window.confirm(lang === "pt"
+                ? "Deseja remover este exemplo do historico?"
+                : "Do you want to remove this example from history?");
+              if (!confirmed) return;
+              await removeTrainingExample(id);
+            });
+          });
+        } catch {
+          trainingStats.textContent = lang === "pt" ? "Erro de ligacao ao historico de treino." : "Training history connection error.";
+        }
+      }
+
+      async function removeTrainingExample(id) {
+        try {
+          const res = await api(`/training-examples/${encodeURIComponent(id)}?scope=all`, {
+            method: "DELETE"
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao remover exemplo: " : "Failed to remove example: ") + (data?.error || "unknown"));
+            return;
+          }
+          setMessage(lang === "pt" ? "Exemplo removido com sucesso." : "Example removed successfully.");
+          await loadTrainingExamples();
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligacao ao remover exemplo." : "Connection error while removing example.");
+        }
+      }
+
+      async function exportTrainingExamplesCsv() {
+        try {
+          const params = new URLSearchParams();
+          params.set("limit", "500");
+          params.set("scope", "all");
+          if (trainingQueryState.category) params.set("category", trainingQueryState.category);
+          if (trainingQueryState.search) params.set("search", trainingQueryState.search);
+
+          const res = await api(`/training-examples/export.csv?${params.toString()}`);
+          if (!res.ok) {
+            const data = await safeJson(res);
+            setMessage((lang === "pt" ? "Falha ao exportar CSV: " : "Failed to export CSV: ") + (data?.error || "unknown"));
+            return;
+          }
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = `training-examples-admin-${Date.now()}.csv`;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          URL.revokeObjectURL(url);
+          setMessage(lang === "pt" ? "CSV exportado com sucesso." : "CSV exported successfully.");
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligacao na exportacao CSV." : "CSV export connection error.");
+        }
+      }
+
+      async function uploadTrainingExample(kind) {
+        const token = getToken();
+        if (!token) {
+          setMessage(lang === "pt" ? "Entre com admin para carregar exemplos." : "Sign in as admin to upload examples.");
+          return;
+        }
+
+        const mapping = kind === "fraud"
+          ? {
+              file: document.getElementById("fraudExampleFile"),
+              reasons: document.getElementById("fraudReasons"),
+              notes: document.getElementById("fraudNotes"),
+              category: "high-risk-fraud"
+            }
+          : {
+              file: document.getElementById("authExampleFile"),
+              reasons: document.getElementById("authReasons"),
+              notes: document.getElementById("authNotes"),
+              category: "high-authenticity"
+            };
+
+        const selectedFile = mapping.file?.files?.[0];
+        const reasons = String(mapping.reasons?.value || "").trim();
+        const notes = String(mapping.notes?.value || "").trim();
+
+        if (!selectedFile) {
+          setMessage(lang === "pt" ? "Selecione um documento para o treino." : "Select a document for training.");
+          return;
+        }
+
+        if (!reasons) {
+          setMessage(lang === "pt" ? "Informe os motivos para classificar o exemplo." : "Provide reasons for this training sample.");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("category", mapping.category);
+        formData.append("reasons", reasons);
+        formData.append("notes", notes);
+
+        try {
+          setMessage(lang === "pt" ? "A guardar exemplo de treino..." : "Saving training example...");
+          const res = await api("/training-examples", {
+            method: "POST",
+            body: formData
+          });
+          const data = await safeJson(res);
+
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao guardar exemplo: " : "Failed to save example: ") + (data?.error || "unknown"));
+            return;
+          }
+
+          mapping.file.value = "";
+          mapping.reasons.value = "";
+          mapping.notes.value = "";
+
+          const score = data?.record?.analysis?.authenticityScore ?? 0;
+          const risk = getRiskLabel(data?.record?.analysis?.riskLevel);
+          setMessage((lang === "pt"
+            ? `Exemplo registado com sucesso. Score calculado: ${score}% | Risco: ${risk}.`
+            : `Training sample saved. Calculated score: ${score}% | Risk: ${risk}.`));
+          await loadTrainingExamples();
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligacao ao guardar exemplo." : "Connection error while saving sample.");
+        }
       }
 
       function setMessage(text) {
@@ -829,6 +1150,7 @@
           setMessage((lang === "pt"
             ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
             : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
+          await loadTrainingExamples();
         } catch {
           setMessage(lang === "pt" ? "Admin ligado, mas nao foi possivel carregar painel." : "Admin authenticated, but panel loading failed.");
         }
@@ -920,6 +1242,24 @@
 
       document.getElementById("btnAdminRefresh").addEventListener("click", () => {
         loadAdminOverview();
+      });
+
+      document.getElementById("btnUploadFraudExample").addEventListener("click", () => {
+        uploadTrainingExample("fraud");
+      });
+
+      document.getElementById("btnUploadAuthExample").addEventListener("click", () => {
+        uploadTrainingExample("auth");
+      });
+
+      document.getElementById("btnTrainingFilter").addEventListener("click", () => {
+        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
+        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
+        loadTrainingExamples();
+      });
+
+      document.getElementById("btnTrainingExportCsv").addEventListener("click", () => {
+        exportTrainingExamplesCsv();
       });
 
       (async () => {

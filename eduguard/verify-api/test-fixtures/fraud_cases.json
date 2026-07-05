@@ -1,0 +1,57 @@
+[
+  {
+    "id": "genuine-income-001",
+    "label": "genuine",
+    "documentType": "income-statement",
+    "mtime": "2026-06-28T12:00:00.000Z",
+    "text": "DECLARACAO DE RENDIMENTOS\nNome: Carlos Alberto Mucavele\nNumero BI: 110234567891A\nNUIT: 123456789\nEntidade Patronal: Mozbuild Engenharia, Lda\nSalario Base Mensal: 58.500,00 MZN\nSubsidio de Transporte: 4.000,00 MZN\nTotal Liquido: 62.500,00 MZN\nData de Emissao: 2026-06-20\nEmail RH: rh@mozbuild.co.mz\nTelefone: +258 841234567\nDeclaro que as informacoes acima correspondem ao cadastro laboral atual do trabalhador.",
+    "expect": {
+      "likelyFraud": false,
+      "minAuthenticity": 60
+    }
+  },
+  {
+    "id": "fraud-template-001",
+    "label": "fraud",
+    "documentType": "income-statement",
+    "mtime": "2026-07-01T08:00:00.000Z",
+    "text": "DECLARACAO DE RENDIMENTOS - MODELO\nNome: Cliente Exemplo\nEntidade Patronal: Empresa Ficticia\nEste documento foi gerado por IA para testes. Template pronto para imprimir e apresentar no pedido de emprestimo.\nLorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum\nData: 2026-07-01",
+    "expect": {
+      "likelyFraud": true,
+      "maxAuthenticity": 50
+    }
+  },
+  {
+    "id": "fraud-income-no-employer-001",
+    "label": "fraud",
+    "documentType": "income-statement",
+    "mtime": "2026-07-02T09:30:00.000Z",
+    "text": "DECLARACAO DE RENDIMENTOS\nNome: Roberto Ali\nNumero BI: 100998877665M\nSalario Mensal: 120.000,00 MZN\nDocumento digitado para efeitos de submissao bancaria sem carimbo e sem responsavel de RH.\nData: 2026-07-01",
+    "expect": {
+      "likelyFraud": true,
+      "maxAuthenticity": 58
+    }
+  },
+  {
+    "id": "fraud-bank-outdated-001",
+    "label": "fraud",
+    "documentType": "bank-statement",
+    "mtime": "2026-07-03T11:00:00.000Z",
+    "text": "EXTRATO BANCARIO\nTitular: Carlos Alberto Mucavele\nConta: 0123456789012345\nPeriodo: 01/01/2022 a 31/01/2022\nSaldo anterior: 6.250,00 MZN\nSaldo disponivel: 5.950,00 MZN\nDocumento sem validacao eletronica.",
+    "expect": {
+      "likelyFraud": true,
+      "maxAuthenticity": 60
+    }
+  },
+  {
+    "id": "genuine-identity-001",
+    "label": "genuine",
+    "documentType": "identity",
+    "mtime": "2026-06-30T10:00:00.000Z",
+    "text": "BILHETE DE IDENTIDADE\nNome: Carlos Alberto Mucavele\nNumero BI: 110234567891A\nNUIT: 123456789\nData de Emissao: 2025-08-12\nData de Validade: 2030-08-12\nNaturalidade: Maputo\nEndereco: Bairro Triunfo, Quarteirao 15",
+    "expect": {
+      "likelyFraud": false,
+      "minAuthenticity": 55
+    }
+  }
+]

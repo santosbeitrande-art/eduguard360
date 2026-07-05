@@ -10,7 +10,8 @@
     "bootstrap:online": "node scripts/bootstrap-online.mjs",
     "security:housekeeping": "node scripts/security-housekeeping.mjs",
     "build": "tsc",
-    "test": "echo \"No tests configured\" && exit 0"
+    "test": "npm run test:fraud",
+    "test:fraud": "npm run build && node --test dist/__tests__/fraud-calibration.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
