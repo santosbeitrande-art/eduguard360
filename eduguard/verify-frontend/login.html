@@ -300,8 +300,7 @@
       const API_CANDIDATES = [
         window.EDUGUARD_VERIFY_API_BASE || "",
         localStorage.getItem("eduguard_verify_api_base") || "",
-        window.location.origin,
-        "https://api.eduguard360.co.mz"
+        window.location.origin
       ].filter(Boolean);
       let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
@@ -310,6 +309,7 @@
       const ADMIN_TOKEN_KEY = "eduguard_verify_admin_token";
       const LOCAL_ACCOUNTS_KEY = "eduguard_verify_local_accounts";
       const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
+      const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
       const INTERNAL_ADMIN_PASSWORD = "Admin@123";
 
@@ -445,9 +445,111 @@
         return lang === "pt" ? "Fraude alta" : "High-risk fraud";
       }
 
+      function readLocalTrainingExamples() {
+        try {
+          const raw = localStorage.getItem(LOCAL_TRAINING_EXAMPLES_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function writeLocalTrainingExamples(items) {
+        localStorage.setItem(LOCAL_TRAINING_EXAMPLES_KEY, JSON.stringify(items));
+      }
+
+      function getOfflineAdminContext() {
+        const session = getLocalSession();
+        const email = normalizeEmail(session?.email || "");
+        return {
+          isAdmin: offlineMode && email === INTERNAL_ADMIN_EMAIL,
+          email
+        };
+      }
+
+      function parseReasonsText(text) {
+        return String(text || "")
+          .split(/\n|\r|;|\|/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .slice(0, 12);
+      }
+
+      function buildTrainingCsv(items) {
+        const header = ["id", "createdAt", "category", "uploadedBy", "file", "score", "risk", "likelyFraud", "ai", "dateConsistency", "reasons", "notes"];
+        const escapeCell = (value) => {
+          const text = String(value ?? "");
+          return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        };
+        const rows = items.map((entry) => [
+          entry.id,
+          entry.createdAt,
+          entry.category,
+          entry.uploadedBy,
+          entry.originalFileName,
+          entry?.analysis?.authenticityScore ?? 0,
+          entry?.analysis?.riskLevel || "unknown",
+          Boolean(entry?.analysis?.likelyFraud),
+          entry?.analysis?.aiLikelihood || "unknown",
+          entry?.analysis?.dateConsistency || "unknown",
+          Array.isArray(entry.reasons) ? entry.reasons.join(" | ") : "",
+          entry.notes || ""
+        ].map(escapeCell).join(","));
+        return [header.join(","), ...rows].join("\n");
+      }
+
       async function loadTrainingExamples() {
         const token = getToken();
-        if (!token) return;
+        if (!token) {
+          const context = getOfflineAdminContext();
+          if (!context.isAdmin) return;
+
+          const all = readLocalTrainingExamples();
+          const filtered = all.filter((entry) => {
+            if (trainingQueryState.category && entry.category !== trainingQueryState.category) return false;
+            if (!trainingQueryState.search) return true;
+            const haystack = [entry.originalFileName, entry.notes, ...(entry.reasons || [])].join(" ").toLowerCase();
+            return haystack.includes(trainingQueryState.search.toLowerCase());
+          });
+
+          const stats = {
+            total: all.length,
+            fraudExamples: all.filter((item) => item.category === "high-risk-fraud").length,
+            authenticExamples: all.filter((item) => item.category === "high-authenticity").length
+          };
+
+          trainingStats.textContent = (lang === "pt"
+            ? `Total local: ${stats.total} | Fraude alta: ${stats.fraudExamples} | Alta autenticidade: ${stats.authenticExamples} | Resultado filtro: ${filtered.length}`
+            : `Local total: ${stats.total} | High-risk fraud: ${stats.fraudExamples} | High authenticity: ${stats.authenticExamples} | Filter result: ${filtered.length}`);
+
+          trainingExamplesBody.innerHTML = filtered.map((entry) => {
+            const reasons = Array.isArray(entry.reasons) && entry.reasons.length
+              ? entry.reasons.map((reason) => `<li>${reason}</li>`).join("")
+              : `<li>${lang === "pt" ? "Sem motivos declarados" : "No reasons provided"}</li>`;
+
+            return `
+              <tr>
+                <td>${entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "-"}</td>
+                <td>${getCategoryLabel(entry.category)}</td>
+                <td>${entry.originalFileName || "-"}</td>
+                <td>${entry?.analysis?.authenticityScore ?? 0}%</td>
+                <td>${getRiskLabel(entry?.analysis?.riskLevel)}</td>
+                <td><ul>${reasons}</ul></td>
+                <td><button class="ghost" data-training-delete="${entry.id}">${lang === "pt" ? "Remover" : "Remove"}</button></td>
+              </tr>
+            `;
+          }).join("");
+
+          trainingExamplesBody.querySelectorAll("button[data-training-delete]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const id = btn.getAttribute("data-training-delete");
+              if (!id) return;
+              await removeTrainingExample(id);
+            });
+          });
+          return;
+        }
 
         try {
           const params = new URLSearchParams();
@@ -505,6 +607,15 @@
       }
 
       async function removeTrainingExample(id) {
+        const context = getOfflineAdminContext();
+        if (context.isAdmin && !getToken()) {
+          const all = readLocalTrainingExamples().filter((entry) => entry.id !== id);
+          writeLocalTrainingExamples(all);
+          setMessage(lang === "pt" ? "Exemplo removido com sucesso." : "Example removed successfully.");
+          await loadTrainingExamples();
+          return;
+        }
+
         try {
           const res = await api(`/training-examples/${encodeURIComponent(id)}?scope=all`, {
             method: "DELETE"
@@ -522,6 +633,29 @@
       }
 
       async function exportTrainingExamplesCsv() {
+        const context = getOfflineAdminContext();
+        if (context.isAdmin && !getToken()) {
+          const all = readLocalTrainingExamples();
+          const filtered = all.filter((entry) => {
+            if (trainingQueryState.category && entry.category !== trainingQueryState.category) return false;
+            if (!trainingQueryState.search) return true;
+            const haystack = [entry.originalFileName, entry.notes, ...(entry.reasons || [])].join(" ").toLowerCase();
+            return haystack.includes(trainingQueryState.search.toLowerCase());
+          });
+          const csv = buildTrainingCsv(filtered);
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = `training-examples-admin-local-${Date.now()}.csv`;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          URL.revokeObjectURL(url);
+          setMessage(lang === "pt" ? "CSV local exportado com sucesso." : "Local CSV exported successfully.");
+          return;
+        }
+
         try {
           const params = new URLSearchParams();
           params.set("limit", "500");
@@ -554,7 +688,71 @@
       async function uploadTrainingExample(kind) {
         const token = getToken();
         if (!token) {
-          setMessage(lang === "pt" ? "Entre com admin para carregar exemplos." : "Sign in as admin to upload examples.");
+          const context = getOfflineAdminContext();
+          if (!context.isAdmin) {
+            setMessage(lang === "pt" ? "Entre com admin para carregar exemplos." : "Sign in as admin to upload examples.");
+            return;
+          }
+
+          const mapping = kind === "fraud"
+            ? {
+                file: document.getElementById("fraudExampleFile"),
+                reasons: document.getElementById("fraudReasons"),
+                notes: document.getElementById("fraudNotes"),
+                category: "high-risk-fraud"
+              }
+            : {
+                file: document.getElementById("authExampleFile"),
+                reasons: document.getElementById("authReasons"),
+                notes: document.getElementById("authNotes"),
+                category: "high-authenticity"
+              };
+
+          const selectedFile = mapping.file?.files?.[0];
+          const reasons = parseReasonsText(mapping.reasons?.value || "");
+          const notes = String(mapping.notes?.value || "").trim();
+
+          if (!selectedFile) {
+            setMessage(lang === "pt" ? "Selecione um documento para o treino." : "Select a document for training.");
+            return;
+          }
+          if (!reasons.length) {
+            setMessage(lang === "pt" ? "Informe os motivos para classificar o exemplo." : "Provide reasons for this training sample.");
+            return;
+          }
+
+          const riskLevel = mapping.category === "high-risk-fraud" ? "high" : "low";
+          const record = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            category: mapping.category,
+            originalFileName: selectedFile.name,
+            storedFileName: selectedFile.name,
+            storedPath: "local-browser-storage",
+            uploadedBy: context.email,
+            companyId: "local-admin",
+            reasons,
+            notes,
+            createdAt: new Date().toISOString(),
+            analysis: {
+              authenticityScore: mapping.category === "high-risk-fraud" ? 25 : 93,
+              likelyFraud: mapping.category === "high-risk-fraud",
+              riskLevel,
+              aiLikelihood: "unknown",
+              dateConsistency: "unknown",
+              indicatorCount: reasons.length,
+              indicators: reasons.map((reason, idx) => ({ code: `local-${idx + 1}`, severity: riskLevel === "high" ? "high" : "low", reason }))
+            }
+          };
+
+          const all = readLocalTrainingExamples();
+          all.unshift(record);
+          writeLocalTrainingExamples(all.slice(0, 1000));
+
+          mapping.file.value = "";
+          mapping.reasons.value = "";
+          mapping.notes.value = "";
+          setMessage(lang === "pt" ? "Exemplo guardado localmente com sucesso." : "Example saved locally successfully.");
+          await loadTrainingExamples();
           return;
         }
 
@@ -963,6 +1161,10 @@
               offlineMode = true;
               setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
               await loadSubscriptionStatus();
+              if (local.mode === "offline-admin") {
+                adminPanel.classList.remove("hidden");
+                await loadTrainingExamples();
+              }
               return;
             }
             setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + describeAuthError(data?.error || "unknown"));
@@ -979,6 +1181,10 @@
             offlineMode = true;
             setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
             await loadSubscriptionStatus();
+            if (local.mode === "offline-admin") {
+              adminPanel.classList.remove("hidden");
+              await loadTrainingExamples();
+            }
             return;
           }
           setMessage(lang === "pt" ? "Erro de ligacao." : "Connection error.");
