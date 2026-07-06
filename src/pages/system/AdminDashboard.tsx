@@ -68,11 +68,12 @@ const AdminGlobalDashboard = () => {
     writeStudentsCache(cache);
   };
 
-  const updateStudentsForSelectedSchool = (updater: (current: any[]) => any[]) => {
+  const updateStudentsForSelectedSchool = (updater: (current: any[]) => any[], schoolIdOverride?: string | null) => {
     setStudents((currentStudents) => {
       const nextStudents = updater(currentStudents);
-      if (selectedSchoolId) {
-        cacheStudentsForSchool(selectedSchoolId, nextStudents);
+      const targetSchoolId = schoolIdOverride || selectedSchoolId;
+      if (targetSchoolId) {
+        cacheStudentsForSchool(targetSchoolId, nextStudents);
       }
       return nextStudents;
     });
@@ -493,7 +494,7 @@ const AdminGlobalDashboard = () => {
                 }
               : student
           )
-        );
+        , activeSchoolId);
         setNotification({ type: 'success', message: localOnlyMode ? 'Aluno atualizado localmente.' : 'Aluno atualizado com sucesso.' });
       } else {
         const { data: insertedStudent, error: insertStudentError } = await supabase
@@ -517,7 +518,7 @@ const AdminGlobalDashboard = () => {
           updateStudentsForSelectedSchool((currentStudents) => [
             localStudent,
             ...currentStudents.filter((student) => student.id !== localStudent.id)
-          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
+          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')), activeSchoolId);
         } else if (insertedStudent) {
           updateStudentsForSelectedSchool((currentStudents) => [
             {
@@ -525,7 +526,7 @@ const AdminGlobalDashboard = () => {
               guardian: { id: guardianId, ...guardianPayload },
             },
             ...currentStudents.filter((student) => student.id !== insertedStudent.id)
-          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
+          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')), activeSchoolId);
         }
 
         setNotification({ type: 'success', message: localOnlyMode ? 'Aluno guardado localmente.' : 'Aluno criado com sucesso.' });
