@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Edit3, Trash2, Mail, Phone, CheckCircle } from "lucide-react";
 
+const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
+const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -21,6 +24,57 @@ const AdminGlobalDashboard = () => {
   const [studentForm, setStudentForm] = useState({ id: '', nome: '', classe: '', guardianName: '', guardianEmail: '', qrcode_id: '', telefone: '' });
   const [studentMode, setStudentMode] = useState<'create' | 'edit'>('create');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
+  const [approvalAction, setApprovalAction] = useState<string | null>(null);
+
+  const readSchoolsCache = (): any[] => {
+    try {
+      const raw = localStorage.getItem(SCHOOLS_CACHE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeSchoolsCache = (nextSchools: any[]) => {
+    localStorage.setItem(SCHOOLS_CACHE_KEY, JSON.stringify(nextSchools));
+  };
+
+  const readStudentsCache = (): Record<string, any[]> => {
+    try {
+      const raw = localStorage.getItem(STUDENTS_CACHE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const writeStudentsCache = (cache: Record<string, any[]>) => {
+    localStorage.setItem(STUDENTS_CACHE_KEY, JSON.stringify(cache));
+  };
+
+  const cacheStudentsForSchool = (schoolId: string, schoolStudents: any[]) => {
+    const cache = readStudentsCache();
+    cache[schoolId] = schoolStudents;
+    writeStudentsCache(cache);
+  };
+
+  const updateStudentsForSelectedSchool = (updater: (current: any[]) => any[]) => {
+    setStudents((currentStudents) => {
+      const nextStudents = updater(currentStudents);
+      if (selectedSchoolId) {
+        cacheStudentsForSchool(selectedSchoolId, nextStudents);
+      }
+      return nextStudents;
+    });
+  };
+
+  const getCachedStudentsForSchool = (schoolId: string): any[] => {
+    const cache = readStudentsCache();
+    return Array.isArray(cache[schoolId]) ? cache[schoolId] : [];
+  };
 
   useEffect(() => {
     // Verificar se o utilizador está autenticado como admin
@@ -42,6 +96,7 @@ const AdminGlobalDashboard = () => {
     }
 
     loadData();
+    loadPendingRegistrations();
   }, []);
 
   useEffect(() => {
@@ -83,16 +138,34 @@ const AdminGlobalDashboard = () => {
       });
     }
 
-    setEscolas(escolasData || []);
-    setStats({
-      totalEscolas: escolasData?.length || 0,
-      totalAlunos: alunosData?.length || 0,
-      totalEntradas: entradasData?.length || 0
-    });
-    setRecentEntries(enrichedRecentEntries);
-    if (!selectedSchoolId && escolasData?.length) {
-      setSelectedSchoolId(escolasData[0].id);
+    if (escolasData) {
+      setEscolas(escolasData);
+      writeSchoolsCache(escolasData);
+      if (!selectedSchoolId && escolasData.length) {
+        setSelectedSchoolId(escolasData[0].id);
+      }
+    } else if (escolasError) {
+      const cachedSchools = readSchoolsCache();
+      if (cachedSchools.length > 0) {
+        setEscolas(cachedSchools);
+        if (!selectedSchoolId) {
+          setSelectedSchoolId(cachedSchools[0].id);
+        }
+      }
     }
+
+    if (alunosData || entradasData) {
+      setStats((currentStats) => ({
+        totalEscolas: escolasData?.length ?? currentStats.totalEscolas,
+        totalAlunos: alunosData?.length ?? currentStats.totalAlunos,
+        totalEntradas: entradasData?.length ?? currentStats.totalEntradas
+      }));
+    }
+
+    if (recentEntriesData) {
+      setRecentEntries(enrichedRecentEntries);
+    }
+
     setLoading(false);
   };
 
@@ -107,7 +180,10 @@ const AdminGlobalDashboard = () => {
     if (alunosError) {
       console.error('Erro ao carregar alunos:', alunosError);
       setNotification({ type: 'error', message: 'Falha ao buscar alunos da escola.' });
-      setStudents([]);
+      const cached = getCachedStudentsForSchool(schoolId);
+      if (cached.length > 0) {
+        setStudents(cached);
+      }
       setStudentsLoading(false);
       return;
     }
@@ -116,14 +192,59 @@ const AdminGlobalDashboard = () => {
     const { data: guardiansData } = guardianIds.length > 0 ? await supabase.from('utilizadores').select('*').in('id', guardianIds) : { data: [] };
     const guardiansMap = new Map((guardiansData || []).map((g: any) => [g.id, g]));
 
-    setStudents((alunosData || []).map((student: any) => ({
+    const mappedStudents = (alunosData || []).map((student: any) => ({
       ...student,
       guardian: guardiansMap.get(student.encarregado_id)
-    })));
+    }));
+
+    setStudents(mappedStudents);
+    cacheStudentsForSchool(schoolId, mappedStudents);
     setStudentsLoading(false);
   };
 
   const clearNotification = () => setNotification(null);
+
+  const loadPendingRegistrations = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
+      setPendingRegistrations(stored);
+    } catch (err) {
+      console.error('Erro ao carregar registos pendentes:', err);
+      setPendingRegistrations([]);
+    }
+  };
+
+  const handlePendingRegistrationAction = async (registration: any, action: 'approve' | 'reject') => {
+    setApprovalAction(registration.id);
+    try {
+      if (action === 'approve') {
+        const { error } = await supabase.from('utilizadores').insert({
+          nome: registration.nome,
+          email: registration.email,
+          perfil: registration.perfil,
+          escola_id: registration.escola_id,
+          telefone: null,
+          senha: null
+        });
+        if (!error) {
+          setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
+        } else {
+          setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });
+        }
+      } else {
+        setNotification({ type: 'success', message: `Registo rejeitado para ${registration.nome}.` });
+      }
+
+      const updated = pendingRegistrations.filter((item) => item.id !== registration.id);
+      localStorage.setItem('eduguard_pending_registrations', JSON.stringify(updated));
+      setPendingRegistrations(updated);
+    } catch (err) {
+      console.error('Erro ao processar registo pendente:', err);
+      setNotification({ type: 'error', message: 'Ocorreu um erro ao processar o registo.' });
+    } finally {
+      setApprovalAction(null);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
@@ -180,10 +301,36 @@ const AdminGlobalDashboard = () => {
 
     try {
       if (schoolMode === 'edit') {
-        await supabase.from('escolas').update(payload).eq('id', schoolForm.id);
+        const { data: updatedSchools, error } = await supabase
+          .from('escolas')
+          .update(payload)
+          .eq('id', schoolForm.id)
+          .select('*');
+        if (error) throw error;
+        if (updatedSchools && updatedSchools.length > 0) {
+          const updated = updatedSchools[0];
+          setEscolas((current) => {
+            const next = current.map((school) => (school.id === updated.id ? { ...school, ...updated } : school));
+            writeSchoolsCache(next);
+            return next;
+          });
+        }
         setNotification({ type: 'success', message: 'Escola atualizada com sucesso.' });
       } else {
-        await supabase.from('escolas').insert(payload);
+        const { data: insertedSchools, error } = await supabase
+          .from('escolas')
+          .insert(payload)
+          .select('*');
+        if (error) throw error;
+        if (insertedSchools && insertedSchools.length > 0) {
+          const inserted = insertedSchools[0];
+          setEscolas((current) => {
+            const next = [...current.filter((school) => school.id !== inserted.id), inserted].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+            writeSchoolsCache(next);
+            return next;
+          });
+          setSelectedSchoolId(inserted.id);
+        }
         setNotification({ type: 'success', message: 'Escola criada com sucesso.' });
       }
       resetSchoolForm();
@@ -197,8 +344,12 @@ const AdminGlobalDashboard = () => {
   const handleStudentSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedSchoolId) {
-      setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
-      return;
+      if (escolas.length > 0) {
+        setSelectedSchoolId(escolas[0].id);
+      } else {
+        setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
+        return;
+      }
     }
     if (!studentForm.nome.trim() || !studentForm.guardianName.trim() || !studentForm.guardianEmail.trim()) {
       setNotification({ type: 'error', message: 'Preencha nome do aluno, nome do encarregado e email do encarregado.' });
@@ -209,17 +360,28 @@ const AdminGlobalDashboard = () => {
       const guardianEmail = studentForm.guardianEmail.trim().toLowerCase();
       let guardianId: string | null = null;
 
-      const { data: existingGuardian } = await supabase
+      const { data: existingGuardian, error: guardianLookupError } = await supabase
         .from('utilizadores')
         .select('*')
         .eq('email', guardianEmail)
-        .single();
+        .maybeSingle();
+
+      if (guardianLookupError) {
+        throw guardianLookupError;
+      }
 
       if (existingGuardian) {
         guardianId = existingGuardian.id;
-        await supabase.from('utilizadores').update({ nome: studentForm.guardianName.trim(), telefone: studentForm.telefone.trim() || null }).eq('id', guardianId);
+        const { error: updateGuardianError } = await supabase
+          .from('utilizadores')
+          .update({ nome: studentForm.guardianName.trim(), telefone: studentForm.telefone.trim() || null })
+          .eq('id', guardianId);
+
+        if (updateGuardianError) {
+          throw updateGuardianError;
+        }
       } else {
-        const { data: newParent } = await supabase
+        const { data: newParent, error: createGuardianError } = await supabase
           .from('utilizadores')
           .insert({
             nome: studentForm.guardianName.trim(),
@@ -230,39 +392,99 @@ const AdminGlobalDashboard = () => {
           })
           .select('id')
           .single();
+
+        if (createGuardianError) {
+          throw createGuardianError;
+        }
+
         guardianId = newParent?.id || null;
+      }
+
+      const activeSchoolId = selectedSchoolId || escolas[0]?.id || null;
+      if (!activeSchoolId) {
+        setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
+        return;
       }
 
       const qrcodeId = studentForm.qrcode_id?.trim() || `ALUNO-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`;
       const payload = {
         nome: studentForm.nome.trim(),
         classe: studentForm.classe.trim() || 'Sem turma',
-        escola_id: selectedSchoolId,
+        escola_id: activeSchoolId,
         encarregado_id: guardianId,
         qrcode_id: qrcodeId,
         telefone: studentForm.telefone.trim() || null
       };
 
       if (studentMode === 'edit' && studentForm.id) {
-        await supabase.from('alunos').update(payload).eq('id', studentForm.id);
+        const { error: updateStudentError } = await supabase.from('alunos').update(payload).eq('id', studentForm.id);
+        if (updateStudentError) {
+          throw updateStudentError;
+        }
+        updateStudentsForSelectedSchool((currentStudents) =>
+          currentStudents.map((student) =>
+            student.id === studentForm.id
+              ? {
+                  ...student,
+                  ...payload,
+                  guardian: guardianId
+                    ? { id: guardianId, nome: studentForm.guardianName.trim(), email: guardianEmail, telefone: studentForm.telefone.trim() || null }
+                    : student.guardian,
+                }
+              : student
+          )
+        );
         setNotification({ type: 'success', message: 'Aluno atualizado com sucesso.' });
       } else {
-        await supabase.from('alunos').insert(payload);
+        const { data: insertedStudent, error: insertStudentError } = await supabase
+          .from('alunos')
+          .insert(payload)
+          .select('*')
+          .single();
+
+        if (insertStudentError) {
+          throw insertStudentError;
+        }
+
         setNotification({ type: 'success', message: 'Aluno criado com sucesso.' });
+
+        if (insertedStudent) {
+          updateStudentsForSelectedSchool((currentStudents) => [
+            {
+              ...insertedStudent,
+              guardian: guardianId ? { id: guardianId, nome: studentForm.guardianName.trim(), email: guardianEmail, telefone: studentForm.telefone.trim() || null } : null
+            },
+            ...currentStudents.filter((student) => student.id !== insertedStudent.id)
+          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
+
+          setStats((currentStats) => ({
+            ...currentStats,
+            totalAlunos: currentStats.totalAlunos + 1
+          }));
+        }
       }
 
       resetStudentForm();
-      await loadStudents(selectedSchoolId);
+      if (activeSchoolId) {
+        await loadStudents(activeSchoolId);
+      }
+      await loadData();
     } catch (error) {
       console.error('Erro salvar aluno:', error);
-      setNotification({ type: 'error', message: 'Não foi possível salvar o aluno. Verifique os dados e tente novamente.' });
+      setNotification({ type: 'error', message: 'Não foi possível salvar o aluno. Verifique os dados, permissões na base de dados e tente novamente.' });
     }
   };
 
   const handleDeleteSchool = async (schoolId: string) => {
     if (!window.confirm('Tem certeza de que deseja remover esta escola? Isso também pode afetar alunos relacionados.')) return;
     try {
-      await supabase.from('escolas').delete().eq('id', schoolId);
+      const { error } = await supabase.from('escolas').delete().eq('id', schoolId);
+      if (error) throw error;
+      setEscolas((current) => {
+        const next = current.filter((school) => school.id !== schoolId);
+        writeSchoolsCache(next);
+        return next;
+      });
       setNotification({ type: 'success', message: 'Escola removida com sucesso.' });
       if (selectedSchoolId === schoolId) {
         setSelectedSchoolId(null);
@@ -278,9 +500,14 @@ const AdminGlobalDashboard = () => {
   const handleDeleteStudent = async (studentId: string) => {
     if (!window.confirm('Tem certeza de que deseja remover este aluno?')) return;
     try {
-      await supabase.from('alunos').delete().eq('id', studentId);
+      const { error } = await supabase.from('alunos').delete().eq('id', studentId);
+      if (error) throw error;
       setNotification({ type: 'success', message: 'Aluno removido com sucesso.' });
-      if (selectedSchoolId) await loadStudents(selectedSchoolId);
+      updateStudentsForSelectedSchool((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
+      if (selectedSchoolId) {
+        await loadStudents(selectedSchoolId);
+      }
+      await loadData();
     } catch (error) {
       console.error('Erro remover aluno:', error);
       setNotification({ type: 'error', message: 'Falha ao remover aluno.' });
@@ -325,6 +552,32 @@ const AdminGlobalDashboard = () => {
 
         <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-6">
           <div className="space-y-6">
+            <div className="card bg-[#081825] border border-white/10 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Registos Pendentes</h2>
+                  <p className="text-sm text-gray-400">Novos pedidos de acesso por escola aguardam aprovação.</p>
+                </div>
+                <span className="rounded-full bg-amber-500/15 px-3 py-1 text-sm text-amber-300">{pendingRegistrations.length}</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {pendingRegistrations.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhum registo pendente no momento.</div>
+                ) : pendingRegistrations.map((entry) => (
+                  <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold text-white">{entry.nome}</p>
+                      <p className="text-sm text-gray-400">{entry.email}</p>
+                      <p className="text-xs text-gray-500">{entry.perfil === 'pai' ? 'Encarregado' : 'Diretor'} · {entry.escola_id ? 'Escola associada' : 'Sem escola'}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handlePendingRegistrationAction(entry, 'approve')} disabled={approvalAction === entry.id} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{approvalAction === entry.id ? 'A processar...' : 'Aprovar'}</button>
+                      <button onClick={() => handlePendingRegistrationAction(entry, 'reject')} disabled={approvalAction === entry.id} className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">Rejeitar</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="card p-6 bg-[#081825] border border-white/10">
                 <div className="flex items-center justify-between mb-4">
@@ -388,8 +641,9 @@ const AdminGlobalDashboard = () => {
                   <p className="text-gray-400 text-sm">Adicione, edite ou remova escolas e tenha o seu contacto de email de aviso.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <label className="text-sm text-gray-300">Escola atual</label>
+                  <label className="text-sm text-gray-300" htmlFor="school-selector">Escola atual</label>
                   <select
+                    id="school-selector"
                     value={selectedSchoolId || ''}
                     onChange={(e) => setSelectedSchoolId(e.target.value)}
                     className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm text-white outline-none"
@@ -528,8 +782,8 @@ const AdminGlobalDashboard = () => {
             <div className="card bg-[#081825] border border-white/10 overflow-hidden">
               <div className="p-6 border-b border-white/10 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-white">Lista de Alunos</h2>
-                  <p className="text-gray-400 text-sm">Veja todos os alunos do estabelecimento selecionado.</p>
+                  <h2 className="text-xl font-semibold text-white">Alunos Registrados</h2>
+                  <p className="text-gray-400 text-sm">Clique num aluno para editar ou remover quando necessário.</p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
                   <Mail className="w-4 h-4" /> Email do Encarregado
@@ -544,13 +798,15 @@ const AdminGlobalDashboard = () => {
                 ) : (
                   <div className="space-y-4">
                     {students.map((student) => (
-                      <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="text-white font-semibold">{student.nome}</p>
+                      <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-white">{student.nome}</p>
                           <p className="text-sm text-gray-400">{student.classe || 'Classe não definida'}</p>
-                          <p className="text-sm text-gray-300">Enc: {student.guardian?.nome || 'Não registado'}</p>
-                          <p className="text-sm text-gray-300">📧 {student.guardian?.email || 'Sem email'}</p>
-                          <p className="text-sm text-gray-300">📱 {student.guardian?.telefone || 'Sem telefone'}</p>
+                          <p className="text-sm text-gray-300">Encarregado: {student.guardian?.nome || 'Não registado'}</p>
+                          <p className="text-sm text-gray-300">Email: {student.guardian?.email || 'Sem email'}</p>
+                          <p className="text-sm text-gray-300">Telefone: {student.guardian?.telefone || 'Sem telefone'}</p>
                           <p className="text-xs text-gray-500 mt-1">QR Code ID: {student.qrcode_id || 'N/A'}</p>
+                        </div>
                         <div className="flex flex-wrap gap-2">
                           <button onClick={() => handleStudentEdit(student)} className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-sm text-white">
                             <Edit3 className="w-4 h-4" /> Editar
