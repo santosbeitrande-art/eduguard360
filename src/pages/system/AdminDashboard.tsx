@@ -5,6 +5,7 @@ import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Ed
 
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
+const LOCAL_SCHOOL_ID = 'local-school-default';
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -176,6 +177,12 @@ const AdminGlobalDashboard = () => {
   };
 
   const loadStudents = async (schoolId: string) => {
+    if (schoolId.startsWith('local-school-')) {
+      setStudents(getCachedStudentsForSchool(schoolId));
+      setStudentsLoading(false);
+      return;
+    }
+
     setStudentsLoading(true);
     const { data: alunosData, error: alunosError } = await supabase
       .from('alunos')
@@ -373,24 +380,29 @@ const AdminGlobalDashboard = () => {
 
   const handleStudentSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedSchoolId) {
-      if (escolas.length > 0) {
-        setSelectedSchoolId(escolas[0].id);
-      } else {
-        setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
-        return;
-      }
-    }
     if (!studentForm.nome.trim() || !studentForm.guardianName.trim() || !studentForm.guardianEmail.trim()) {
       setNotification({ type: 'error', message: 'Preencha nome do aluno, nome do encarregado e email do encarregado.' });
       return;
     }
 
     try {
-      const activeSchoolId = selectedSchoolId || escolas[0]?.id || null;
+      let activeSchoolId = selectedSchoolId || escolas[0]?.id || null;
       if (!activeSchoolId) {
-        setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
-        return;
+        const fallbackSchool = {
+          id: LOCAL_SCHOOL_ID,
+          nome: 'Escola Local',
+          endereco: null,
+          telefone: null,
+          email: null,
+        };
+        setEscolas((current) => {
+          const exists = current.some((school) => school.id === LOCAL_SCHOOL_ID);
+          const next = exists ? current : [fallbackSchool, ...current];
+          writeSchoolsCache(next);
+          return next;
+        });
+        activeSchoolId = LOCAL_SCHOOL_ID;
+        setSelectedSchoolId(LOCAL_SCHOOL_ID);
       }
 
       const guardianEmail = studentForm.guardianEmail.trim().toLowerCase();
@@ -482,7 +494,7 @@ const AdminGlobalDashboard = () => {
               : student
           )
         );
-        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno atualizado localmente. Ajuste as permissões no Supabase para sincronizar.' : 'Aluno atualizado com sucesso.' });
+        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno atualizado localmente.' : 'Aluno atualizado com sucesso.' });
       } else {
         const { data: insertedStudent, error: insertStudentError } = await supabase
           .from('alunos')
@@ -516,7 +528,7 @@ const AdminGlobalDashboard = () => {
           ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
         }
 
-        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno guardado localmente. Ajuste as permissões no Supabase para sincronizar.' : 'Aluno criado com sucesso.' });
+        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno guardado localmente.' : 'Aluno criado com sucesso.' });
         setStats((currentStats) => ({
           ...currentStats,
           totalAlunos: currentStats.totalAlunos + 1
@@ -524,10 +536,10 @@ const AdminGlobalDashboard = () => {
       }
 
       resetStudentForm();
-      if (activeSchoolId) {
+      if (activeSchoolId && !localOnlyMode && !String(activeSchoolId).startsWith('local-school-')) {
         await loadStudents(activeSchoolId);
+        await loadData();
       }
-      await loadData();
     } catch (error) {
       console.error('Erro salvar aluno:', error);
       setNotification({ type: 'error', message: 'Não foi possível salvar o aluno. Verifique os dados, permissões na base de dados e tente novamente.' });
