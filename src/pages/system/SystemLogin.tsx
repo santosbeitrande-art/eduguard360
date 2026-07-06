@@ -141,29 +141,8 @@ const SystemLogin = () => {
     setInfoMessage(null);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
-    const validAdminPasswords = [
-      "EduGuard@360!2026",
-      "Admin1234admin",
-      "Admin@1234"
-    ];
 
     try {
-      // Bypass automático (Hardcoded) para o Admin Principal
-      if (normalizedEmail === "admin@eduguard360.co.mz" && validAdminPasswords.includes(normalizedPassword)) {
-        const adminUser = {
-          id: "bypass-admin-id",
-          nome: "Administrador Global",
-          email: "admin@eduguard360.co.mz",
-          perfil: "admin",
-          escola_id: null,
-          canAccessParent: true,
-          canAccessSchool: true
-        };
-        localStorage.setItem("currentUser", JSON.stringify(adminUser));
-        navigate("/admin");
-        return;
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: normalizedPassword,
