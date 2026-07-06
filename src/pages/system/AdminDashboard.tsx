@@ -30,6 +30,7 @@ const AdminGlobalDashboard = () => {
   const [schoolMode, setSchoolMode] = useState<'create' | 'edit'>('create');
   const [studentForm, setStudentForm] = useState({ id: '', nome: '', classe: '', guardianName: '', guardianEmail: '', qrcode_id: '', telefone: '' });
   const [studentMode, setStudentMode] = useState<'create' | 'edit'>('create');
+  const [studentSearch, setStudentSearch] = useState('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
@@ -609,6 +610,19 @@ const AdminGlobalDashboard = () => {
   };
 
   const selectedSchool = escolas.find((school) => school.id === selectedSchoolId);
+  const normalizedStudentSearch = studentSearch.trim().toLowerCase();
+  const filteredStudents = normalizedStudentSearch
+    ? students.filter((student) => {
+        const name = String(student.nome || '').toLowerCase();
+        const guardianName = String(student.guardian?.nome || '').toLowerCase();
+        const guardianEmail = String(student.guardian?.email || '').toLowerCase();
+        const classroom = String(student.classe || '').toLowerCase();
+        return name.includes(normalizedStudentSearch)
+          || guardianName.includes(normalizedStudentSearch)
+          || guardianEmail.includes(normalizedStudentSearch)
+          || classroom.includes(normalizedStudentSearch);
+      })
+    : students;
 
   return (
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white bg-[#05121c]">
@@ -880,18 +894,33 @@ const AdminGlobalDashboard = () => {
                   <p className="text-gray-400 text-sm">Clique num aluno para editar ou remover quando necessário.</p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
-                  <Mail className="w-4 h-4" /> Email do Encarregado
+                  <Mail className="w-4 h-4" /> {filteredStudents.length} registo(s)
                 </div>
               </div>
 
               <div className="p-6">
+                <div className="mb-4 relative">
+                  <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-[#03121e] pl-10 pr-4 py-3 text-white outline-none"
+                    placeholder="Procurar por aluno, turma, encarregado ou email"
+                  />
+                </div>
+
                 {studentsLoading ? (
                   <div className="text-gray-400">A carregar alunos...</div>
-                ) : students.length === 0 ? (
-                  <div className="text-gray-400">Nenhum aluno registado nesta escola.</div>
+                ) : filteredStudents.length === 0 ? (
+                  <div className="text-gray-400">
+                    {students.length === 0
+                      ? `Nenhum aluno registado na escola ${selectedSchool?.nome || 'selecionada'}.`
+                      : 'Nenhum aluno encontrado para o filtro informado.'}
+                  </div>
                 ) : (
                   <div className="space-y-4">
-                    {students.map((student) => (
+                    {filteredStudents.map((student) => (
                       <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                           <p className="font-semibold text-white">{student.nome}</p>
