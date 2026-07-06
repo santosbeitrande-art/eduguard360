@@ -895,10 +895,8 @@ const AdminGlobalDashboard = () => {
                       <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                           <p className="font-semibold text-white">{student.nome}</p>
-                          <p className="text-sm text-gray-400">{student.classe || 'Classe não definida'}</p>
-                          <p className="text-sm text-gray-300">Encarregado: {student.guardian?.nome || 'Não registado'}</p>
-                          <p className="text-sm text-gray-300">Email: {student.guardian?.email || 'Sem email'}</p>
-                          <p className="text-sm text-gray-300">Telefone: {student.guardian?.telefone || 'Sem telefone'}</p>
+                          <p className="text-sm text-gray-400">{student.guardian?.email || 'Sem email'} · {student.guardian?.telefone || 'Sem telefone'}</p>
+                          <p className="text-sm text-gray-500">{student.classe || 'Classe não definida'} · Enc: {student.guardian?.nome || 'Não registado'}</p>
                           <p className="text-xs text-gray-500 mt-1">QR Code ID: {student.qrcode_id || 'N/A'}</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
