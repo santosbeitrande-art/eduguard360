@@ -295,7 +295,7 @@ const AdminGlobalDashboard = () => {
       guardianName: student.guardian?.nome || '',
       guardianEmail: student.guardian?.email || '',
       qrcode_id: student.qrcode_id || '',
-      telefone: student.telefone || '',
+      telefone: student.guardian?.telefone || '',
     });
   };
 
@@ -430,7 +430,7 @@ const AdminGlobalDashboard = () => {
           guardianId = existingGuardian.id;
           const { error: updateGuardianError } = await supabase
             .from('utilizadores')
-            .update({ nome: guardianPayload.nome, telefone: guardianPayload.telefone })
+            .update({ nome: guardianPayload.nome })
             .eq('id', guardianId);
 
           if (updateGuardianError) {
@@ -440,7 +440,8 @@ const AdminGlobalDashboard = () => {
           const { data: newParent, error: createGuardianError } = await supabase
             .from('utilizadores')
             .insert({
-              ...guardianPayload,
+              nome: guardianPayload.nome,
+              email: guardianPayload.email,
               perfil: 'pai',
               escola_id: activeSchoolId
             })
@@ -468,7 +469,6 @@ const AdminGlobalDashboard = () => {
         escola_id: activeSchoolId,
         encarregado_id: guardianId,
         qrcode_id: qrcodeId,
-        telefone: studentForm.telefone.trim() || null
       };
 
       if (studentMode === 'edit' && studentForm.id) {
