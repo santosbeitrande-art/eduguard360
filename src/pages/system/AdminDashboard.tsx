@@ -307,21 +307,30 @@ const AdminGlobalDashboard = () => {
 
     try {
       if (schoolMode === 'edit') {
-        const { data: updatedSchools, error } = await supabase
-          .from('escolas')
-          .update(payload)
-          .eq('id', schoolForm.id)
-          .select('*');
-        if (error) throw error;
-        if (updatedSchools && updatedSchools.length > 0) {
-          const updated = updatedSchools[0];
+        if (schoolForm.id.startsWith('local-school-')) {
           setEscolas((current) => {
-            const next = current.map((school) => (school.id === updated.id ? { ...school, ...updated } : school));
+            const next = current.map((school) => (school.id === schoolForm.id ? { ...school, ...payload } : school));
             writeSchoolsCache(next);
             return next;
           });
+          setNotification({ type: 'success', message: 'Escola local atualizada com sucesso.' });
+        } else {
+          const { data: updatedSchools, error } = await supabase
+            .from('escolas')
+            .update(payload)
+            .eq('id', schoolForm.id)
+            .select('*');
+          if (error) throw error;
+          if (updatedSchools && updatedSchools.length > 0) {
+            const updated = updatedSchools[0];
+            setEscolas((current) => {
+              const next = current.map((school) => (school.id === updated.id ? { ...school, ...updated } : school));
+              writeSchoolsCache(next);
+              return next;
+            });
+          }
+          setNotification({ type: 'success', message: 'Escola atualizada com sucesso.' });
         }
-        setNotification({ type: 'success', message: 'Escola atualizada com sucesso.' });
       } else {
         const { data: insertedSchools, error } = await supabase
           .from('escolas')
@@ -343,6 +352,21 @@ const AdminGlobalDashboard = () => {
       await loadData();
     } catch (error) {
       console.error('Erro salvar escola:', error);
+      if (isPermissionError(error)) {
+        const localSchool = {
+          id: `local-school-${Date.now()}`,
+          ...payload,
+        };
+        setEscolas((current) => {
+          const next = [...current.filter((school) => school.id !== localSchool.id), localSchool].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+          writeSchoolsCache(next);
+          return next;
+        });
+        setSelectedSchoolId(localSchool.id);
+        resetSchoolForm();
+        setNotification({ type: 'success', message: 'Escola guardada localmente. Ajuste as permissões no Supabase para sincronizar.' });
+        return;
+      }
       setNotification({ type: 'error', message: 'Não foi possível salvar a escola.' });
     }
   };
@@ -513,14 +537,25 @@ const AdminGlobalDashboard = () => {
   const handleDeleteSchool = async (schoolId: string) => {
     if (!window.confirm('Tem certeza de que deseja remover esta escola? Isso também pode afetar alunos relacionados.')) return;
     try {
-      const { error } = await supabase.from('escolas').delete().eq('id', schoolId);
-      if (error) throw error;
+      if (!schoolId.startsWith('local-school-')) {
+        const { error } = await supabase.from('escolas').delete().eq('id', schoolId);
+        if (error) {
+          if (!isPermissionError(error)) {
+            throw error;
+          }
+          setNotification({ type: 'success', message: 'Escola removida localmente. Ajuste as permissões no Supabase para sincronizar.' });
+        } else {
+          setNotification({ type: 'success', message: 'Escola removida com sucesso.' });
+        }
+      } else {
+        setNotification({ type: 'success', message: 'Escola local removida com sucesso.' });
+      }
+
       setEscolas((current) => {
         const next = current.filter((school) => school.id !== schoolId);
         writeSchoolsCache(next);
         return next;
       });
-      setNotification({ type: 'success', message: 'Escola removida com sucesso.' });
       if (selectedSchoolId === schoolId) {
         setSelectedSchoolId(null);
         setStudents([]);
