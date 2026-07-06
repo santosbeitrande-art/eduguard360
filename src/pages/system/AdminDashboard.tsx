@@ -6,6 +6,12 @@ import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Ed
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 
+const isPermissionError = (error: any) => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42501' || code === '401' || message.includes('row-level security') || message.includes('permission');
+};
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -357,53 +363,65 @@ const AdminGlobalDashboard = () => {
     }
 
     try {
-      const guardianEmail = studentForm.guardianEmail.trim().toLowerCase();
-      let guardianId: string | null = null;
-
-      const { data: existingGuardian, error: guardianLookupError } = await supabase
-        .from('utilizadores')
-        .select('*')
-        .eq('email', guardianEmail)
-        .maybeSingle();
-
-      if (guardianLookupError) {
-        throw guardianLookupError;
-      }
-
-      if (existingGuardian) {
-        guardianId = existingGuardian.id;
-        const { error: updateGuardianError } = await supabase
-          .from('utilizadores')
-          .update({ nome: studentForm.guardianName.trim(), telefone: studentForm.telefone.trim() || null })
-          .eq('id', guardianId);
-
-        if (updateGuardianError) {
-          throw updateGuardianError;
-        }
-      } else {
-        const { data: newParent, error: createGuardianError } = await supabase
-          .from('utilizadores')
-          .insert({
-            nome: studentForm.guardianName.trim(),
-            email: guardianEmail,
-            telefone: studentForm.telefone.trim() || null,
-            perfil: 'pai',
-            escola_id: selectedSchoolId
-          })
-          .select('id')
-          .single();
-
-        if (createGuardianError) {
-          throw createGuardianError;
-        }
-
-        guardianId = newParent?.id || null;
-      }
-
       const activeSchoolId = selectedSchoolId || escolas[0]?.id || null;
       if (!activeSchoolId) {
         setNotification({ type: 'error', message: 'Selecione uma escola antes de adicionar um aluno.' });
         return;
+      }
+
+      const guardianEmail = studentForm.guardianEmail.trim().toLowerCase();
+      const guardianPayload = {
+        nome: studentForm.guardianName.trim(),
+        email: guardianEmail,
+        telefone: studentForm.telefone.trim() || null,
+      };
+      let guardianId: string | null = null;
+      let localOnlyMode = false;
+
+      try {
+        const { data: existingGuardian, error: guardianLookupError } = await supabase
+          .from('utilizadores')
+          .select('*')
+          .eq('email', guardianEmail)
+          .maybeSingle();
+
+        if (guardianLookupError) {
+          throw guardianLookupError;
+        }
+
+        if (existingGuardian) {
+          guardianId = existingGuardian.id;
+          const { error: updateGuardianError } = await supabase
+            .from('utilizadores')
+            .update({ nome: guardianPayload.nome, telefone: guardianPayload.telefone })
+            .eq('id', guardianId);
+
+          if (updateGuardianError) {
+            throw updateGuardianError;
+          }
+        } else {
+          const { data: newParent, error: createGuardianError } = await supabase
+            .from('utilizadores')
+            .insert({
+              ...guardianPayload,
+              perfil: 'pai',
+              escola_id: activeSchoolId
+            })
+            .select('id')
+            .single();
+
+          if (createGuardianError) {
+            throw createGuardianError;
+          }
+
+          guardianId = newParent?.id || null;
+        }
+      } catch (guardianError) {
+        if (isPermissionError(guardianError)) {
+          localOnlyMode = true;
+        } else {
+          throw guardianError;
+        }
       }
 
       const qrcodeId = studentForm.qrcode_id?.trim() || `ALUNO-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`;
@@ -417,24 +435,30 @@ const AdminGlobalDashboard = () => {
       };
 
       if (studentMode === 'edit' && studentForm.id) {
-        const { error: updateStudentError } = await supabase.from('alunos').update(payload).eq('id', studentForm.id);
-        if (updateStudentError) {
-          throw updateStudentError;
+        if (!studentForm.id.startsWith('local-')) {
+          const { error: updateStudentError } = await supabase.from('alunos').update(payload).eq('id', studentForm.id);
+          if (updateStudentError) {
+            if (!isPermissionError(updateStudentError)) {
+              throw updateStudentError;
+            }
+            localOnlyMode = true;
+          }
+        } else {
+          localOnlyMode = true;
         }
+
         updateStudentsForSelectedSchool((currentStudents) =>
           currentStudents.map((student) =>
             student.id === studentForm.id
               ? {
                   ...student,
                   ...payload,
-                  guardian: guardianId
-                    ? { id: guardianId, nome: studentForm.guardianName.trim(), email: guardianEmail, telefone: studentForm.telefone.trim() || null }
-                    : student.guardian,
+                  guardian: { id: guardianId || student.guardian?.id || null, ...guardianPayload },
                 }
               : student
           )
         );
-        setNotification({ type: 'success', message: 'Aluno atualizado com sucesso.' });
+        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno atualizado localmente. Ajuste as permissões no Supabase para sincronizar.' : 'Aluno atualizado com sucesso.' });
       } else {
         const { data: insertedStudent, error: insertStudentError } = await supabase
           .from('alunos')
@@ -443,25 +467,36 @@ const AdminGlobalDashboard = () => {
           .single();
 
         if (insertStudentError) {
-          throw insertStudentError;
-        }
+          if (!isPermissionError(insertStudentError)) {
+            throw insertStudentError;
+          }
 
-        setNotification({ type: 'success', message: 'Aluno criado com sucesso.' });
+          localOnlyMode = true;
+          const localStudent = {
+            id: `local-${Date.now()}`,
+            ...payload,
+            guardian: { id: guardianId, ...guardianPayload },
+          };
 
-        if (insertedStudent) {
+          updateStudentsForSelectedSchool((currentStudents) => [
+            localStudent,
+            ...currentStudents.filter((student) => student.id !== localStudent.id)
+          ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
+        } else if (insertedStudent) {
           updateStudentsForSelectedSchool((currentStudents) => [
             {
               ...insertedStudent,
-              guardian: guardianId ? { id: guardianId, nome: studentForm.guardianName.trim(), email: guardianEmail, telefone: studentForm.telefone.trim() || null } : null
+              guardian: { id: guardianId, ...guardianPayload },
             },
             ...currentStudents.filter((student) => student.id !== insertedStudent.id)
           ].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')));
-
-          setStats((currentStats) => ({
-            ...currentStats,
-            totalAlunos: currentStats.totalAlunos + 1
-          }));
         }
+
+        setNotification({ type: 'success', message: localOnlyMode ? 'Aluno guardado localmente. Ajuste as permissões no Supabase para sincronizar.' : 'Aluno criado com sucesso.' });
+        setStats((currentStats) => ({
+          ...currentStats,
+          totalAlunos: currentStats.totalAlunos + 1
+        }));
       }
 
       resetStudentForm();
@@ -500,9 +535,20 @@ const AdminGlobalDashboard = () => {
   const handleDeleteStudent = async (studentId: string) => {
     if (!window.confirm('Tem certeza de que deseja remover este aluno?')) return;
     try {
-      const { error } = await supabase.from('alunos').delete().eq('id', studentId);
-      if (error) throw error;
-      setNotification({ type: 'success', message: 'Aluno removido com sucesso.' });
+      if (studentId.startsWith('local-')) {
+        setNotification({ type: 'success', message: 'Aluno local removido com sucesso.' });
+      } else {
+        const { error } = await supabase.from('alunos').delete().eq('id', studentId);
+        if (error) {
+          if (!isPermissionError(error)) {
+            throw error;
+          }
+          setNotification({ type: 'success', message: 'Aluno removido localmente. Ajuste as permissões no Supabase para sincronizar.' });
+        } else {
+          setNotification({ type: 'success', message: 'Aluno removido com sucesso.' });
+        }
+      }
+
       updateStudentsForSelectedSchool((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
       if (selectedSchoolId) {
         await loadStudents(selectedSchoolId);
