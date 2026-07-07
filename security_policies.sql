@@ -143,6 +143,30 @@ FOR DELETE USING (
   OR public.is_director_for_school(escola_id)
 );
 
+DROP POLICY IF EXISTS "Scanner pode ver alunos da sua escola" ON alunos;
+CREATE POLICY "Scanner pode ver alunos da sua escola" ON alunos
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1
+    FROM public.utilizadores
+    WHERE auth_id = auth.uid()
+      AND perfil = 'scanner'
+      AND escola_id = alunos.escola_id
+  )
+);
+
+DROP POLICY IF EXISTS "Scanner pode criar alunos da sua escola" ON alunos;
+CREATE POLICY "Scanner pode criar alunos da sua escola" ON alunos
+FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.utilizadores
+    WHERE auth_id = auth.uid()
+      AND perfil = 'scanner'
+      AND escola_id = alunos.escola_id
+  )
+);
+
 -- ==============================================================================
 -- 5. Políticas para a tabela ENTRADAS
 -- ==============================================================================

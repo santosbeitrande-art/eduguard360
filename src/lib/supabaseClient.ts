@@ -2,15 +2,90 @@ import { supabase } from '@/lib/supabase';
 import { EmailService } from '@/services/emailService';
 export { supabase };
 
+const resolveCurrentSchoolIdFromStorage = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const currentUserRaw = localStorage.getItem('currentUser');
+    const scannerUserRaw = localStorage.getItem('eduguard_user');
+
+    const currentUser = currentUserRaw ? JSON.parse(currentUserRaw) : null;
+    const scannerUser = scannerUserRaw ? JSON.parse(scannerUserRaw) : null;
+
+    return (
+      currentUser?.escola_id
+      || currentUser?.school_id
+      || scannerUser?.escola_id
+      || scannerUser?.school_id
+      || null
+    );
+  } catch {
+    return null;
+  }
+};
+
+const resolveCurrentSchoolId = async () => {
+  const fromStorage = resolveCurrentSchoolIdFromStorage();
+  if (fromStorage) return fromStorage;
+
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const authId = sessionData?.session?.user?.id;
+    if (!authId) return null;
+
+    const { data: profile } = await supabase
+      .from('utilizadores')
+      .select('escola_id')
+      .eq('auth_id', authId)
+      .maybeSingle();
+
+    return profile?.escola_id || null;
+  } catch {
+    return null;
+  }
+};
+
+const isNoRowsError = (error: any) => String(error?.code || '') === 'PGRST116';
+
 export async function saveStudentEntry(student: any) {
-  const { data: aluno, error: alunoError } = await supabase
+  const { data: existingAluno, error: alunoError } = await supabase
     .from('alunos')
     .select('id, nome, classe, escola_id, encarregado_id')
     .eq('qrcode_id', student.code)
-    .single();
+    .maybeSingle();
 
-  if (alunoError || !aluno) {
-    console.error('Aluno não encontrado:', alunoError);
+  if (alunoError && !isNoRowsError(alunoError)) {
+    console.error('Erro ao buscar aluno:', alunoError);
+    throw new Error(`Falha ao validar aluno: ${alunoError.message || 'erro desconhecido'}`);
+  }
+
+  let aluno = existingAluno;
+
+  if (!aluno) {
+    const schoolId = await resolveCurrentSchoolId();
+
+    const autoStudentPayload = {
+      nome: String(student?.name || '').trim() || `Aluno ${student.code}`,
+      classe: String(student?.className || '').trim() || 'Sem turma',
+      escola_id: schoolId,
+      qrcode_id: student.code,
+    };
+
+    const { data: createdAluno, error: createAlunoError } = await supabase
+      .from('alunos')
+      .insert(autoStudentPayload)
+      .select('id, nome, classe, escola_id, encarregado_id')
+      .single();
+
+    if (createAlunoError || !createdAluno) {
+      console.error('Aluno não encontrado e falha ao auto-registrar:', createAlunoError);
+      throw new Error(`Aluno não encontrado e não foi possível auto-registrar: ${createAlunoError?.message || 'sem permissão na base de dados'}`);
+    }
+
+    aluno = createdAluno;
+  }
+
+  if (!aluno) {
     throw new Error('Aluno não encontrado na base de dados.');
   }
 
