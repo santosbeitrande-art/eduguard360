@@ -55,6 +55,17 @@ const resolveCurrentSchoolId = async () => {
 
 const isNoRowsError = (error: any) => String(error?.code || '') === 'PGRST116';
 
+const toReadableDbError = (error: any, fallback: string) => {
+  if (!error) return fallback;
+  const parts = [
+    error.message || fallback,
+    error.code ? `code=${error.code}` : null,
+    error.details || null,
+    error.hint || null,
+  ].filter(Boolean);
+  return parts.join(' | ');
+};
+
 export async function saveStudentEntry(student: any) {
   const { data: existingAluno, error: alunoError } = await supabase
     .from('alunos')
@@ -64,7 +75,7 @@ export async function saveStudentEntry(student: any) {
 
   if (alunoError && !isNoRowsError(alunoError)) {
     console.error('Erro ao buscar aluno:', alunoError);
-    throw new Error(`Falha ao validar aluno: ${alunoError.message || 'erro desconhecido'}`);
+    throw new Error(toReadableDbError(alunoError, 'Falha ao validar aluno.'));
   }
 
   let aluno = existingAluno;
@@ -87,7 +98,7 @@ export async function saveStudentEntry(student: any) {
 
     if (createAlunoError || !createdAluno) {
       console.error('Aluno não encontrado e falha ao auto-registrar:', createAlunoError);
-      throw new Error(`Aluno não encontrado e não foi possível auto-registrar: ${createAlunoError?.message || 'sem permissão na base de dados'}`);
+      throw new Error(toReadableDbError(createAlunoError, 'Aluno não encontrado e não foi possível auto-registrar.'));
     }
 
     aluno = createdAluno;
@@ -134,7 +145,7 @@ export async function saveStudentEntry(student: any) {
 
   if (error) {
     console.error('Erro ao gravar entrada/saída:', error);
-    throw error;
+    throw new Error(toReadableDbError(error, 'Erro ao gravar entrada/saída.'));
   }
 
   if (guardian?.email) {
