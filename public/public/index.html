@@ -78,12 +78,6 @@
         margin-top: 8px;
       }
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .training-card {
-        border: 1px solid rgba(255,255,255,.16);
-        border-radius: 10px;
-        padding: 10px;
-        background: rgba(255,255,255,.04);
-      }
       .table-wrap { overflow: auto; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; margin-top: 8px; }
       table { width: 100%; border-collapse: collapse; min-width: 760px; }
       th, td { border-bottom: 1px solid rgba(255,255,255,.12); padding: 8px; text-align: left; font-size: .9rem; }
@@ -121,63 +115,6 @@
         <div id="result" class="status" style="margin-top:10px;">Pronto para consulta.</div>
       </section>
 
-      <section class="panel">
-        <h2 id="trainingTitle">Calibracao por exemplos</h2>
-        <p id="trainingHint">Registe exemplos para melhorar deteccao de fraude e reduzir falso positivo/falso negativo.</p>
-
-        <div class="two-col">
-          <div class="training-card">
-            <h3 id="fraudUploadTitle" style="margin:0 0 8px;">Exemplo de fraude alta</h3>
-            <label for="fraudExampleFile" id="fraudFileLabel">Documento suspeito/falso</label>
-            <input id="fraudExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="fraudReasons" id="fraudReasonsLabel">Motivos de alto risco (uma linha por motivo)</label>
-            <textarea id="fraudReasons" placeholder="Exemplo: assinatura incoerente&#10;Exemplo: fonte adulterada"></textarea>
-            <label for="fraudNotes" id="fraudNotesLabel">Notas (opcional)</label>
-            <textarea id="fraudNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" type="button" id="btnUploadFraudExample" style="margin-top:8px;">Guardar exemplo fraude</button>
-          </div>
-
-          <div class="training-card">
-            <h3 id="authUploadTitle" style="margin:0 0 8px;">Exemplo de alta autenticidade</h3>
-            <label for="authExampleFile" id="authFileLabel">Documento autentico</label>
-            <input id="authExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="authReasons" id="authReasonsLabel">Motivos de baixa suspeita (uma linha por motivo)</label>
-            <textarea id="authReasons" placeholder="Exemplo: entidade validada&#10;Exemplo: dados consistentes"></textarea>
-            <label for="authNotes" id="authNotesLabel">Notas (opcional)</label>
-            <textarea id="authNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" type="button" id="btnUploadAuthExample" style="margin-top:8px;">Guardar exemplo autentico</button>
-          </div>
-        </div>
-
-        <div id="trainingStats" class="status" style="margin-top:10px;">A carregar historico...</div>
-
-        <div class="row" style="margin-top:10px;">
-          <select id="trainingCategoryFilter" style="max-width:260px;">
-            <option value="">Todas categorias</option>
-            <option value="high-risk-fraud">Fraude alta</option>
-            <option value="high-authenticity">Alta autenticidade</option>
-          </select>
-          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" style="min-width:280px;" />
-          <button class="ghost" id="btnTrainingFilter" type="button">Aplicar filtro</button>
-          <button class="ghost" id="btnTrainingExportCsv" type="button">Exportar CSV</button>
-          <button class="ghost" id="btnTrainingRefresh" type="button">Atualizar</button>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Categoria</th>
-                <th>Documento</th>
-                <th>Score</th>
-                <th>Risco</th>
-                <th>Motivos</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody id="trainingExamplesBody"></tbody>
-          </table>
         </div>
       </section>
 
