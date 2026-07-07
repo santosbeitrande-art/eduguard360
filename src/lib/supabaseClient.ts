@@ -5,6 +5,12 @@ export { supabase };
 const resolveCurrentSchoolIdFromStorage = () => {
   if (typeof window === 'undefined') return null;
 
+  const isValidUuid = (value: unknown) => {
+    if (typeof value !== 'string') return false;
+    const normalized = value.trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+  };
+
   try {
     const currentUserRaw = localStorage.getItem('currentUser');
     const scannerUserRaw = localStorage.getItem('eduguard_user');
@@ -12,13 +18,15 @@ const resolveCurrentSchoolIdFromStorage = () => {
     const currentUser = currentUserRaw ? JSON.parse(currentUserRaw) : null;
     const scannerUser = scannerUserRaw ? JSON.parse(scannerUserRaw) : null;
 
-    return (
-      currentUser?.escola_id
-      || currentUser?.school_id
-      || scannerUser?.escola_id
-      || scannerUser?.school_id
-      || null
-    );
+    const schoolIdCandidates = [
+      currentUser?.escola_id,
+      currentUser?.school_id,
+      scannerUser?.escola_id,
+      scannerUser?.school_id,
+    ];
+
+    const validSchoolId = schoolIdCandidates.find((candidate) => isValidUuid(candidate));
+    return validSchoolId || null;
   } catch {
     return null;
   }
