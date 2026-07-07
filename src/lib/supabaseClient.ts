@@ -66,6 +66,12 @@ const toReadableDbError = (error: any, fallback: string) => {
   return parts.join(' | ');
 };
 
+const isMissingEncarregadoEmailColumnError = (error: any) => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'PGRST204' && message.includes('encarregado_email');
+};
+
 export async function saveStudentEntry(student: any) {
   const { data: existingAluno, error: alunoError } = await supabase
     .from('alunos')
@@ -135,13 +141,24 @@ export async function saveStudentEntry(student: any) {
   const entryTimestamp = new Date();
   const formattedTime = entryTimestamp.toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' });
 
-  const { data, error } = await supabase.from('entradas').insert([
-    {
+  const fullEntryPayload = {
+    aluno_id: aluno.id,
+    tipo: nextType,
+    encarregado_email: guardian?.email || null,
+  };
+
+  let { data, error } = await supabase.from('entradas').insert([fullEntryPayload]);
+
+  if (error && isMissingEncarregadoEmailColumnError(error)) {
+    const fallbackEntryPayload = {
       aluno_id: aluno.id,
       tipo: nextType,
-      encarregado_email: guardian?.email || null,
-    },
-  ]);
+    };
+
+    const fallbackInsert = await supabase.from('entradas').insert([fallbackEntryPayload]);
+    data = fallbackInsert.data;
+    error = fallbackInsert.error;
+  }
 
   if (error) {
     console.error('Erro ao gravar entrada/saída:', error);
