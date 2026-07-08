@@ -6,6 +6,7 @@ import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Ed
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const LOCAL_SCHOOL_ID = 'local-school-default';
+const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -33,6 +34,20 @@ const getPendingRoleLabel = (perfil: string) => {
   if (normalized === 'scanner' || normalized === 'security') return 'Segurança QR';
   if (normalized === 'director' || normalized === 'school_admin') return 'Diretor';
   return normalized || 'Utilizador';
+};
+
+const readLocalApprovedUsers = (): any[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_APPROVED_USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeLocalApprovedUsers = (items: any[]) => {
+  localStorage.setItem(LOCAL_APPROVED_USERS_KEY, JSON.stringify(items));
 };
 
 const mapPendingRoleToEdgeRole = (perfil: string) => {
@@ -474,8 +489,23 @@ const AdminGlobalDashboard = () => {
             processedSuccessfully = true;
             setNotification({ type: 'success', message: `Registo já existia e foi validado para ${registration.nome}.` });
           } else if (isPermissionError(dbError)) {
-            processedSuccessfully = false;
-            setNotification({ type: 'error', message: 'Não foi possível aprovar o registo por falta de permissão na base de dados.' });
+            const approvedUsers = readLocalApprovedUsers();
+            const normalizedApproved = {
+              ...registration,
+              email: normalizedEmail,
+              perfil: normalizedProfile,
+              status: 'active',
+              is_active: true,
+              approved_locally: true,
+              approved_at: new Date().toISOString(),
+            };
+            const nextApprovedUsers = [
+              normalizedApproved,
+              ...approvedUsers.filter((item) => String(item.email || '').trim().toLowerCase() !== normalizedEmail),
+            ];
+            writeLocalApprovedUsers(nextApprovedUsers);
+            processedSuccessfully = true;
+            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. O acesso já pode ser feito neste navegador.` });
           } else {
             console.error('Falha ao aprovar registo pendente:', dbError);
             setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });

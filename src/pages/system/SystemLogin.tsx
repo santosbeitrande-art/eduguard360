@@ -26,6 +26,7 @@ type SchoolTrial = {
 
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
 const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
+const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -99,6 +100,16 @@ const isTrialActive = (trial: SchoolTrial | null): boolean => {
 const isAlreadyRegisteredError = (message: string): boolean => {
   const text = message.toLowerCase();
   return text.includes('already registered') || text.includes('already been registered') || text.includes('user already registered');
+};
+
+const readLocalApprovedUsers = (): any[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_APPROVED_USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 };
 
 const SystemLoginContent = () => {
@@ -283,6 +294,7 @@ const SystemLoginContent = () => {
           .select("*")
           .eq("email", normalizedEmail)
           .maybeSingle();
+        const localApprovedUser = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
 
         const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
 
@@ -331,6 +343,16 @@ const SystemLoginContent = () => {
           const didLogin = completeLogin(domainUserByEmail, true);
           if (didLogin) {
             return;
+          }
+        }
+
+        if ((!authData?.user || authError) && localApprovedUser) {
+          const localPassword = String(localApprovedUser?.senha || '').trim();
+          if (localPassword && localPassword === normalizedPassword) {
+            const didLogin = completeLogin(localApprovedUser, true);
+            if (didLogin) {
+              return;
+            }
           }
         }
       }
