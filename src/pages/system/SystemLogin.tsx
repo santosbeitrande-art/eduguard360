@@ -28,6 +28,7 @@ const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
 const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
+const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -137,6 +138,26 @@ const readPendingRegistrations = (): any[] => {
   }
 };
 
+const readGeneratedCredentialsLog = (): any[] => {
+  try {
+    const raw = localStorage.getItem(GENERATED_CREDENTIALS_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const normalizeLegacyProfile = (perfil: unknown): string => {
+  const normalized = String(perfil || '').trim().toLowerCase();
+  if (normalized === 'super_admin' || normalized === 'admin') return 'admin';
+  if (normalized === 'school_admin' || normalized === 'director' || normalized === 'diretor') return 'director';
+  if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'pai';
+  if (normalized === 'teacher' || normalized === 'professor' || normalized === 'docente') return 'professor';
+  if (normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca') return 'scanner';
+  return normalized;
+};
+
 const buildFallbackSchoolsFromLocalSources = (): Array<{ id: string; nome: string }> => {
   const fromCache = readSchoolsCache();
   if (fromCache.length > 0) return fromCache;
@@ -212,19 +233,21 @@ const SystemLoginContent = () => {
   const isPendingUser = (user: any): boolean => user?.status === 'pending' || user?.status === 'inactive' || user?.is_active === false;
 
   const isProfileAllowed = (perfil: string): boolean => {
-    if (accessProfile === 'director') return perfil === 'director' || perfil === 'admin';
-    if (accessProfile === 'parent') return perfil === 'pai' || perfil === 'admin';
-    if (accessProfile === 'teacher') return perfil === 'professor' || perfil === 'teacher' || perfil === 'admin';
-    if (accessProfile === 'scanner') return perfil === 'scanner' || perfil === 'admin';
+    const normalized = normalizeLegacyProfile(perfil);
+    if (accessProfile === 'director') return normalized === 'director' || normalized === 'admin';
+    if (accessProfile === 'parent') return normalized === 'pai' || normalized === 'admin';
+    if (accessProfile === 'teacher') return normalized === 'professor' || normalized === 'admin';
+    if (accessProfile === 'scanner') return normalized === 'scanner' || normalized === 'admin';
     return true;
   };
 
   const redirectByProfile = (perfil: string) => {
-    if (perfil === 'admin') navigate('/admin');
-    else if (perfil === 'director') navigate('/school');
-    else if (perfil === 'pai') navigate('/parent');
-    else if (perfil === 'professor' || perfil === 'teacher') navigate('/school');
-    else if (perfil === 'scanner') navigate('/scanner');
+    const normalized = normalizeLegacyProfile(perfil);
+    if (normalized === 'admin') navigate('/admin');
+    else if (normalized === 'director') navigate('/school');
+    else if (normalized === 'pai') navigate('/parent');
+    else if (normalized === 'professor') navigate('/school');
+    else if (normalized === 'scanner') navigate('/scanner');
     else navigate('/');
   };
 
@@ -265,7 +288,7 @@ const SystemLoginContent = () => {
       return false;
     }
 
-    const perfil = String(user.perfil || '').toLowerCase();
+    const perfil = normalizeLegacyProfile(user?.perfil || user?.role);
     if (!isProfileAllowed(perfil)) {
       setErrorMessage(t('sistema.perfil_nao_autorizado'));
       return false;
@@ -293,9 +316,46 @@ const SystemLoginContent = () => {
       setInfoMessage('Acesso efetuado em modo de compatibilidade. Atualize a senha em "Esqueceu a senha?" se necessário.');
     }
 
-    localStorage.setItem('currentUser', JSON.stringify(user));
+    localStorage.setItem('currentUser', JSON.stringify({
+      ...user,
+      perfil,
+      email: String(user?.email || '').trim().toLowerCase(),
+    }));
     redirectByProfile(perfil);
     return true;
+  };
+
+  const resolveLocalFallbackUser = (normalizedEmail: string, normalizedPassword: string) => {
+    const approvedUser = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+    if (approvedUser && String(approvedUser?.senha || '').trim() === normalizedPassword) {
+      return approvedUser;
+    }
+
+    const pendingUser = readPendingRegistrations().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+    if (pendingUser && String(pendingUser?.senha || '').trim() === normalizedPassword && !isPendingUser(pendingUser)) {
+      return pendingUser;
+    }
+
+    const generatedEntry = readGeneratedCredentialsLog().find((item) =>
+      String(item?.email || '').trim().toLowerCase() === normalizedEmail &&
+      String(item?.senha || '').trim() === normalizedPassword
+    );
+
+    if (generatedEntry) {
+      return {
+        id: generatedEntry.id || `local-${Date.now()}`,
+        nome: generatedEntry.nome || normalizedEmail,
+        email: normalizedEmail,
+        perfil: generatedEntry.perfil || generatedEntry.role || 'pai',
+        escola_id: null,
+        senha: normalizedPassword,
+        status: 'active',
+        is_active: true,
+        approved_locally: true,
+      };
+    }
+
+    return null;
   };
 
   const handleLogin = async () => {
@@ -350,7 +410,7 @@ const SystemLoginContent = () => {
           .select("*")
           .eq("email", normalizedEmail)
           .maybeSingle();
-        const localApprovedUser = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+        const localApprovedUser = resolveLocalFallbackUser(normalizedEmail, normalizedPassword);
 
         const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
 
@@ -403,12 +463,9 @@ const SystemLoginContent = () => {
         }
 
         if ((!authData?.user || authError) && localApprovedUser) {
-          const localPassword = String(localApprovedUser?.senha || '').trim();
-          if (localPassword && localPassword === normalizedPassword) {
-            const didLogin = completeLogin(localApprovedUser, true);
-            if (didLogin) {
-              return;
-            }
+          const didLogin = completeLogin(localApprovedUser, true);
+          if (didLogin) {
+            return;
           }
         }
       }
@@ -451,6 +508,16 @@ const SystemLoginContent = () => {
             .eq("id", user.id);
 
           user = { ...user, auth_id: userId };
+        }
+      }
+
+      if (!user) {
+        const localFallbackUser = resolveLocalFallbackUser(normalizedEmail, normalizedPassword);
+        if (localFallbackUser) {
+          const didLogin = completeLogin(localFallbackUser, true);
+          if (didLogin) {
+            return;
+          }
         }
       }
 
