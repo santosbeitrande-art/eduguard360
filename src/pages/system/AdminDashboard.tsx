@@ -36,6 +36,10 @@ const AdminGlobalDashboard = () => {
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
+  const [repairCandidates, setRepairCandidates] = useState<any[]>([]);
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairAction, setRepairAction] = useState<string | null>(null);
+  const [repairPasswords, setRepairPasswords] = useState<Record<string, string>>({});
   const [movementSearch, setMovementSearch] = useState('');
   const [movementClassFilter, setMovementClassFilter] = useState('all');
   const [movementStudentFilter, setMovementStudentFilter] = useState('all');
@@ -114,6 +118,7 @@ const AdminGlobalDashboard = () => {
 
     loadData();
     loadPendingRegistrations();
+    loadRepairCandidates();
   }, []);
 
   useEffect(() => {
@@ -233,6 +238,78 @@ const AdminGlobalDashboard = () => {
     } catch (err) {
       console.error('Erro ao carregar registos pendentes:', err);
       setPendingRegistrations([]);
+    }
+  };
+
+  const loadRepairCandidates = async () => {
+    setRepairLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('utilizadores')
+        .select('*')
+        .order('nome');
+
+      if (error) {
+        console.error('Erro ao carregar utilizadores para reparação:', error);
+        return;
+      }
+
+      const candidates = (data || []).filter((user: any) => {
+        const perfil = String(user?.perfil || '').toLowerCase();
+        if (!perfil || perfil === 'admin') return false;
+
+        const hasPassword = String(user?.senha || '').trim().length > 0;
+        const hasAuthId = isLikelyUuid(user?.auth_id);
+        const status = String(user?.status || '').toLowerCase();
+        const inactive = user?.is_active === false || status === 'pending' || status === 'inactive';
+
+        return !hasPassword || !hasAuthId || inactive;
+      });
+
+      setRepairCandidates(candidates);
+    } catch (error) {
+      console.error('Falha inesperada ao preparar reparações:', error);
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const generateTemporaryPassword = () => `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const handleRepairLegacyUser = async (user: any) => {
+    setRepairAction(user.id);
+    try {
+      const temporaryPassword = String(user?.senha || '').trim() || generateTemporaryPassword();
+      const payload: any = {
+        senha: temporaryPassword,
+      };
+
+      if ('status' in user || user?.status !== undefined) {
+        payload.status = 'active';
+      }
+      if ('is_active' in user || user?.is_active !== undefined) {
+        payload.is_active = true;
+      }
+
+      const { error } = await supabase
+        .from('utilizadores')
+        .update(payload)
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('Erro ao reparar utilizador antigo:', error);
+        setNotification({ type: 'error', message: `Não foi possível reparar a conta de ${user.nome || user.email}.` });
+        return;
+      }
+
+      setRepairPasswords((current) => ({ ...current, [user.id]: temporaryPassword }));
+      setNotification({ type: 'success', message: `Conta reparada para ${user.nome || user.email}. Palavra-passe temporária gerada.` });
+      await loadRepairCandidates();
+    } catch (error) {
+      console.error('Falha inesperada ao reparar conta:', error);
+      setNotification({ type: 'error', message: 'Ocorreu um erro ao reparar a conta antiga.' });
+    } finally {
+      setRepairAction(null);
     }
   };
 
@@ -840,6 +917,53 @@ const AdminGlobalDashboard = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+            <div className="card bg-[#081825] border border-white/10 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Contas Para Reparar</h2>
+                  <p className="text-sm text-gray-400">Reaprova e corrige utilizadores antigos sem senha, sem vínculo de autenticação ou inativos.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-sky-500/15 px-3 py-1 text-sm text-sky-300">{repairCandidates.length}</span>
+                  <button onClick={loadRepairCandidates} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar</button>
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {repairLoading ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">A carregar contas com falha de acesso...</div>
+                ) : repairCandidates.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhuma conta antiga precisa de reparação neste momento.</div>
+                ) : repairCandidates.map((entry) => {
+                  const hasPassword = String(entry?.senha || '').trim().length > 0;
+                  const hasAuthId = isLikelyUuid(entry?.auth_id);
+                  const isInactive = entry?.is_active === false || String(entry?.status || '').toLowerCase() === 'pending' || String(entry?.status || '').toLowerCase() === 'inactive';
+
+                  return (
+                    <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-semibold text-white">{entry.nome || 'Sem nome'}</p>
+                        <p className="text-sm text-gray-400">{entry.email || 'Sem email'} · {entry.perfil || 'Sem perfil'}</p>
+                        <p className="text-xs text-gray-500">
+                          {!hasPassword ? 'Sem senha' : 'Senha ok'} · {!hasAuthId ? 'Sem auth_id' : 'auth_id ok'} · {isInactive ? 'Inativo/Pendente' : 'Ativo'}
+                        </p>
+                        {repairPasswords[entry.id] && (
+                          <p className="mt-2 text-xs text-emerald-300">Palavra-passe temporária: {repairPasswords[entry.id]}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleRepairLegacyUser(entry)}
+                          disabled={repairAction === entry.id}
+                          className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                        >
+                          {repairAction === entry.id ? 'A reparar...' : 'Reparar Conta'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
