@@ -252,8 +252,8 @@ const AdminGlobalDashboard = () => {
           perfil: normalizedProfile,
           escola_id: registration.escola_id || null,
           telefone: null,
-          senha: null,
-          auth_id: isLikelyUuid(registration.id) ? registration.id : null,
+          senha: registration.senha || null,
+          auth_id: isLikelyUuid(registration.auth_id) ? registration.auth_id : isLikelyUuid(registration.id) ? registration.id : null,
         };
 
         const { data: existingUser, error: existingError } = await supabase
@@ -276,6 +276,8 @@ const AdminGlobalDashboard = () => {
               nome: registration.nome,
               perfil: normalizedProfile,
               escola_id: registration.escola_id || null,
+              ...(registration.senha ? { senha: registration.senha } : {}),
+              ...(payload.auth_id ? { auth_id: payload.auth_id } : {}),
             })
             .eq('id', existingUser.id);
 

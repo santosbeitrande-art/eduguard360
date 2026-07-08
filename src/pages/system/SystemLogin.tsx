@@ -454,10 +454,12 @@ const SystemLoginContent = () => {
 
       const pendingUser = {
         id: data?.user?.id || `pending-${Date.now()}`,
+        auth_id: data?.user?.id || null,
         nome: normalizedName,
         email: normalizedEmail,
         perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : selectedRole === 'scanner' ? 'scanner' : 'director',
         escola_id: selectedSchoolId || null,
+        senha: normalizedPassword,
         is_active: false,
         status: 'pending',
         password_changed: false,
