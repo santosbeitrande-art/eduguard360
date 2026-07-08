@@ -232,65 +232,6 @@
           </table>
         </div>
 
-        <h3 id="trainingTitle" style="margin:14px 0 6px;">Treino de fraude e autenticidade</h3>
-        <p class="muted" id="trainingHint">Somente o admin interno pode carregar documentos de referencia para calibracao.</p>
-
-        <div class="training-grid">
-          <div class="training-card">
-            <h4 id="fraudUploadTitle" style="margin:0 0 8px;">Exemplos de fraude alta</h4>
-            <label for="fraudExampleFile" id="fraudFileLabel">Documento suspeito/falso</label>
-            <input id="fraudExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="fraudReasons" id="fraudReasonsLabel">Motivos de alto risco (uma linha por motivo)</label>
-            <textarea id="fraudReasons" placeholder="Exemplo: assinatura incoerente&#10;Exemplo: NUIT invalido"></textarea>
-            <label for="fraudNotes" id="fraudNotesLabel">Notas adicionais (opcional)</label>
-            <textarea id="fraudNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" id="btnUploadFraudExample" type="button" style="margin-top:8px;">Guardar exemplo de fraude</button>
-          </div>
-
-          <div class="training-card">
-            <h4 id="authUploadTitle" style="margin:0 0 8px;">Exemplos de alta autenticidade</h4>
-            <label for="authExampleFile" id="authFileLabel">Documento autentico de referencia</label>
-            <input id="authExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="authReasons" id="authReasonsLabel">Motivos de baixa suspeita (uma linha por motivo)</label>
-            <textarea id="authReasons" placeholder="Exemplo: emissor confirmado&#10;Exemplo: dados consistentes"></textarea>
-            <label for="authNotes" id="authNotesLabel">Notas adicionais (opcional)</label>
-            <textarea id="authNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" id="btnUploadAuthExample" type="button" style="margin-top:8px;">Guardar exemplo autentico</button>
-          </div>
-        </div>
-
-        <div id="trainingStats" class="stats-line">A carregar estatisticas...</div>
-
-        <div class="actions" style="margin-top:8px;">
-          <select id="trainingCategoryFilter">
-            <option value="">Todas categorias</option>
-            <option value="high-risk-fraud">Fraude alta</option>
-            <option value="high-authenticity">Alta autenticidade</option>
-          </select>
-          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" />
-        </div>
-        <div class="actions" style="margin-top:8px;">
-          <button class="ghost" id="btnTrainingFilter" type="button">Aplicar filtro</button>
-          <button class="ghost" id="btnTrainingExportCsv" type="button">Exportar CSV</button>
-        </div>
-
-        <h3 id="trainingListTitle" style="margin:14px 0 6px;">Historico de exemplos carregados</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Categoria</th>
-                <th>Documento</th>
-                <th>Score</th>
-                <th>Risco</th>
-                <th>Motivos</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody id="trainingExamplesBody"></tbody>
-          </table>
-        </div>
       </section>
 
       <div class="status" id="msg" style="margin-top:12px;">Pronto.</div>
@@ -312,6 +253,7 @@
       const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
       const INTERNAL_ADMIN_PASSWORD = "Admin@123";
+      const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
 
       const msg = document.getElementById("msg");
       const plansEl = document.getElementById("plans");
@@ -319,6 +261,7 @@
       const planSelect = document.getElementById("planSelect");
       const providerSelect = document.getElementById("providerSelect");
       const adminPanel = document.getElementById("adminPanel");
+      const trainingPanel = document.getElementById("trainingPanel");
       const usersBody = document.getElementById("usersBody");
       const paymentsBody = document.getElementById("paymentsBody");
       const trainingExamplesBody = document.getElementById("trainingExamplesBody");
@@ -426,8 +369,6 @@
         adminPanel.classList.add("hidden");
         usersBody.innerHTML = "";
         paymentsBody.innerHTML = "";
-        trainingExamplesBody.innerHTML = "";
-        trainingStats.textContent = "-";
         localStorage.removeItem(ADMIN_TOKEN_KEY);
       }
 
@@ -500,6 +441,7 @@
       }
 
       async function loadTrainingExamples() {
+        if (!trainingPanel || !trainingExamplesBody || !trainingStats) return;
         const token = getToken();
         if (!token) {
           const context = getOfflineAdminContext();
@@ -840,6 +782,19 @@
         return value;
       }
 
+      function isInternalAdminCredential(emailRaw, passwordRaw) {
+        return normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL && String(passwordRaw || "") === INTERNAL_ADMIN_PASSWORD;
+      }
+
+      function updateInternalAdminSession(emailRaw, passwordRaw) {
+        if (isInternalAdminCredential(emailRaw, passwordRaw)) {
+          localStorage.setItem(INTERNAL_ADMIN_SESSION_KEY, "1");
+          return;
+        }
+        localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+      }
+
       function readLocalAccounts() {
         try {
           const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
@@ -1146,6 +1101,7 @@
           username: document.getElementById("loginEmail").value,
           password: document.getElementById("loginPassword").value
         };
+        updateInternalAdminSession(payload.username, payload.password);
 
         try {
           const res = await api("/auth/login/jwt", {
@@ -1161,7 +1117,7 @@
               offlineMode = true;
               setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
               await loadSubscriptionStatus();
-              if (local.mode === "offline-admin") {
+              if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
                 adminPanel.classList.remove("hidden");
                 await loadTrainingExamples();
               }
@@ -1172,6 +1128,7 @@
           }
 
           setTokens(data.accessToken, data.refreshToken);
+          setLocalSession(payload.username);
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
@@ -1181,7 +1138,7 @@
             offlineMode = true;
             setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
             await loadSubscriptionStatus();
-            if (local.mode === "offline-admin") {
+            if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
               adminPanel.classList.remove("hidden");
               await loadTrainingExamples();
             }
@@ -1194,6 +1151,7 @@
       document.getElementById("btnLogout").addEventListener("click", async () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
+        localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
         clearLocalSession();
         hideAdminPanel();
         accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
@@ -1286,7 +1244,7 @@
 
       async function getAdminTokenForInternalAdmin(loginEmailRaw) {
         const loginEmail = String(loginEmailRaw || "").trim().toLowerCase();
-        if (loginEmail !== "admin@eduguard360.co.mz") return;
+        if (loginEmail !== "admin@eduguard360.co.mz" || localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) !== "1") return;
         try {
           const res = await api("/auth/admin/token", { method: "GET" });
           const data = await safeJson(res);
@@ -1356,7 +1314,6 @@
           setMessage((lang === "pt"
             ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
             : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
-          await loadTrainingExamples();
         } catch {
           setMessage(lang === "pt" ? "Admin ligado, mas nao foi possivel carregar painel." : "Admin authenticated, but panel loading failed.");
         }
@@ -1448,24 +1405,6 @@
 
       document.getElementById("btnAdminRefresh").addEventListener("click", () => {
         loadAdminOverview();
-      });
-
-      document.getElementById("btnUploadFraudExample").addEventListener("click", () => {
-        uploadTrainingExample("fraud");
-      });
-
-      document.getElementById("btnUploadAuthExample").addEventListener("click", () => {
-        uploadTrainingExample("auth");
-      });
-
-      document.getElementById("btnTrainingFilter").addEventListener("click", () => {
-        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
-        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
-        loadTrainingExamples();
-      });
-
-      document.getElementById("btnTrainingExportCsv").addEventListener("click", () => {
-        exportTrainingExamplesCsv();
       });
 
       (async () => {

@@ -71,6 +71,7 @@
         resize: vertical;
       }
       .status { padding: 10px; border-radius: 10px; background: rgba(255,255,255,.08); }
+      .hidden { display: none; }
       .report-block {
         border: 1px solid rgba(255,255,255,.16);
         border-radius: 10px;
@@ -108,11 +109,11 @@
 
       <section class="panel">
         <h1 id="titleMain">EduGuard Verify AI</h1>
-        <p id="subtitleMain">Portal de consultas com autenticacao por email/password, fidelidade analitica e controlo de subscricao.</p>
-        <div id="quotaStatus" class="status">A carregar estado da subscricao...</div>
+        <p id="subtitleMain">Portal de consultas com autenticação por email/password, fidelidade analítica e controlo de subscrição.</p>
+        <div id="quotaStatus" class="status">A carregar estado da subscrição...</div>
       </section>
 
-      <section class="panel" id="trainingPanel">
+      <section class="panel">
         <form id="uploadForm">
           <label for="file" id="lblFile">Selecionar ficheiro</label>
           <input type="file" id="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
@@ -122,68 +123,8 @@
       </section>
 
       <section class="panel">
-        <h2 id="trainingTitle">Calibracao por exemplos</h2>
-        <p id="trainingHint">Registe exemplos para melhorar deteccao de fraude e reduzir falso positivo/falso negativo.</p>
-
-        <div class="two-col">
-          <div class="training-card">
-            <h3 id="fraudUploadTitle" style="margin:0 0 8px;">Exemplo de fraude alta</h3>
-            <label for="fraudExampleFile" id="fraudFileLabel">Documento suspeito/falso</label>
-            <input id="fraudExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="fraudReasons" id="fraudReasonsLabel">Motivos de alto risco (uma linha por motivo)</label>
-            <textarea id="fraudReasons" placeholder="Exemplo: assinatura incoerente&#10;Exemplo: fonte adulterada"></textarea>
-            <label for="fraudNotes" id="fraudNotesLabel">Notas (opcional)</label>
-            <textarea id="fraudNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" type="button" id="btnUploadFraudExample" style="margin-top:8px;">Guardar exemplo fraude</button>
-          </div>
-
-          <div class="training-card">
-            <h3 id="authUploadTitle" style="margin:0 0 8px;">Exemplo de alta autenticidade</h3>
-            <label for="authExampleFile" id="authFileLabel">Documento autentico</label>
-            <input id="authExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="authReasons" id="authReasonsLabel">Motivos de baixa suspeita (uma linha por motivo)</label>
-            <textarea id="authReasons" placeholder="Exemplo: entidade validada&#10;Exemplo: dados consistentes"></textarea>
-            <label for="authNotes" id="authNotesLabel">Notas (opcional)</label>
-            <textarea id="authNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" type="button" id="btnUploadAuthExample" style="margin-top:8px;">Guardar exemplo autentico</button>
-          </div>
-        </div>
-
-        <div id="trainingStats" class="status" style="margin-top:10px;">A carregar historico...</div>
-
-        <div class="row" style="margin-top:10px;">
-          <select id="trainingCategoryFilter" style="max-width:260px;">
-            <option value="">Todas categorias</option>
-            <option value="high-risk-fraud">Fraude alta</option>
-            <option value="high-authenticity">Alta autenticidade</option>
-          </select>
-          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" style="min-width:280px;" />
-          <button class="ghost" id="btnTrainingFilter" type="button">Aplicar filtro</button>
-          <button class="ghost" id="btnTrainingExportCsv" type="button">Exportar CSV</button>
-          <button class="ghost" id="btnTrainingRefresh" type="button">Atualizar</button>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Categoria</th>
-                <th>Documento</th>
-                <th>Score</th>
-                <th>Risco</th>
-                <th>Motivos</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody id="trainingExamplesBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2 id="renewTitle">Renovar subscricao</h2>
-        <p id="renewHint">Ao atingir a 11a consulta, selecione plano e pague para continuar.</p>
+        <h2 id="renewTitle">Renovar subscrição</h2>
+        <p id="renewHint">Ao atingir a 11.ª consulta, selecione o plano e pague para continuar.</p>
         <div class="row">
           <select id="planSelect">
             <option value="starter">Starter</option>
@@ -215,7 +156,9 @@
       const LOCAL_ACCOUNTS_KEY = "eduguard_verify_local_accounts";
       const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
       const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
-      const TRAINING_ALLOWED_EMAIL = "admin@eduguard360.co.mz";
+      const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
+      const INTERNAL_ADMIN_PASSWORD = "Admin@123";
+      const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
 
       const fileInput = document.getElementById("file");
       const uploadForm = document.getElementById("uploadForm");
@@ -223,11 +166,11 @@
       const quotaEl = document.getElementById("quotaStatus");
       const planSelect = document.getElementById("planSelect");
       const providerSelect = document.getElementById("providerSelect");
-      const trainingPanel = document.getElementById("trainingPanel");
-      const trainingExamplesBody = document.getElementById("trainingExamplesBody");
-      const trainingStats = document.getElementById("trainingStats");
-      const trainingCategoryFilter = document.getElementById("trainingCategoryFilter");
-      const trainingSearchInput = document.getElementById("trainingSearchInput");
+      const trainingPanel = null;
+      const trainingExamplesBody = null;
+      const trainingStats = null;
+      const trainingCategoryFilter = null;
+      const trainingSearchInput = null;
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
@@ -239,24 +182,24 @@
       const copy = {
         pt: {
           titleMain: "EduGuard Verify AI",
-          subtitleMain: "Portal de consultas com autenticacao por email/password, fidelidade analitica e controlo de subscricao.",
+          subtitleMain: "Portal de consultas com autenticação por email/password, fidelidade analítica e controlo de subscrição.",
           lblFile: "Selecionar ficheiro",
           btnVerify: "Verificar documento",
-          renewTitle: "Renovar subscricao",
-          renewHint: "Ao atingir a 11a consulta, selecione plano e pague para continuar.",
+          renewTitle: "Renovar subscrição",
+          renewHint: "Ao atingir a 11.ª consulta, selecione o plano e pague para continuar.",
           toLogin: "Conta e Pagamento",
-          trainingTitle: "Calibracao por exemplos",
-          trainingHint: "Registe exemplos para melhorar deteccao de fraude e reduzir falso positivo/falso negativo.",
+          trainingTitle: "Calibração por exemplos",
+          trainingHint: "Registe exemplos para melhorar a deteção de fraude e reduzir falsos positivos/falsos negativos.",
           fraudUploadTitle: "Exemplo de fraude alta",
           fraudFileLabel: "Documento suspeito/falso",
           fraudReasonsLabel: "Motivos de alto risco (uma linha por motivo)",
           fraudNotesLabel: "Notas (opcional)",
           btnUploadFraudExample: "Guardar exemplo fraude",
-          authUploadTitle: "Exemplo de alta autenticidade",
-          authFileLabel: "Documento autentico",
+          authUploadTitle: "Exemplo de elevada autenticidade",
+          authFileLabel: "Documento autêntico",
           authReasonsLabel: "Motivos de baixa suspeita (uma linha por motivo)",
           authNotesLabel: "Notas (opcional)",
-          btnUploadAuthExample: "Guardar exemplo autentico",
+          btnUploadAuthExample: "Guardar exemplo autêntico",
           btnTrainingFilter: "Aplicar filtro",
           btnTrainingExportCsv: "Exportar CSV",
           btnTrainingRefresh: "Atualizar",
@@ -303,38 +246,29 @@
         return lang === "pt" ? "Baixo" : "Low";
       }
 
+      function isInternalAdminCredential(emailRaw, passwordRaw) {
+        return normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL && String(passwordRaw || "") === INTERNAL_ADMIN_PASSWORD;
+      }
+
+      function isCurrentUserInternalAdmin() {
+        const session = getLocalSession();
+        return normalizeEmail(session?.email || "") === INTERNAL_ADMIN_EMAIL;
+      }
+
+      function hasInternalAdminAccess() {
+        return false;
+      }
+
+      function updateTrainingVisibility() {
+        return;
+      }
+
       function getToken() {
         return localStorage.getItem(TOKEN_KEY) || "";
       }
 
       function normalizeEmail(email) {
         return String(email || "").trim().toLowerCase();
-      }
-
-      function getCurrentUserEmail() {
-        const sessionEmail = normalizeEmail(getLocalSession()?.email || "");
-        if (sessionEmail) return sessionEmail;
-
-        const token = getToken();
-        if (!token || !token.includes(".")) return "";
-        try {
-          const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-          const payload = JSON.parse(atob(padded));
-          const tokenEmail = normalizeEmail(payload?.email || payload?.sub || payload?.upn || "");
-          return tokenEmail.includes("@") ? tokenEmail : "";
-        } catch {
-          return "";
-        }
-      }
-
-      function hasTrainingAccess() {
-        return getCurrentUserEmail() === TRAINING_ALLOWED_EMAIL;
-      }
-
-      function updateTrainingVisibility() {
-        if (!trainingPanel) return;
-        trainingPanel.style.display = hasTrainingAccess() ? "" : "none";
       }
 
       function getLocalSession() {
@@ -503,13 +437,13 @@
       async function runOfflineVerification(file) {
         const localAccount = getLocalAccountFromSession();
         if (!localAccount) {
-          setResult(lang === "pt" ? "Sessao local invalida. Volte ao login." : "Invalid local session. Return to login.");
+          setResult(lang === "pt" ? "Sessão local inválida. Volte ao login." : "Invalid local session. Return to login.");
           return;
         }
 
         if (Number(localAccount.remainingQueries || 0) <= 0) {
           setResult(lang === "pt"
-            ? "Limite de 10 consultas locais atingido. Quando a API voltar, renove a subscricao."
+            ? "Limite de 10 consultas locais atingido. Quando a API voltar, renove a subscrição."
             : "10 local checks limit reached. Renew subscription when API is back online.");
           return;
         }
@@ -559,7 +493,7 @@
         saveLocalAccount(localAccount);
 
         const report = renderTrust(result);
-        setResult(`<strong>${lang === "pt" ? "Consulta local concluida" : "Local verification completed"}</strong><br>${report}`);
+        setResult(`<strong>${lang === "pt" ? "Consulta local concluída" : "Local verification completed"}</strong><br>${report}`);
         await loadSubscriptionStatus();
       }
 
@@ -577,11 +511,11 @@
         document.getElementById("langPt").classList.toggle("active", lang === "pt");
         document.getElementById("langEn").classList.toggle("active", lang === "en");
         localStorage.setItem(LANG_KEY, lang);
-        updateTrainingVisibility();
       }
 
       async function loadTrainingExamples() {
-        if (!hasTrainingAccess()) {
+        if (!hasInternalAdminAccess()) {
+          updateTrainingVisibility();
           return;
         }
 
@@ -641,7 +575,7 @@
           const res = await api(`/training-examples?${params.toString()}`);
           const data = await safeJson(res);
           if (!res.ok || !data) {
-            trainingStats.textContent = lang === "pt" ? "Falha ao carregar historico de exemplos." : "Failed to load examples history.";
+            trainingStats.textContent = lang === "pt" ? "Falha ao carregar o histórico de exemplos." : "Failed to load examples history.";
             trainingExamplesBody.innerHTML = "";
             return;
           }
@@ -676,20 +610,20 @@
               const id = btn.getAttribute("data-training-delete");
               if (!id) return;
               const confirmed = window.confirm(lang === "pt"
-                ? "Deseja remover este exemplo do historico?"
+                ? "Deseja remover este exemplo do histórico?"
                 : "Do you want to remove this example from history?");
               if (!confirmed) return;
               await removeTrainingExample(id);
             });
           });
         } catch {
-          trainingStats.textContent = lang === "pt" ? "Erro de ligacao ao historico de exemplos." : "Examples history connection error.";
+          trainingStats.textContent = lang === "pt" ? "Erro de ligação ao histórico de exemplos." : "Examples history connection error.";
         }
       }
 
       async function removeTrainingExample(id) {
-        if (!hasTrainingAccess()) {
-          setResult(lang === "pt" ? "Sem permissao para gerir exemplos de treino." : "You do not have permission to manage training examples.");
+        if (!hasInternalAdminAccess()) {
+          setResult(lang === "pt" ? "Apenas o administrador pode gerir a calibração por exemplos." : "Only the admin can manage example calibration.");
           return;
         }
 
@@ -712,13 +646,13 @@
           setResult(lang === "pt" ? "Exemplo removido com sucesso." : "Example removed successfully.");
           await loadTrainingExamples();
         } catch {
-          setResult(lang === "pt" ? "Erro de ligacao ao remover exemplo." : "Connection error while removing example.");
+          setResult(lang === "pt" ? "Erro de ligação ao remover o exemplo." : "Connection error while removing example.");
         }
       }
 
       async function exportTrainingExamplesCsv() {
-        if (!hasTrainingAccess()) {
-          setResult(lang === "pt" ? "Sem permissao para exportar exemplos de treino." : "You do not have permission to export training examples.");
+        if (!hasInternalAdminAccess()) {
+          setResult(lang === "pt" ? "Apenas o administrador pode exportar a calibração por exemplos." : "Only the admin can export example calibration.");
           return;
         }
 
@@ -767,13 +701,13 @@
           URL.revokeObjectURL(url);
           setResult(lang === "pt" ? "CSV exportado com sucesso." : "CSV exported successfully.");
         } catch {
-          setResult(lang === "pt" ? "Erro de ligacao na exportacao CSV." : "CSV export connection error.");
+          setResult(lang === "pt" ? "Erro de ligação na exportação de CSV." : "CSV export connection error.");
         }
       }
 
       async function uploadTrainingExample(kind) {
-        if (!hasTrainingAccess()) {
-          setResult(lang === "pt" ? "Sem permissao para registar exemplos de treino." : "You do not have permission to register training examples.");
+        if (!hasInternalAdminAccess()) {
+          setResult(lang === "pt" ? "Apenas o administrador pode carregar exemplos de calibração." : "Only the admin can upload calibration examples.");
           return;
         }
 
@@ -896,7 +830,7 @@
             : `Example saved successfully. Calculated score: ${score}%.`));
           await loadTrainingExamples();
         } catch {
-          setResult(lang === "pt" ? "Erro de ligacao ao guardar exemplo." : "Connection error while saving example.");
+          setResult(lang === "pt" ? "Erro de ligação ao guardar o exemplo." : "Connection error while saving example.");
         }
       }
 
@@ -921,9 +855,9 @@
             <strong>${lang === "pt" ? "Percentagem de autenticidade" : "Authenticity percentage"}:</strong> ${score}%<br>
             <strong>${lang === "pt" ? "Risco de fraude" : "Fraud risk"}:</strong> ${likelyFraud ? (lang === "pt" ? "Elevado" : "High") : (lang === "pt" ? "Baixo" : "Low")}<br>
             <strong>AI:</strong> ${ai}<br>
-            <strong>${lang === "pt" ? "Consistencia de datas" : "Date consistency"}:</strong> ${dates}
+            <strong>${lang === "pt" ? "Consistência de datas" : "Date consistency"}:</strong> ${dates}
             <div class="report-block">
-              <strong>${lang === "pt" ? "Motivos e indicios" : "Reasons and indicators"}</strong>
+              <strong>${lang === "pt" ? "Motivos e indícios" : "Reasons and indicators"}</strong>
               ${reasonsHtml}
               ${indicatorsHtml}
             </div>
@@ -935,10 +869,10 @@
         if (offlineMode) {
           const localAccount = getLocalAccountFromSession();
           if (!localAccount) {
-            quotaEl.textContent = lang === "pt" ? "Sessao local invalida. Volte ao login." : "Invalid local session. Return to login.";
+            quotaEl.textContent = lang === "pt" ? "Sessão local inválida. Volte ao login." : "Invalid local session. Return to login.";
             return false;
           }
-          quotaEl.textContent = `${localAccount.companyName || localAccount.fullName || localAccount.email} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${Number(localAccount.remainingQueries || 0)} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(localAccount.validUntil).toLocaleDateString()} | ${lang === "pt" ? "modo local" : "local mode"}`;
+          quotaEl.textContent = `${localAccount.companyName || localAccount.fullName || localAccount.email} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${Number(localAccount.remainingQueries || 0)} | ${lang === "pt" ? "Válido até" : "Valid until"}: ${new Date(localAccount.validUntil).toLocaleDateString()} | ${lang === "pt" ? "modo local" : "local mode"}`;
           return true;
         }
 
@@ -946,12 +880,12 @@
           const res = await api("/company/subscription/status");
           const data = await safeJson(res);
           if (!res.ok) {
-            quotaEl.textContent = lang === "pt" ? "Sessao invalida. Entre novamente." : "Invalid session. Please sign in again.";
+            quotaEl.textContent = lang === "pt" ? "Sessão inválida. Entre novamente." : "Invalid session. Please sign in again.";
             return false;
           }
 
           const c = data.company;
-          quotaEl.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
+          quotaEl.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Válido até" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
           return true;
         } catch {
           quotaEl.textContent = lang === "pt" ? "Falha ao carregar estado da conta." : "Failed to load account status.";
@@ -1025,17 +959,17 @@
           }
 
           const report = renderTrust(data.result || {});
-          setResult(`<strong>${lang === "pt" ? "Consulta concluida" : "Verification completed"}</strong><br>${report}`);
+          setResult(`<strong>${lang === "pt" ? "Consulta concluída" : "Verification completed"}</strong><br>${report}`);
           await loadSubscriptionStatus();
         } catch {
-          setResult(lang === "pt" ? "Falha de ligacao ao servidor." : "Server connection failed.");
+          setResult(lang === "pt" ? "Falha de ligação ao servidor." : "Server connection failed.");
         }
       });
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (offlineMode) {
           setResult(lang === "pt"
-            ? "Pagamento indisponivel no modo local. Assim que API estiver online, renove a subscricao."
+            ? "Pagamento indisponível no modo local. Assim que a API estiver online, renove a subscrição."
             : "Payment unavailable in local mode. Renew subscription once API is online.");
           return;
         }
@@ -1061,10 +995,10 @@
             return;
           }
 
-          setResult(lang === "pt" ? "Pagamento confirmado e subscricao renovada." : "Payment confirmed and subscription renewed.");
+          setResult(lang === "pt" ? "Pagamento confirmado e subscrição renovada." : "Payment confirmed and subscription renewed.");
           await loadSubscriptionStatus();
         } catch {
-          setResult(lang === "pt" ? "Erro de ligacao no checkout." : "Checkout connection error.");
+          setResult(lang === "pt" ? "Erro de ligação no checkout." : "Checkout connection error.");
         }
       });
 
@@ -1072,30 +1006,46 @@
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
         localStorage.removeItem(LOCAL_SESSION_KEY);
+        localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
         window.location.href = "/public/login";
       });
 
-      document.getElementById("btnUploadFraudExample").addEventListener("click", () => {
-        uploadTrainingExample("fraud");
-      });
+      const btnUploadFraudExample = document.getElementById("btnUploadFraudExample");
+      if (btnUploadFraudExample) {
+        btnUploadFraudExample.addEventListener("click", () => {
+          uploadTrainingExample("fraud");
+        });
+      }
 
-      document.getElementById("btnUploadAuthExample").addEventListener("click", () => {
-        uploadTrainingExample("auth");
-      });
+      const btnUploadAuthExample = document.getElementById("btnUploadAuthExample");
+      if (btnUploadAuthExample) {
+        btnUploadAuthExample.addEventListener("click", () => {
+          uploadTrainingExample("auth");
+        });
+      }
 
-      document.getElementById("btnTrainingFilter").addEventListener("click", () => {
-        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
-        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
-        loadTrainingExamples();
-      });
+      const btnTrainingFilter = document.getElementById("btnTrainingFilter");
+      if (btnTrainingFilter) {
+        btnTrainingFilter.addEventListener("click", () => {
+          trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
+          trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
+          loadTrainingExamples();
+        });
+      }
 
-      document.getElementById("btnTrainingExportCsv").addEventListener("click", () => {
-        exportTrainingExamplesCsv();
-      });
+      const btnTrainingExportCsv = document.getElementById("btnTrainingExportCsv");
+      if (btnTrainingExportCsv) {
+        btnTrainingExportCsv.addEventListener("click", () => {
+          exportTrainingExamplesCsv();
+        });
+      }
 
-      document.getElementById("btnTrainingRefresh").addEventListener("click", () => {
-        loadTrainingExamples();
-      });
+      const btnTrainingRefresh = document.getElementById("btnTrainingRefresh");
+      if (btnTrainingRefresh) {
+        btnTrainingRefresh.addEventListener("click", () => {
+          loadTrainingExamples();
+        });
+      }
 
       document.getElementById("langPt").addEventListener("click", () => {
         lang = "pt";
@@ -1109,20 +1059,26 @@
 
       (async () => {
         applyLanguage();
+        // Defensive reset to prevent stale admin visibility across sessions.
+        if (!isCurrentUserInternalAdmin()) {
+          localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
+        }
+        updateTrainingVisibility();
         const apiOk = await resolveApiBase();
         if (!apiOk) {
           offlineMode = true;
           quotaEl.textContent = lang === "pt"
-            ? "API de verificacao indisponivel. Modo local ativo para consulta independente."
+            ? "API de verificação indisponível. Modo local ativo para consulta independente."
             : "Verification API unavailable. Local mode active for independent checks.";
         }
         const ok = await ensureSession();
         if (!ok) return;
+        if (!isCurrentUserInternalAdmin()) {
+          localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
+        }
         updateTrainingVisibility();
         await loadSubscriptionStatus();
-        if (hasTrainingAccess()) {
-          await loadTrainingExamples();
-        }
+        await loadTrainingExamples();
       })();
     </script>
   </body>

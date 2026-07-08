@@ -85,10 +85,16 @@ export class ApiService {
 
   // Authenticate user
   static async signIn(email: string, password: string): Promise<ApiResponse<any>> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim();
     if (isMockMode) {
       // Mock auth
-      if (email === 'admin@eduguard360.co.mz' && password === 'Admin1234admin') {
-        return { data: { user: { email }, session: { access_token: 'mock_token' } } };
+      if (normalizedEmail === 'admin@eduguard360.co.mz' && [
+        'EduGuard@360!2026',
+        'Admin1234admin',
+        'Admin@1234'
+      ].includes(normalizedPassword)) {
+        return { data: { user: { email: normalizedEmail }, session: { access_token: 'mock_token' } } };
       }
       return { error: 'Invalid credentials' };
     }

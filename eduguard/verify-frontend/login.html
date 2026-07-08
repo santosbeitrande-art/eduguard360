@@ -117,8 +117,8 @@
 
       <div class="panel" style="margin-bottom:12px;">
         <h1 id="titleMain">EduGuard Verify AI</h1>
-        <p id="subtitleMain">Crie conta com email e password. Receba 10 consultas gratis e ative um plano pago para continuar apos a 11a consulta.</p>
-        <div class="status" id="accountStatus">Sem sessao ativa.</div>
+        <p id="subtitleMain">Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.</p>
+        <div class="status" id="accountStatus">Sem sessão ativa.</div>
       </div>
 
       <section class="grid">
@@ -163,7 +163,7 @@
 
       <section class="panel" style="margin-top:12px;">
         <h2 id="plansTitle">Planos e pagamento</h2>
-        <p class="muted" id="plansHint">Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.</p>
+        <p class="muted" id="plansHint">Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.</p>
 
         <div class="plans" id="plans"></div>
 
@@ -188,17 +188,17 @@
           <input id="mobilePayPin" class="hidden" type="password" placeholder="PIN" style="margin-top:8px;" />
         </div>
         <div class="actions">
-          <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscricao</button>
+          <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscrição</button>
           <a class="ghost" href="/public" id="btnPortal">Abrir portal de consulta</a>
         </div>
       </section>
 
       <section id="adminPanel" class="panel hidden" style="margin-top:12px;">
         <div class="row" style="justify-content:space-between;">
-          <h2 id="adminPanelTitle">Painel administrativo (somente admin)</h2>
+          <h2 id="adminPanelTitle">Painel administrativo (apenas admin)</h2>
           <button class="ghost" type="button" id="btnAdminRefresh">Atualizar</button>
         </div>
-        <p class="muted" id="adminPanelHint">Visivel apenas depois de login com credenciais do admin.</p>
+        <p class="muted" id="adminPanelHint">Visível apenas depois do login com credenciais de admin.</p>
 
         <h3 id="usersTitle" style="margin:10px 0 6px;">Utilizadores</h3>
         <div class="table-wrap">
@@ -232,65 +232,6 @@
           </table>
         </div>
 
-        <h3 id="trainingTitle" style="margin:14px 0 6px;">Treino de fraude e autenticidade</h3>
-        <p class="muted" id="trainingHint">Somente o admin interno pode carregar documentos de referencia para calibracao.</p>
-
-        <div class="training-grid">
-          <div class="training-card">
-            <h4 id="fraudUploadTitle" style="margin:0 0 8px;">Exemplos de fraude alta</h4>
-            <label for="fraudExampleFile" id="fraudFileLabel">Documento suspeito/falso</label>
-            <input id="fraudExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="fraudReasons" id="fraudReasonsLabel">Motivos de alto risco (uma linha por motivo)</label>
-            <textarea id="fraudReasons" placeholder="Exemplo: assinatura incoerente&#10;Exemplo: NUIT invalido"></textarea>
-            <label for="fraudNotes" id="fraudNotesLabel">Notas adicionais (opcional)</label>
-            <textarea id="fraudNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" id="btnUploadFraudExample" type="button" style="margin-top:8px;">Guardar exemplo de fraude</button>
-          </div>
-
-          <div class="training-card">
-            <h4 id="authUploadTitle" style="margin:0 0 8px;">Exemplos de alta autenticidade</h4>
-            <label for="authExampleFile" id="authFileLabel">Documento autentico de referencia</label>
-            <input id="authExampleFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
-            <label for="authReasons" id="authReasonsLabel">Motivos de baixa suspeita (uma linha por motivo)</label>
-            <textarea id="authReasons" placeholder="Exemplo: emissor confirmado&#10;Exemplo: dados consistentes"></textarea>
-            <label for="authNotes" id="authNotesLabel">Notas adicionais (opcional)</label>
-            <textarea id="authNotes" placeholder="Contexto do caso"></textarea>
-            <button class="btn" id="btnUploadAuthExample" type="button" style="margin-top:8px;">Guardar exemplo autentico</button>
-          </div>
-        </div>
-
-        <div id="trainingStats" class="stats-line">A carregar estatisticas...</div>
-
-        <div class="actions" style="margin-top:8px;">
-          <select id="trainingCategoryFilter">
-            <option value="">Todas categorias</option>
-            <option value="high-risk-fraud">Fraude alta</option>
-            <option value="high-authenticity">Alta autenticidade</option>
-          </select>
-          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" />
-        </div>
-        <div class="actions" style="margin-top:8px;">
-          <button class="ghost" id="btnTrainingFilter" type="button">Aplicar filtro</button>
-          <button class="ghost" id="btnTrainingExportCsv" type="button">Exportar CSV</button>
-        </div>
-
-        <h3 id="trainingListTitle" style="margin:14px 0 6px;">Historico de exemplos carregados</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Categoria</th>
-                <th>Documento</th>
-                <th>Score</th>
-                <th>Risco</th>
-                <th>Motivos</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody id="trainingExamplesBody"></tbody>
-          </table>
-        </div>
       </section>
 
       <div class="status" id="msg" style="margin-top:12px;">Pronto.</div>
@@ -312,6 +253,7 @@
       const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
       const INTERNAL_ADMIN_PASSWORD = "Admin@123";
+      const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
 
       const msg = document.getElementById("msg");
       const plansEl = document.getElementById("plans");
@@ -319,6 +261,7 @@
       const planSelect = document.getElementById("planSelect");
       const providerSelect = document.getElementById("providerSelect");
       const adminPanel = document.getElementById("adminPanel");
+      const trainingPanel = document.getElementById("trainingPanel");
       const usersBody = document.getElementById("usersBody");
       const paymentsBody = document.getElementById("paymentsBody");
       const trainingExamplesBody = document.getElementById("trainingExamplesBody");
@@ -340,11 +283,11 @@
       const copy = {
         pt: {
           titleMain: "EduGuard Verify AI",
-          subtitleMain: "Crie conta com email e password. Receba 10 consultas gratis e ative um plano pago para continuar apos a 11a consulta.",
+          subtitleMain: "Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.",
           loginTitle: "Entrar",
           signupTitle: "Cadastrar nova conta",
           plansTitle: "Planos e pagamento",
-          plansHint: "Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.",
+          plansHint: "Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.",
           mobilePayHint: "Pagamento móvel seguro. Introduza o número e confirme com PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
@@ -356,25 +299,25 @@
           btnLogin: "Entrar",
           btnLogout: "Sair",
           btnSignup: "Criar conta",
-          btnCheckout: "Pagar e renovar subscricao",
+          btnCheckout: "Pagar e renovar subscrição",
           btnPortal: "Abrir portal de consulta",
-          adminPanelTitle: "Painel administrativo (somente admin)",
-          adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
+          adminPanelTitle: "Painel administrativo (apenas admin)",
+          adminPanelHint: "Visível apenas depois do login com credenciais de admin.",
           usersTitle: "Utilizadores",
           paymentsTitle: "Pagamentos",
           trainingTitle: "Treino de fraude e autenticidade",
-          trainingHint: "Somente o admin interno pode carregar documentos de referencia para calibracao.",
+          trainingHint: "Apenas o admin interno pode carregar documentos de referência para calibração.",
           fraudUploadTitle: "Exemplos de fraude alta",
           fraudFileLabel: "Documento suspeito/falso",
           fraudReasonsLabel: "Motivos de alto risco (uma linha por motivo)",
           fraudNotesLabel: "Notas adicionais (opcional)",
           btnUploadFraudExample: "Guardar exemplo de fraude",
           authUploadTitle: "Exemplos de alta autenticidade",
-          authFileLabel: "Documento autentico de referencia",
+          authFileLabel: "Documento autêntico de referência",
           authReasonsLabel: "Motivos de baixa suspeita (uma linha por motivo)",
           authNotesLabel: "Notas adicionais (opcional)",
-          btnUploadAuthExample: "Guardar exemplo autentico",
-          trainingListTitle: "Historico de exemplos carregados",
+          btnUploadAuthExample: "Guardar exemplo autêntico",
+          trainingListTitle: "Histórico de exemplos carregados",
           btnTrainingFilter: "Aplicar filtro",
           btnTrainingExportCsv: "Exportar CSV",
           trainingSearchInput: "Pesquisar por documento, motivo ou nota"
@@ -426,8 +369,6 @@
         adminPanel.classList.add("hidden");
         usersBody.innerHTML = "";
         paymentsBody.innerHTML = "";
-        trainingExamplesBody.innerHTML = "";
-        trainingStats.textContent = "-";
         localStorage.removeItem(ADMIN_TOKEN_KEY);
       }
 
@@ -463,7 +404,7 @@
         const session = getLocalSession();
         const email = normalizeEmail(session?.email || "");
         return {
-          isAdmin: offlineMode && email === INTERNAL_ADMIN_EMAIL,
+          isAdmin: offlineMode && email === INTERNAL_ADMIN_EMAIL && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1",
           email
         };
       }
@@ -500,6 +441,7 @@
       }
 
       async function loadTrainingExamples() {
+        if (!trainingPanel || !trainingExamplesBody || !trainingStats) return;
         const token = getToken();
         if (!token) {
           const context = getOfflineAdminContext();
@@ -595,14 +537,14 @@
               const id = btn.getAttribute("data-training-delete");
               if (!id) return;
               const confirmed = window.confirm(lang === "pt"
-                ? "Deseja remover este exemplo do historico?"
+                ? "Deseja remover este exemplo do histórico?"
                 : "Do you want to remove this example from history?");
               if (!confirmed) return;
               await removeTrainingExample(id);
             });
           });
         } catch {
-          trainingStats.textContent = lang === "pt" ? "Erro de ligacao ao historico de treino." : "Training history connection error.";
+          trainingStats.textContent = lang === "pt" ? "Erro de ligação ao histórico de treino." : "Training history connection error.";
         }
       }
 
@@ -628,7 +570,7 @@
           setMessage(lang === "pt" ? "Exemplo removido com sucesso." : "Example removed successfully.");
           await loadTrainingExamples();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao ao remover exemplo." : "Connection error while removing example.");
+          setMessage(lang === "pt" ? "Erro de ligação ao remover o exemplo." : "Connection error while removing example.");
         }
       }
 
@@ -681,7 +623,7 @@
           URL.revokeObjectURL(url);
           setMessage(lang === "pt" ? "CSV exportado com sucesso." : "CSV exported successfully.");
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao na exportacao CSV." : "CSV export connection error.");
+          setMessage(lang === "pt" ? "Erro de ligação na exportação de CSV." : "CSV export connection error.");
         }
       }
 
@@ -814,7 +756,7 @@
             : `Training sample saved. Calculated score: ${score}% | Risk: ${risk}.`));
           await loadTrainingExamples();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao ao guardar exemplo." : "Connection error while saving sample.");
+          setMessage(lang === "pt" ? "Erro de ligação ao guardar o exemplo." : "Connection error while saving sample.");
         }
       }
 
@@ -833,11 +775,24 @@
       function describeAuthError(code) {
         const value = String(code || "").trim().toLowerCase();
         if (!value || value === "unknown") return lang === "pt" ? "servico indisponivel" : "service unavailable";
-        if (value === "invalid-credentials") return lang === "pt" ? "credenciais invalidas" : "invalid credentials";
+        if (value === "invalid-credentials") return lang === "pt" ? "credenciais inválidas" : "invalid credentials";
         if (value === "email-already-registered") return lang === "pt" ? "email ja registado" : "email already registered";
         if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para admin interno" : "email reserved for internal admin";
-        if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligacao com API" : "API unreachable";
+        if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligação com a API" : "API unreachable";
         return value;
+      }
+
+      function isInternalAdminCredential(emailRaw, passwordRaw) {
+        return normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL && String(passwordRaw || "") === INTERNAL_ADMIN_PASSWORD;
+      }
+
+      function updateInternalAdminSession(emailRaw, passwordRaw) {
+        if (isInternalAdminCredential(emailRaw, passwordRaw)) {
+          localStorage.setItem(INTERNAL_ADMIN_SESSION_KEY, "1");
+          return;
+        }
+        localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
       }
 
       function readLocalAccounts() {
@@ -1083,7 +1038,7 @@
           `).join("");
         } catch {
           plansEl.textContent = lang === "pt"
-            ? "Nao foi possivel carregar planos. Verifique ligacao com API de verificacao."
+            ? "Não foi possível carregar os planos. Verifique a ligação com a API de verificação."
             : "Unable to load plans. Check connectivity with verification API.";
         }
       }
@@ -1093,10 +1048,10 @@
         if (!token) {
           const localStatus = getLocalStatusSummary();
           if (localStatus) {
-            accountStatus.textContent = `${localStatus.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${localStatus.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(localStatus.validUntil).toLocaleDateString()}${offlineMode ? (lang === "pt" ? " | modo local" : " | local mode") : ""}`;
+            accountStatus.textContent = `${localStatus.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${localStatus.remainingQueries} | ${lang === "pt" ? "Válido até" : "Valid until"}: ${new Date(localStatus.validUntil).toLocaleDateString()}${offlineMode ? (lang === "pt" ? " | modo local" : " | local mode") : ""}`;
             return;
           }
-          accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
+          accountStatus.textContent = lang === "pt" ? "Sem sessão ativa." : "No active session.";
           return;
         }
 
@@ -1104,12 +1059,12 @@
           const res = await api("/company/subscription/status");
           const data = await safeJson(res);
           if (!res.ok) {
-            accountStatus.textContent = lang === "pt" ? "Sessao expirada. Entre novamente." : "Session expired. Please sign in again.";
+            accountStatus.textContent = lang === "pt" ? "Sessão expirada. Entre novamente." : "Session expired. Please sign in again.";
             return;
           }
 
           const c = data.company;
-          accountStatus.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
+          accountStatus.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Válido até" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
         } catch {
           accountStatus.textContent = lang === "pt" ? "Falha ao consultar estado da conta." : "Failed to fetch account status.";
         }
@@ -1134,7 +1089,7 @@
           }
           await loadAdminOverview();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao no painel admin." : "Admin panel connection error.");
+          setMessage(lang === "pt" ? "Erro de ligação no painel de admin." : "Admin panel connection error.");
         }
       }
 
@@ -1146,6 +1101,7 @@
           username: document.getElementById("loginEmail").value,
           password: document.getElementById("loginPassword").value
         };
+        updateInternalAdminSession(payload.username, payload.password);
 
         try {
           const res = await api("/auth/login/jwt", {
@@ -1161,7 +1117,7 @@
               offlineMode = true;
               setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
               await loadSubscriptionStatus();
-              if (local.mode === "offline-admin") {
+              if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
                 adminPanel.classList.remove("hidden");
                 await loadTrainingExamples();
               }
@@ -1172,6 +1128,7 @@
           }
 
           setTokens(data.accessToken, data.refreshToken);
+          setLocalSession(payload.username);
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
@@ -1181,23 +1138,24 @@
             offlineMode = true;
             setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
             await loadSubscriptionStatus();
-            if (local.mode === "offline-admin") {
+            if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
               adminPanel.classList.remove("hidden");
               await loadTrainingExamples();
             }
             return;
           }
-          setMessage(lang === "pt" ? "Erro de ligacao." : "Connection error.");
+          setMessage(lang === "pt" ? "Erro de ligação." : "Connection error.");
         }
       });
 
       document.getElementById("btnLogout").addEventListener("click", async () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
+        localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
         clearLocalSession();
         hideAdminPanel();
-        accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
-        setMessage(lang === "pt" ? "Sessao terminada." : "Signed out.");
+        accountStatus.textContent = lang === "pt" ? "Sem sessão ativa." : "No active session.";
+        setMessage(lang === "pt" ? "Sessão terminada." : "Signed out.");
       });
 
       document.getElementById("signupForm").addEventListener("submit", async (event) => {
@@ -1216,7 +1174,7 @@
           document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
           document.getElementById("loginPassword").focus();
           setMessage(lang === "pt"
-            ? "Este email e reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e palavra-passe do admin."
+            ? "Este email é reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e a palavra-passe do admin."
             : "This email is reserved for admin. Use the Sign in panel with admin@eduguard360.co.mz and admin password.");
           return;
         }
@@ -1243,7 +1201,7 @@
             if (local.ok) {
               offlineMode = true;
               setMessage(lang === "pt"
-                ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
+                ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas grátis.`
                 : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
               document.getElementById("loginEmail").value = payload.email;
               document.getElementById("loginPassword").value = payload.password;
@@ -1263,7 +1221,7 @@
           }
 
           setMessage(lang === "pt"
-            ? `Conta criada com sucesso. Tem ${data.trial.remaining} consultas gratis.`
+            ? `Conta criada com sucesso. Tem ${data.trial.remaining} consultas grátis.`
             : `Account created successfully. You have ${data.trial.remaining} free checks.`);
           document.getElementById("loginEmail").value = payload.email;
           document.getElementById("loginPassword").value = payload.password;
@@ -1272,7 +1230,7 @@
           if (local.ok) {
             offlineMode = true;
             setMessage(lang === "pt"
-              ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
+              ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas grátis.`
               : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
             document.getElementById("loginEmail").value = payload.email;
             document.getElementById("loginPassword").value = payload.password;
@@ -1286,7 +1244,7 @@
 
       async function getAdminTokenForInternalAdmin(loginEmailRaw) {
         const loginEmail = String(loginEmailRaw || "").trim().toLowerCase();
-        if (loginEmail !== "admin@eduguard360.co.mz") return;
+        if (loginEmail !== "admin@eduguard360.co.mz" || localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) !== "1") return;
         try {
           const res = await api("/auth/admin/token", { method: "GET" });
           const data = await safeJson(res);
@@ -1356,9 +1314,8 @@
           setMessage((lang === "pt"
             ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
             : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
-          await loadTrainingExamples();
         } catch {
-          setMessage(lang === "pt" ? "Admin ligado, mas nao foi possivel carregar painel." : "Admin authenticated, but panel loading failed.");
+          setMessage(lang === "pt" ? "Admin autenticado, mas não foi possível carregar o painel." : "Admin authenticated, but panel loading failed.");
         }
       }
 
@@ -1379,17 +1336,17 @@
         if (isMobileProvider) {
           const phone = String(mobilePayPhone.value || "").replace(/\s+/g, "").trim();
           if (!phone || phone.length < 9) {
-            setMessage(lang === "pt" ? "Informe numero de telefone valido para pagamento movel." : "Enter a valid phone number for mobile payment.");
+            setMessage(lang === "pt" ? "Indique um número de telefone válido para pagamento móvel." : "Enter a valid phone number for mobile payment.");
             return;
           }
           if (!awaitingMobilePin) {
             awaitingMobilePin = true;
             mobilePayPin.classList.remove("hidden");
-            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza PIN para confirmar cobranca." : ". Enter PIN to confirm the charge."));
+            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza o PIN para confirmar a cobrança." : ". Enter PIN to confirm the charge."));
             return;
           }
           if (String(mobilePayPin.value || "").trim().length < 4) {
-            setMessage(lang === "pt" ? "PIN invalido." : "Invalid PIN.");
+            setMessage(lang === "pt" ? "PIN inválido." : "Invalid PIN.");
             return;
           }
         }
@@ -1418,13 +1375,13 @@
             return;
           }
 
-          setMessage(lang === "pt" ? "Subscricao renovada com sucesso." : "Subscription renewed successfully.");
+          setMessage(lang === "pt" ? "Subscrição renovada com sucesso." : "Subscription renewed successfully.");
           awaitingMobilePin = false;
           mobilePayPin.classList.add("hidden");
           mobilePayPin.value = "";
           await loadSubscriptionStatus();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao no checkout." : "Checkout connection error.");
+          setMessage(lang === "pt" ? "Erro de ligação no checkout." : "Checkout connection error.");
         }
       });
 
@@ -1450,31 +1407,13 @@
         loadAdminOverview();
       });
 
-      document.getElementById("btnUploadFraudExample").addEventListener("click", () => {
-        uploadTrainingExample("fraud");
-      });
-
-      document.getElementById("btnUploadAuthExample").addEventListener("click", () => {
-        uploadTrainingExample("auth");
-      });
-
-      document.getElementById("btnTrainingFilter").addEventListener("click", () => {
-        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
-        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
-        loadTrainingExamples();
-      });
-
-      document.getElementById("btnTrainingExportCsv").addEventListener("click", () => {
-        exportTrainingExamplesCsv();
-      });
-
       (async () => {
         applyLanguage();
         const ok = await resolveApiBase();
         if (!ok) {
           offlineMode = true;
           setMessage(lang === "pt"
-            ? "API indisponivel. Modo independente ativo para cadastro/login e acesso local."
+            ? "API indisponível. Modo independente ativo para cadastro/login e acesso local."
             : "API unavailable. Independent mode active for local signup/login and access.");
         }
         await loadPlans();

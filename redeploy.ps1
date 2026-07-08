@@ -72,4 +72,4 @@ Write-Host "  • https://eduguard360.co.mz/portais"
 Write-Host "  • https://eduguard360.co.mz/literatura"
 Write-Host "  • Limpar cache: Ctrl+Shift+Delete"
 Write-Host ""
-Write-Host "=====================================" -ForegroundColor $Cyan
+Write-Host "=====================================" -ForegroundColor Cyan

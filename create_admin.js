@@ -10,7 +10,7 @@ async function createAdmin() {
   
   const { data, error } = await supabase.auth.signUp({
     email: 'admin@eduguard360.co.mz',
-    password: 'Admin@1234',
+    password: 'EduGuard@360!2026',
   });
 
   if (error) {

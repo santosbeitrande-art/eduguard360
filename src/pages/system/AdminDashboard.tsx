@@ -13,6 +13,8 @@ const isPermissionError = (error: any) => {
   return code === '42501' || code === '401' || message.includes('row-level security') || message.includes('permission');
 };
 
+const isLikelyUuid = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -34,6 +36,12 @@ const AdminGlobalDashboard = () => {
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
+  const [movementSearch, setMovementSearch] = useState('');
+  const [movementClassFilter, setMovementClassFilter] = useState('all');
+  const [movementStudentFilter, setMovementStudentFilter] = useState('all');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | 'entrada' | 'saida'>('all');
+  const [movementDateFrom, setMovementDateFrom] = useState('');
+  const [movementDateTo, setMovementDateTo] = useState('');
 
   const readSchoolsCache = (): any[] => {
     try {
@@ -123,8 +131,7 @@ const AdminGlobalDashboard = () => {
       supabase.from('entradas').select('*'),
       supabase.from('entradas')
         .select('id, tipo, data, aluno_id')
-        .order('data', { ascending: false })
-        .limit(12),
+        .order('data', { ascending: false }),
     ]);
 
     if (escolasError || alunosError || entradasError || recentEntriesError) {
@@ -232,27 +239,82 @@ const AdminGlobalDashboard = () => {
   const handlePendingRegistrationAction = async (registration: any, action: 'approve' | 'reject') => {
     setApprovalAction(registration.id);
     try {
+      let processedSuccessfully = action === 'reject';
+
       if (action === 'approve') {
-        const { error } = await supabase.from('utilizadores').insert({
+        const normalizedEmail = String(registration.email || '').trim().toLowerCase();
+        const requestedProfile = String(registration.perfil || 'pai').toLowerCase();
+        const normalizedProfile = requestedProfile === 'parent' ? 'pai' : requestedProfile === 'teacher' ? 'professor' : requestedProfile;
+
+        const payload: any = {
           nome: registration.nome,
-          email: registration.email,
-          perfil: registration.perfil,
-          escola_id: registration.escola_id,
+          email: normalizedEmail,
+          perfil: normalizedProfile,
+          escola_id: registration.escola_id || null,
           telefone: null,
-          senha: null
-        });
-        if (!error) {
-          setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
+          senha: null,
+          auth_id: isLikelyUuid(registration.id) ? registration.id : null,
+        };
+
+        const { data: existingUser, error: existingError } = await supabase
+          .from('utilizadores')
+          .select('id, email')
+          .eq('email', normalizedEmail)
+          .maybeSingle();
+
+        if (existingError && !isPermissionError(existingError)) {
+          throw existingError;
+        }
+
+        let dbError: any = null;
+        if (existingUser?.id) {
+          const { error: updateError } = await supabase
+            .from('utilizadores')
+            .update({
+              nome: registration.nome,
+              perfil: normalizedProfile,
+              escola_id: registration.escola_id || null,
+            })
+            .eq('id', existingUser.id);
+
+          dbError = updateError;
+          if (!updateError) {
+            processedSuccessfully = true;
+            setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
+          }
         } else {
-          setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });
+          const { error: insertError } = await supabase.from('utilizadores').insert(payload);
+          dbError = insertError;
+          if (!insertError) {
+            processedSuccessfully = true;
+            setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
+          }
+        }
+
+        if (!processedSuccessfully) {
+          const dbCode = String(dbError?.code || '');
+          const dbMessage = String(dbError?.message || '').toLowerCase();
+
+          if (dbCode === '23505' || dbMessage.includes('duplicate key')) {
+            processedSuccessfully = true;
+            setNotification({ type: 'success', message: `Registo já existia e foi validado para ${registration.nome}.` });
+          } else if (isPermissionError(dbError)) {
+            processedSuccessfully = true;
+            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. Ajuste permissões RLS para sincronizar.` });
+          } else {
+            console.error('Falha ao aprovar registo pendente:', dbError);
+            setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });
+          }
         }
       } else {
         setNotification({ type: 'success', message: `Registo rejeitado para ${registration.nome}.` });
       }
 
-      const updated = pendingRegistrations.filter((item) => item.id !== registration.id);
-      localStorage.setItem('eduguard_pending_registrations', JSON.stringify(updated));
-      setPendingRegistrations(updated);
+      if (processedSuccessfully) {
+        const updated = pendingRegistrations.filter((item) => item.id !== registration.id);
+        localStorage.setItem('eduguard_pending_registrations', JSON.stringify(updated));
+        setPendingRegistrations(updated);
+      }
     } catch (err) {
       console.error('Erro ao processar registo pendente:', err);
       setNotification({ type: 'error', message: 'Ocorreu um erro ao processar o registo.' });
@@ -431,7 +493,10 @@ const AdminGlobalDashboard = () => {
           guardianId = existingGuardian.id;
           const { error: updateGuardianError } = await supabase
             .from('utilizadores')
-            .update({ nome: guardianPayload.nome })
+            .update({
+              nome: guardianPayload.nome,
+              telefone: guardianPayload.telefone,
+            })
             .eq('id', guardianId);
 
           if (updateGuardianError) {
@@ -443,6 +508,7 @@ const AdminGlobalDashboard = () => {
             .insert({
               nome: guardianPayload.nome,
               email: guardianPayload.email,
+              telefone: guardianPayload.telefone,
               perfil: 'pai',
               escola_id: activeSchoolId
             })
@@ -624,6 +690,71 @@ const AdminGlobalDashboard = () => {
       })
     : students;
 
+  const movementClassOptions = Array.from(new Set(recentEntries.map((entry) => String(entry.alunos?.classe || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt'));
+
+  const movementStudentOptions = Array.from(
+    new Map(
+      recentEntries
+        .filter((entry) => entry.alunos?.id)
+        .map((entry) => [entry.alunos.id, { id: entry.alunos.id, nome: entry.alunos.nome || 'Aluno sem nome' }])
+    ).values()
+  ).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+
+  const normalizedMovementSearch = movementSearch.trim().toLowerCase();
+  const filteredRecentEntries = recentEntries.filter((entry) => {
+    const entryDate = entry.data ? new Date(entry.data) : null;
+    const fromDate = movementDateFrom ? new Date(`${movementDateFrom}T00:00:00`) : null;
+    const toDate = movementDateTo ? new Date(`${movementDateTo}T23:59:59`) : null;
+
+    if (fromDate && (!entryDate || entryDate < fromDate)) return false;
+    if (toDate && (!entryDate || entryDate > toDate)) return false;
+    if (movementClassFilter !== 'all' && String(entry.alunos?.classe || '') !== movementClassFilter) return false;
+    if (movementStudentFilter !== 'all' && String(entry.aluno_id || '') !== movementStudentFilter) return false;
+    if (movementTypeFilter !== 'all' && entry.tipo !== movementTypeFilter) return false;
+
+    if (!normalizedMovementSearch) return true;
+
+    const studentName = String(entry.alunos?.nome || '').toLowerCase();
+    const className = String(entry.alunos?.classe || '').toLowerCase();
+    const schoolName = String(entry.escola?.nome || '').toLowerCase();
+    const typeName = String(entry.tipo || '').toLowerCase();
+
+    return studentName.includes(normalizedMovementSearch)
+      || className.includes(normalizedMovementSearch)
+      || schoolName.includes(normalizedMovementSearch)
+      || typeName.includes(normalizedMovementSearch);
+  });
+
+  const exportMovementsCsv = () => {
+    const headers = ['Aluno', 'Classe/Turma', 'Escola', 'Tipo', 'Data', 'Hora'];
+    const rows = filteredRecentEntries.map((entry) => {
+      const when = entry.data ? new Date(entry.data) : null;
+      const dateLabel = when ? when.toLocaleDateString('pt-MZ') : 'N/A';
+      const timeLabel = when ? when.toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+
+      return [
+        entry.alunos?.nome || 'Aluno desconhecido',
+        entry.alunos?.classe || 'Classe não definida',
+        entry.escola?.nome || 'Sem escola associada',
+        entry.tipo === 'entrada' ? 'Entrada' : 'Saida',
+        dateLabel,
+        timeLabel,
+      ];
+    });
+
+    const escapeCsv = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+    const csv = [headers, ...rows].map((line) => line.map(escapeCsv).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `movimentos-admin-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white bg-[#05121c]">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -714,15 +845,76 @@ const AdminGlobalDashboard = () => {
               <div className="p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold text-white">Movimentos Recentes</h2>
-                  <p className="text-gray-400 text-sm">Histórico de entradas e saídas registadas para análise rápida.</p>
+                  <p className="text-gray-400 text-sm">Histórico de qualquer dia, mês ou ano com filtros por classe, aluno e tipo.</p>
                 </div>
+                <button onClick={exportMovementsCsv} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
+                  Baixar CSV
+                </button>
+              </div>
+              <div className="px-6 pt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={movementSearch}
+                    onChange={(event) => setMovementSearch(event.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-[#03121e] pl-10 pr-4 py-3 text-white outline-none"
+                    placeholder="Procurar por aluno, classe, escola ou tipo"
+                  />
+                </div>
+                <select
+                  value={movementClassFilter}
+                  onChange={(event) => setMovementClassFilter(event.target.value)}
+                  aria-label="Filtrar movimentos por classe"
+                  className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none"
+                >
+                  <option value="all">Todas as classes</option>
+                  {movementClassOptions.map((className) => (
+                    <option key={className} value={className}>{className}</option>
+                  ))}
+                </select>
+                <select
+                  value={movementStudentFilter}
+                  onChange={(event) => setMovementStudentFilter(event.target.value)}
+                  aria-label="Filtrar movimentos por aluno"
+                  className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none"
+                >
+                  <option value="all">Todos os alunos</option>
+                  {movementStudentOptions.map((student) => (
+                    <option key={student.id} value={student.id}>{student.nome}</option>
+                  ))}
+                </select>
+                <select
+                  value={movementTypeFilter}
+                  onChange={(event) => setMovementTypeFilter(event.target.value as 'all' | 'entrada' | 'saida')}
+                  aria-label="Filtrar movimentos por tipo"
+                  className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none"
+                >
+                  <option value="all">Entrada e saída</option>
+                  <option value="entrada">Entrada</option>
+                  <option value="saida">Saída</option>
+                </select>
+                <input
+                  type="date"
+                  value={movementDateFrom}
+                  onChange={(event) => setMovementDateFrom(event.target.value)}
+                  title="Data inicial"
+                  className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none"
+                />
+                <input
+                  type="date"
+                  value={movementDateTo}
+                  onChange={(event) => setMovementDateTo(event.target.value)}
+                  title="Data final"
+                  className="w-full rounded-2xl border border-white/10 bg-[#03121e] px-4 py-3 text-white outline-none"
+                />
               </div>
               <div className="p-6 space-y-3">
-                {recentEntries.length === 0 ? (
+                {filteredRecentEntries.length === 0 ? (
                   <div className="text-gray-400">Nenhum movimento recente encontrado.</div>
                 ) : (
                   <div className="space-y-3">
-                    {recentEntries.map((entry) => (
+                    {filteredRecentEntries.map((entry) => (
                       <div key={entry.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
                           <p className="text-white font-semibold">{entry.alunos?.nome || 'Aluno desconhecido'}</p>
