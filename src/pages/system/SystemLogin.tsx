@@ -140,6 +140,69 @@ const SystemLogin = () => {
     loadSchools();
   }, []);
 
+  const isPendingUser = (user: any): boolean => user?.status === 'pending' || user?.status === 'inactive' || user?.is_active === false;
+
+  const isProfileAllowed = (perfil: string): boolean => {
+    if (accessProfile === 'director') return perfil === 'director' || perfil === 'admin';
+    if (accessProfile === 'parent') return perfil === 'pai' || perfil === 'admin';
+    if (accessProfile === 'teacher') return perfil === 'professor' || perfil === 'teacher' || perfil === 'admin';
+    if (accessProfile === 'scanner') return perfil === 'scanner' || perfil === 'admin';
+    return true;
+  };
+
+  const redirectByProfile = (perfil: string) => {
+    if (perfil === 'admin') navigate('/admin');
+    else if (perfil === 'director') navigate('/school');
+    else if (perfil === 'pai') navigate('/parent');
+    else if (perfil === 'professor' || perfil === 'teacher') navigate('/school');
+    else if (perfil === 'scanner') navigate('/scanner');
+    else navigate('/');
+  };
+
+  const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
+    if (!user) {
+      setErrorMessage(t('sistema.erro_login'));
+      return false;
+    }
+
+    if (isPendingUser(user)) {
+      setErrorMessage(t('sistema.registo_pendente'));
+      return false;
+    }
+
+    const perfil = String(user.perfil || '').toLowerCase();
+    if (!isProfileAllowed(perfil)) {
+      setErrorMessage(t('sistema.perfil_nao_autorizado'));
+      return false;
+    }
+
+    const schoolId = user.escola_id || null;
+    if (schoolId && perfil !== 'admin') {
+      const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
+      const subscription = getSchoolSubscription(schoolId);
+      const trialActive = isTrialActive(trial);
+      const subscriptionActive = isSubscriptionActive(subscription);
+
+      if (!trialActive && !subscriptionActive) {
+        setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
+        setInfoMessage(t('sistema.pagamento_escola_plans'));
+        return false;
+      }
+
+      if (trialActive && !subscriptionActive) {
+        setInfoMessage(`${t('sistema.trial_ativo_ate')}: ${new Date(trial.validUntil).toLocaleDateString()}`);
+      }
+    }
+
+    if (useCompatibilityMode) {
+      setInfoMessage('Acesso efetuado em modo de compatibilidade. Atualize a senha em "Esqueceu a senha?" se necessário.');
+    }
+
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    redirectByProfile(perfil);
+    return true;
+  };
+
   const handleLogin = async () => {
     setLoading(true);
     setErrorMessage(null);
@@ -162,7 +225,7 @@ const SystemLogin = () => {
       if (authError || !authData?.user) {
         const { data: domainUserByEmail } = await supabase
           .from("utilizadores")
-          .select("id, auth_id, status, is_active")
+          .select("*")
           .eq("email", normalizedEmail)
           .maybeSingle();
 
@@ -186,6 +249,14 @@ const SystemLogin = () => {
             authError = retrySignIn.error;
           } else {
             authError = signUpAttempt.error;
+          }
+        }
+
+        const fallbackPassword = String(domainUserByEmail?.senha || '');
+        if ((!authData?.user || authError) && domainUserByEmail?.id && fallbackPassword && fallbackPassword === normalizedPassword) {
+          const didLogin = completeLogin(domainUserByEmail, true);
+          if (didLogin) {
+            return;
           }
         }
       }
@@ -231,63 +302,7 @@ const SystemLogin = () => {
         }
       }
 
-      if (!user) {
-        setErrorMessage(t('sistema.erro_login'));
-        return;
-      }
-
-      const isPending = user.status === 'pending' || user.status === 'inactive' || user.is_active === false;
-      if (isPending) {
-        setErrorMessage(t('sistema.registo_pendente'));
-        return;
-      }
-
-      const perfil = String(user.perfil || '').toLowerCase();
-      if (accessProfile === 'director' && perfil !== 'director' && perfil !== 'admin') {
-        setErrorMessage(t('sistema.perfil_nao_autorizado'));
-        return;
-      }
-      if (accessProfile === 'parent' && perfil !== 'pai' && perfil !== 'admin') {
-        setErrorMessage(t('sistema.perfil_nao_autorizado'));
-        return;
-      }
-      if (accessProfile === 'teacher' && perfil !== 'professor' && perfil !== 'teacher' && perfil !== 'admin') {
-        setErrorMessage(t('sistema.perfil_nao_autorizado'));
-        return;
-      }
-      if (accessProfile === 'scanner' && perfil !== 'scanner' && perfil !== 'admin') {
-        setErrorMessage(t('sistema.perfil_nao_autorizado'));
-        return;
-      }
-
-      const schoolId = user.escola_id || null;
-      if (schoolId && perfil !== 'admin') {
-        const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
-        const subscription = getSchoolSubscription(schoolId);
-        const trialActive = isTrialActive(trial);
-        const subscriptionActive = isSubscriptionActive(subscription);
-
-        if (!trialActive && !subscriptionActive) {
-          setErrorMessage(t('sistema.pagamento_escola_obrigatorio'));
-          setInfoMessage(t('sistema.pagamento_escola_plans'));
-          return;
-        }
-
-        if (trialActive && !subscriptionActive) {
-          setInfoMessage(`${t('sistema.trial_ativo_ate')}: ${new Date(trial.validUntil).toLocaleDateString()}`);
-        }
-      }
-
-      // Guardar utilizador logado no contexto/localStorage
-      localStorage.setItem("currentUser", JSON.stringify(user));
-
-      // Redirecionamento por Perfil da nova tabela
-      if (user.perfil === "admin") navigate("/admin");
-      else if (user.perfil === "director") navigate("/school");
-      else if (user.perfil === "pai") navigate("/parent");
-      else if (user.perfil === "professor" || user.perfil === "teacher") navigate("/school");
-      else if (user.perfil === "scanner") navigate("/scanner");
-      else navigate("/");
+      completeLogin(user);
     } catch (err) {
       console.error(err);
       setErrorMessage(t('mensagens.erro_generico'));
