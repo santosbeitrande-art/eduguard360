@@ -550,11 +550,12 @@ const AdminGlobalDashboard = () => {
         if (!processedSuccessfully) {
           const dbCode = String(dbError?.code || '');
           const dbMessage = String(dbError?.message || '').toLowerCase();
+          const isDuplicate = dbCode === '23505' || dbMessage.includes('duplicate key');
 
-          if (dbCode === '23505' || dbMessage.includes('duplicate key')) {
+          if (isDuplicate) {
             processedSuccessfully = true;
             setNotification({ type: 'success', message: `Registo já existia e foi validado para ${registration.nome}.` });
-          } else if (isPermissionError(dbError)) {
+          } else {
             const approvedUsers = readLocalApprovedUsers();
             const localPassword = String(registration.senha || '').trim() || `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
             approvedPassword = localPassword;
@@ -574,10 +575,16 @@ const AdminGlobalDashboard = () => {
             ];
             writeLocalApprovedUsers(nextApprovedUsers);
             processedSuccessfully = true;
-            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. Palavra-passe temporária: ${localPassword}` });
-          } else {
-            console.error('Falha ao aprovar registo pendente:', dbError);
-            setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });
+
+            const localReason = isPermissionError(dbError)
+              ? 'por falta de permissão na base de dados'
+              : 'devido a falha de escrita na base de dados';
+
+            console.warn('Aprovação remota falhou; fallback local aplicado:', dbError);
+            setNotification({
+              type: 'success',
+              message: `Registo aprovado localmente para ${registration.nome} ${localReason}. Palavra-passe temporária: ${localPassword}`,
+            });
           }
         }
 
