@@ -120,6 +120,7 @@ const AdminGlobalDashboard = () => {
   const [parentStudentRequests, setParentStudentRequests] = useState<any[]>([]);
   const [parentRequestAction, setParentRequestAction] = useState<string | null>(null);
   const [parentRequestDrafts, setParentRequestDrafts] = useState<Record<string, any>>({});
+  const [parentRequestStatusFilter, setParentRequestStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'standby'>('all');
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
   const [repairCandidates, setRepairCandidates] = useState<any[]>([]);
   const [repairLoading, setRepairLoading] = useState(false);
@@ -1388,6 +1389,53 @@ const AdminGlobalDashboard = () => {
     URL.revokeObjectURL(url);
   };
 
+  const filteredParentStudentRequests = parentStudentRequests.filter((entry) => {
+    if (parentRequestStatusFilter === 'all') return true;
+    return String(entry?.status || '').toLowerCase() === parentRequestStatusFilter;
+  });
+
+  const exportParentStudentRequestsCsv = () => {
+    const headers = [
+      'Estado',
+      'Aluno',
+      'Classe/Turma',
+      'Encarregado',
+      'Email Encarregado',
+      'Telefone',
+      'QR Code ID',
+      'Escola ID',
+      'Criado em',
+      'Atualizado em',
+      'Nota do Admin',
+    ];
+
+    const rows = filteredParentStudentRequests.map((entry) => [
+      getStudentRequestStatusLabel(entry.status),
+      entry.studentName || 'Sem nome',
+      entry.classe || 'Sem classe',
+      entry.guardianName || 'Sem nome',
+      entry.guardianEmail || 'Sem email',
+      entry.telefone || 'Sem telefone',
+      entry.qrcode_id || 'Sem QR',
+      entry.escola_id || 'Sem escola',
+      entry.created_at ? new Date(entry.created_at).toLocaleString('pt-MZ') : 'N/A',
+      entry.updated_at ? new Date(entry.updated_at).toLocaleString('pt-MZ') : 'N/A',
+      entry.admin_note || '',
+    ]);
+
+    const escapeCsv = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+    const csv = [headers, ...rows].map((line) => line.map(escapeCsv).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `solicitacoes-educandos-${parentRequestStatusFilter}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white bg-[#05121c]">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -1457,14 +1505,27 @@ const AdminGlobalDashboard = () => {
                   <p className="text-sm text-gray-400">Valide, rejeite, modifique ou deixe em stand by os pedidos enviados pelos encarregados.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-sky-500/15 px-3 py-1 text-sm text-sky-300">{parentStudentRequests.length}</span>
+                  <span className="rounded-full bg-sky-500/15 px-3 py-1 text-sm text-sky-300">{filteredParentStudentRequests.length}</span>
+                  <select
+                    value={parentRequestStatusFilter}
+                    onChange={(e) => setParentRequestStatusFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected' | 'standby')}
+                    className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white outline-none"
+                    aria-label="Filtrar solicitações por estado"
+                  >
+                    <option value="all">Todos estados</option>
+                    <option value="pending">Pendente</option>
+                    <option value="approved">Aprovado</option>
+                    <option value="rejected">Rejeitado</option>
+                    <option value="standby">Stand by</option>
+                  </select>
+                  <button onClick={exportParentStudentRequestsCsv} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">Exportar CSV</button>
                   <button onClick={loadParentStudentRequests} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar</button>
                 </div>
               </div>
               <div className="mt-4 space-y-4">
-                {parentStudentRequests.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhuma solicitação de educando recebida ainda.</div>
-                ) : parentStudentRequests.map((entry) => {
+                {filteredParentStudentRequests.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhuma solicitação encontrada para o estado selecionado.</div>
+                ) : filteredParentStudentRequests.map((entry) => {
                   const draft = parentRequestDrafts[entry.id] || {};
                   const isProcessing = parentRequestAction === entry.id;
 
