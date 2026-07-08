@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
+import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -100,8 +101,9 @@ const isAlreadyRegisteredError = (message: string): boolean => {
   return text.includes('already registered') || text.includes('already been registered') || text.includes('user already registered');
 };
 
-const SystemLogin = () => {
+const SystemLoginContent = () => {
   const { t } = useLanguage();
+  const { login: edgeLogin } = useSystemAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -159,6 +161,32 @@ const SystemLogin = () => {
     else navigate('/');
   };
 
+  const persistLegacyUserFromEdgeAuth = (edgeUser: any) => {
+    if (!edgeUser) return;
+
+    const legacyPerfil = edgeUser.role === 'super_admin'
+      ? 'admin'
+      : edgeUser.role === 'school_admin'
+        ? 'director'
+        : edgeUser.role === 'scanner' || edgeUser.role === 'security'
+          ? 'scanner'
+          : edgeUser.type === 'parent'
+            ? 'pai'
+            : edgeUser.role === 'teacher'
+              ? 'professor'
+              : 'director';
+
+    localStorage.setItem('currentUser', JSON.stringify({
+      id: edgeUser.id,
+      auth_id: edgeUser.id,
+      nome: edgeUser.name,
+      email: edgeUser.email,
+      perfil: legacyPerfil,
+      escola_id: edgeUser.school_id || null,
+      password_changed: edgeUser.password_changed ?? true,
+    }));
+  };
+
   const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
     if (!user) {
       setErrorMessage(t('sistema.erro_login'));
@@ -211,6 +239,33 @@ const SystemLogin = () => {
     const normalizedPassword = password.trim();
 
     try {
+      const edgeUserType = accessProfile === 'parent' ? 'parent' : 'system';
+      const edgeResult = await edgeLogin(normalizedEmail, normalizedPassword, edgeUserType);
+      if (edgeResult.success) {
+        const edgeUserRaw = localStorage.getItem('eduguard_user');
+        if (edgeUserRaw) {
+          try {
+            const edgeUser = JSON.parse(edgeUserRaw);
+            persistLegacyUserFromEdgeAuth(edgeUser);
+            const perfil = edgeUser.role === 'super_admin'
+              ? 'admin'
+              : edgeUser.role === 'school_admin'
+                ? 'director'
+                : edgeUser.role === 'scanner' || edgeUser.role === 'security'
+                  ? 'scanner'
+                  : edgeUser.type === 'parent'
+                    ? 'pai'
+                    : edgeUser.role === 'teacher'
+                      ? 'professor'
+                      : 'director';
+            redirectByProfile(perfil);
+            return;
+          } catch (parseError) {
+            console.warn('Falha ao ler eduguard_user após edge login', parseError);
+          }
+        }
+      }
+
       let authData: any = null;
       let authError: any = null;
 
@@ -740,6 +795,12 @@ const SystemLogin = () => {
     </div>
   );
 };
+
+const SystemLogin = () => (
+  <SystemAuthProvider>
+    <SystemLoginContent />
+  </SystemAuthProvider>
+);
 
 export default SystemLogin;
 
