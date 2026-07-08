@@ -5,6 +5,39 @@ import { SystemAuthProvider, useSystemAuth } from '@/context/SystemAuthContext';
 import { supabase } from '@/lib/supabase';
 import ChangePasswordModal from '@/components/eduguard/ChangePasswordModal';
 
+const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
+
+const readParentStudentRequests = (): any[] => {
+  try {
+    const raw = localStorage.getItem(PARENT_STUDENT_REQUESTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeParentStudentRequests = (items: any[]) => {
+  localStorage.setItem(PARENT_STUDENT_REQUESTS_KEY, JSON.stringify(items));
+};
+
+const requestStatusLabel = (status: string) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'approved') return 'Aprovado';
+  if (normalized === 'rejected') return 'Rejeitado';
+  if (normalized === 'standby') return 'Stand by';
+  if (normalized === 'pending') return 'Pendente';
+  return 'Em revisão';
+};
+
+const requestStatusStyle = (status: string) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'approved') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+  if (normalized === 'rejected') return 'bg-red-500/20 text-red-300 border border-red-500/30';
+  if (normalized === 'standby') return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+  return 'bg-sky-500/20 text-sky-300 border border-sky-500/30';
+};
+
 const ShieldIcon = () => (
   <svg className="w-8 h-8 text-[#2ecc71]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -15,12 +48,14 @@ const ShieldIcon = () => (
 const ParentDashboardContent: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout, isLoading, updateUser, requiresPasswordChange } = useSystemAuth();
-  const [activeTab, setActiveTab] = useState<'status' | 'history' | 'notifications' | 'settings'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'history' | 'notifications' | 'requests' | 'settings'>('status');
   const [studentStatuses, setStudentStatuses] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requestForm, setRequestForm] = useState({ nome: '', classe: '', telefone: '', qrcode_id: '' });
+  const [studentRequests, setStudentRequests] = useState<any[]>([]);
   
   // Profile editing
   const [editingProfile, setEditingProfile] = useState(false);
@@ -63,6 +98,18 @@ const ParentDashboardContent: React.FC = () => {
   useEffect(() => {
     if (selectedStudent) loadAttendanceHistory(selectedStudent);
   }, [selectedStudent]);
+
+  useEffect(() => {
+    const viewerEmail = String(user?.email || '').trim().toLowerCase();
+    if (!viewerEmail) return;
+
+    const allRequests = readParentStudentRequests();
+    const mine = allRequests
+      .filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail)
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+
+    setStudentRequests(mine);
+  }, [user?.email]);
 
   const loadStudentStatuses = async (parentId: string) => {
     setLoading(true);
@@ -264,6 +311,54 @@ const ParentDashboardContent: React.FC = () => {
     setTimeout(() => setSettingsMessage(''), 4000);
   };
 
+  const handleCreateStudentRequest = () => {
+    if (!requestForm.nome.trim() || !requestForm.classe.trim()) {
+      setSettingsMessage('Preencha o nome e a classe/turma do educando.');
+      return;
+    }
+
+    const viewerEmail = String(user?.email || '').trim().toLowerCase();
+    if (!viewerEmail) {
+      setSettingsMessage('Sessão inválida. Entre novamente para registar educandos.');
+      return;
+    }
+
+    const legacyRaw = localStorage.getItem('eduguard_user') || localStorage.getItem('currentUser');
+    let escolaId: string | null = null;
+    try {
+      const legacyUser = legacyRaw ? JSON.parse(legacyRaw) : null;
+      escolaId = legacyUser?.school_id || legacyUser?.escola_id || user?.school_id || null;
+    } catch {
+      escolaId = user?.school_id || null;
+    }
+
+    const now = new Date().toISOString();
+    const newRequest = {
+      id: `req-student-${Date.now()}`,
+      studentName: requestForm.nome.trim(),
+      classe: requestForm.classe.trim(),
+      guardianName: profileName.trim() || user?.name || 'Encarregado',
+      guardianEmail: viewerEmail,
+      telefone: requestForm.telefone.trim() || profilePhone.trim() || null,
+      qrcode_id: requestForm.qrcode_id.trim() || null,
+      escola_id: escolaId,
+      parent_user_id: user?.id || null,
+      status: 'pending',
+      source: 'parent_portal',
+      created_at: now,
+      updated_at: now,
+      admin_note: null,
+    };
+
+    const current = readParentStudentRequests();
+    const next = [newRequest, ...current];
+    writeParentStudentRequests(next);
+    setStudentRequests(next.filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail));
+    setRequestForm({ nome: '', classe: '', telefone: '', qrcode_id: '' });
+    setSettingsMessage('Solicitação enviada ao administrador para validação.');
+    setTimeout(() => setSettingsMessage(''), 4000);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('eduguard_user');
@@ -287,6 +382,7 @@ const ParentDashboardContent: React.FC = () => {
     { id: 'status', label: 'Estado Actual', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'history', label: 'Histórico', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'notifications', label: 'Notificações', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+    { id: 'requests', label: 'Cadastro Educandos', icon: 'M12 4v16m8-8H4' },
     { id: 'settings', label: 'Definições', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }
   ];
 
@@ -436,6 +532,94 @@ const ParentDashboardContent: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {activeTab === 'requests' && (
+          <div className="space-y-6">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+              <h3 className="text-lg font-semibold text-white mb-1">Cadastrar Novo Educando</h3>
+              <p className="text-sm text-gray-400 mb-4">O administrador vai validar, rejeitar, modificar ou deixar em stand by o pedido.</p>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Nome do Educando</label>
+                  <input
+                    type="text"
+                    value={requestForm.nome}
+                    onChange={(e) => setRequestForm({ ...requestForm, nome: e.target.value })}
+                    placeholder="Ex: João Silva"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Classe / Turma</label>
+                  <input
+                    type="text"
+                    value={requestForm.classe}
+                    onChange={(e) => setRequestForm({ ...requestForm, classe: e.target.value })}
+                    placeholder="5a Classe - Turma A"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Telefone do Encarregado (opcional)</label>
+                  <input
+                    type="tel"
+                    value={requestForm.telefone}
+                    onChange={(e) => setRequestForm({ ...requestForm, telefone: e.target.value })}
+                    placeholder="+258 84 XXX XXXX"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">QR Code ID (opcional)</label>
+                  <input
+                    type="text"
+                    value={requestForm.qrcode_id}
+                    onChange={(e) => setRequestForm({ ...requestForm, qrcode_id: e.target.value })}
+                    placeholder="Auto-gerado se vazio"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleCreateStudentRequest}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#2ecc71] px-5 py-3 font-semibold text-white hover:bg-[#27ae60]"
+              >
+                Enviar para Validacao
+              </button>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 className="text-lg font-semibold text-white">Minhas Solicitações</h3>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-gray-300">{studentRequests.length}</span>
+              </div>
+
+              {studentRequests.length === 0 ? (
+                <p className="text-sm text-gray-400">Ainda não existem solicitações de cadastro.</p>
+              ) : (
+                <div className="space-y-3">
+                  {studentRequests.map((entry) => (
+                    <div key={entry.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-white">{entry.studentName}</p>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${requestStatusStyle(entry.status)}`}>
+                          {requestStatusLabel(entry.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-gray-300">{entry.classe || 'Sem classe'}</p>
+                      <p className="mt-1 text-xs text-gray-500">Atualizado: {new Date(entry.updated_at || entry.created_at).toLocaleString('pt-MZ')}</p>
+                      {entry.admin_note && (
+                        <p className="mt-2 text-xs text-amber-200">Nota do Admin: {entry.admin_note}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

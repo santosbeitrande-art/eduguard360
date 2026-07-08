@@ -8,6 +8,7 @@ const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const LOCAL_SCHOOL_ID = 'local-school-default';
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
+const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -73,6 +74,29 @@ const mapPendingRoleToEdgeRole = (perfil: string) => {
   return normalized;
 };
 
+const readParentStudentRequests = (): any[] => {
+  try {
+    const raw = localStorage.getItem(PARENT_STUDENT_REQUESTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeParentStudentRequests = (items: any[]) => {
+  localStorage.setItem(PARENT_STUDENT_REQUESTS_KEY, JSON.stringify(items));
+};
+
+const getStudentRequestStatusLabel = (status: string) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'approved') return 'Aprovado';
+  if (normalized === 'rejected') return 'Rejeitado';
+  if (normalized === 'standby') return 'Stand by';
+  if (normalized === 'pending') return 'Pendente';
+  return 'Em revisão';
+};
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -93,6 +117,9 @@ const AdminGlobalDashboard = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
+  const [parentStudentRequests, setParentStudentRequests] = useState<any[]>([]);
+  const [parentRequestAction, setParentRequestAction] = useState<string | null>(null);
+  const [parentRequestDrafts, setParentRequestDrafts] = useState<Record<string, any>>({});
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
   const [repairCandidates, setRepairCandidates] = useState<any[]>([]);
   const [repairLoading, setRepairLoading] = useState(false);
@@ -177,6 +204,7 @@ const AdminGlobalDashboard = () => {
 
     loadData();
     loadPendingRegistrations();
+    loadParentStudentRequests();
     loadRepairCandidates();
     setRecentCredentials(readGeneratedCredentialsLog());
   }, []);
@@ -309,6 +337,277 @@ const AdminGlobalDashboard = () => {
     } catch (err) {
       console.error('Erro ao carregar registos pendentes:', err);
       setPendingRegistrations([]);
+    }
+  };
+
+  const loadParentStudentRequests = () => {
+    const list = readParentStudentRequests()
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+
+    const drafts: Record<string, any> = {};
+    for (const entry of list) {
+      drafts[entry.id] = {
+        studentName: entry.studentName || '',
+        classe: entry.classe || '',
+        guardianName: entry.guardianName || '',
+        guardianEmail: entry.guardianEmail || '',
+        telefone: entry.telefone || '',
+        qrcode_id: entry.qrcode_id || '',
+      };
+    }
+
+    setParentStudentRequests(list);
+    setParentRequestDrafts(drafts);
+  };
+
+  const updateParentStudentRequestDraft = (requestId: string, patch: any) => {
+    setParentRequestDrafts((current) => ({
+      ...current,
+      [requestId]: {
+        ...(current[requestId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSaveParentStudentRequestChanges = (requestId: string) => {
+    const draft = parentRequestDrafts[requestId];
+    if (!draft) return;
+
+    const updated = readParentStudentRequests().map((entry) => {
+      if (entry.id !== requestId) return entry;
+      return {
+        ...entry,
+        studentName: String(draft.studentName || '').trim(),
+        classe: String(draft.classe || '').trim(),
+        guardianName: String(draft.guardianName || '').trim(),
+        guardianEmail: String(draft.guardianEmail || '').trim().toLowerCase(),
+        telefone: String(draft.telefone || '').trim() || null,
+        qrcode_id: String(draft.qrcode_id || '').trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    writeParentStudentRequests(updated);
+    loadParentStudentRequests();
+    setNotification({ type: 'success', message: 'Solicitação atualizada com sucesso.' });
+  };
+
+  const handleParentStudentRequestAction = async (requestId: string, action: 'approve' | 'reject' | 'standby') => {
+    setParentRequestAction(requestId);
+    try {
+      const existingRequests = readParentStudentRequests();
+      const target = existingRequests.find((entry) => entry.id === requestId);
+      if (!target) {
+        setNotification({ type: 'error', message: 'Solicitação não encontrada.' });
+        return;
+      }
+
+      const draft = parentRequestDrafts[requestId] || {};
+      const normalizedRequest = {
+        ...target,
+        studentName: String(draft.studentName || target.studentName || '').trim(),
+        classe: String(draft.classe || target.classe || '').trim(),
+        guardianName: String(draft.guardianName || target.guardianName || '').trim(),
+        guardianEmail: String(draft.guardianEmail || target.guardianEmail || '').trim().toLowerCase(),
+        telefone: String(draft.telefone || target.telefone || '').trim() || null,
+        qrcode_id: String(draft.qrcode_id || target.qrcode_id || '').trim() || null,
+      };
+
+      if (!normalizedRequest.studentName || !normalizedRequest.classe || !normalizedRequest.guardianName || !normalizedRequest.guardianEmail) {
+        setNotification({ type: 'error', message: 'Preencha nome do aluno, classe, encarregado e email antes de decidir.' });
+        return;
+      }
+
+      if (action === 'approve') {
+        let activeSchoolId = normalizedRequest.escola_id || selectedSchoolId || escolas[0]?.id || null;
+        if (!activeSchoolId) {
+          const fallbackSchool = {
+            id: LOCAL_SCHOOL_ID,
+            nome: 'Escola Local',
+            endereco: null,
+            telefone: null,
+            email: null,
+          };
+
+          setEscolas((current) => {
+            const exists = current.some((school) => school.id === LOCAL_SCHOOL_ID);
+            const next = exists ? current : [fallbackSchool, ...current];
+            writeSchoolsCache(next);
+            return next;
+          });
+
+          activeSchoolId = LOCAL_SCHOOL_ID;
+          setSelectedSchoolId(LOCAL_SCHOOL_ID);
+        }
+
+        let guardianId: string | null = null;
+        let localOnlyMode = false;
+
+        try {
+          const { data: existingGuardian, error: guardianLookupError } = await supabase
+            .from('utilizadores')
+            .select('*')
+            .eq('email', normalizedRequest.guardianEmail)
+            .maybeSingle();
+
+          if (guardianLookupError) {
+            throw guardianLookupError;
+          }
+
+          if (existingGuardian) {
+            guardianId = existingGuardian.id;
+            const { error: updateGuardianError } = await supabase
+              .from('utilizadores')
+              .update({
+                nome: normalizedRequest.guardianName,
+                telefone: normalizedRequest.telefone,
+                perfil: 'pai',
+                escola_id: activeSchoolId,
+              })
+              .eq('id', guardianId);
+
+            if (updateGuardianError) {
+              throw updateGuardianError;
+            }
+          } else {
+            const { data: createdGuardian, error: createGuardianError } = await supabase
+              .from('utilizadores')
+              .insert({
+                nome: normalizedRequest.guardianName,
+                email: normalizedRequest.guardianEmail,
+                telefone: normalizedRequest.telefone,
+                perfil: 'pai',
+                escola_id: activeSchoolId,
+              })
+              .select('id')
+              .single();
+
+            if (createGuardianError) {
+              throw createGuardianError;
+            }
+
+            guardianId = createdGuardian?.id || null;
+          }
+        } catch (guardianError) {
+          if (isPermissionError(guardianError)) {
+            localOnlyMode = true;
+          } else {
+            throw guardianError;
+          }
+        }
+
+        const qrcodeId = normalizedRequest.qrcode_id || `ALUNO-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`;
+        const payload = {
+          nome: normalizedRequest.studentName,
+          classe: normalizedRequest.classe,
+          escola_id: activeSchoolId,
+          encarregado_id: guardianId,
+          qrcode_id: qrcodeId,
+        };
+
+        const { data: insertedStudent, error: insertError } = await supabase
+          .from('alunos')
+          .insert(payload)
+          .select('*')
+          .single();
+
+        if (insertError) {
+          if (!isPermissionError(insertError)) {
+            throw insertError;
+          }
+
+          localOnlyMode = true;
+          const localStudent = {
+            id: `local-${Date.now()}`,
+            ...payload,
+            guardian: {
+              id: guardianId,
+              nome: normalizedRequest.guardianName,
+              email: normalizedRequest.guardianEmail,
+              telefone: normalizedRequest.telefone,
+            },
+          };
+
+          if (selectedSchoolId === activeSchoolId) {
+            updateStudentsForSelectedSchool((currentStudents) => [
+              localStudent,
+              ...currentStudents.filter((student) => student.id !== localStudent.id),
+            ]);
+          }
+        } else if (insertedStudent && selectedSchoolId === activeSchoolId) {
+          updateStudentsForSelectedSchool((currentStudents) => [
+            {
+              ...insertedStudent,
+              guardian: {
+                id: guardianId,
+                nome: normalizedRequest.guardianName,
+                email: normalizedRequest.guardianEmail,
+                telefone: normalizedRequest.telefone,
+              },
+            },
+            ...currentStudents.filter((student) => student.id !== insertedStudent.id),
+          ]);
+        }
+
+        const approvedRequests = existingRequests.map((entry) =>
+          entry.id === requestId
+            ? {
+                ...normalizedRequest,
+                status: 'approved',
+                updated_at: new Date().toISOString(),
+                admin_note: localOnlyMode
+                  ? 'Aprovado localmente devido a permissões na base de dados.'
+                  : 'Aprovado e convertido em aluno registado.',
+              }
+            : entry
+        );
+
+        writeParentStudentRequests(approvedRequests);
+        loadParentStudentRequests();
+        setNotification({
+          type: 'success',
+          message: localOnlyMode
+            ? `Solicitação aprovada localmente para ${normalizedRequest.studentName}.`
+            : `Solicitação aprovada e aluno criado: ${normalizedRequest.studentName}.`,
+        });
+
+        await loadData();
+        if (activeSchoolId && selectedSchoolId === activeSchoolId) {
+          await loadStudents(activeSchoolId);
+        }
+        return;
+      }
+
+      const nextStatus = action === 'reject' ? 'rejected' : 'standby';
+      const nextNote = action === 'reject'
+        ? 'Rejeitado pelo administrador.'
+        : 'Mantido em stand by para validação adicional.';
+
+      const updatedRequests = existingRequests.map((entry) =>
+        entry.id === requestId
+          ? {
+              ...normalizedRequest,
+              status: nextStatus,
+              updated_at: new Date().toISOString(),
+              admin_note: nextNote,
+            }
+          : entry
+      );
+
+      writeParentStudentRequests(updatedRequests);
+      loadParentStudentRequests();
+      setNotification({
+        type: 'success',
+        message: action === 'reject'
+          ? `Solicitação rejeitada para ${normalizedRequest.studentName}.`
+          : `Solicitação de ${normalizedRequest.studentName} colocada em stand by.`,
+      });
+    } catch (error) {
+      console.error('Erro ao processar solicitação de educando:', error);
+      setNotification({ type: 'error', message: 'Não foi possível processar a solicitação do encarregado.' });
+    } finally {
+      setParentRequestAction(null);
     }
   };
 
@@ -1149,6 +1448,116 @@ const AdminGlobalDashboard = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+            <div className="card bg-[#081825] border border-white/10 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Solicitações de Educandos (Encarregados)</h2>
+                  <p className="text-sm text-gray-400">Valide, rejeite, modifique ou deixe em stand by os pedidos enviados pelos encarregados.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-sky-500/15 px-3 py-1 text-sm text-sky-300">{parentStudentRequests.length}</span>
+                  <button onClick={loadParentStudentRequests} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar</button>
+                </div>
+              </div>
+              <div className="mt-4 space-y-4">
+                {parentStudentRequests.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhuma solicitação de educando recebida ainda.</div>
+                ) : parentStudentRequests.map((entry) => {
+                  const draft = parentRequestDrafts[entry.id] || {};
+                  const isProcessing = parentRequestAction === entry.id;
+
+                  return (
+                    <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-white">{draft.studentName || entry.studentName || 'Sem nome'}</p>
+                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-gray-200">{getStudentRequestStatusLabel(entry.status)}</span>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <input
+                          type="text"
+                          value={draft.studentName || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { studentName: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="Nome do educando"
+                        />
+                        <input
+                          type="text"
+                          value={draft.classe || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { classe: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="Classe / turma"
+                        />
+                        <input
+                          type="text"
+                          value={draft.guardianName || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { guardianName: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="Nome do encarregado"
+                        />
+                        <input
+                          type="email"
+                          value={draft.guardianEmail || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { guardianEmail: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="Email do encarregado"
+                        />
+                        <input
+                          type="tel"
+                          value={draft.telefone || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { telefone: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="Telefone"
+                        />
+                        <input
+                          type="text"
+                          value={draft.qrcode_id || ''}
+                          onChange={(e) => updateParentStudentRequestDraft(entry.id, { qrcode_id: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                          placeholder="QR code ID"
+                        />
+                      </div>
+
+                      <p className="mt-2 text-xs text-gray-500">Pedido: {new Date(entry.created_at).toLocaleString('pt-MZ')} · Encarregado: {entry.guardianEmail || 'Sem email'}</p>
+                      {entry.admin_note && (
+                        <p className="mt-1 text-xs text-amber-200">Nota: {entry.admin_note}</p>
+                      )}
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleSaveParentStudentRequestChanges(entry.id)}
+                          disabled={isProcessing}
+                          className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15 disabled:opacity-50"
+                        >
+                          Guardar Alteracoes
+                        </button>
+                        <button
+                          onClick={() => handleParentStudentRequestAction(entry.id, 'approve')}
+                          disabled={isProcessing}
+                          className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {isProcessing ? 'A processar...' : 'Aprovar'}
+                        </button>
+                        <button
+                          onClick={() => handleParentStudentRequestAction(entry.id, 'standby')}
+                          disabled={isProcessing}
+                          className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          Stand by
+                        </button>
+                        <button
+                          onClick={() => handleParentStudentRequestAction(entry.id, 'reject')}
+                          disabled={isProcessing}
+                          className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          Rejeitar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="card bg-[#081825] border border-white/10 p-6">
