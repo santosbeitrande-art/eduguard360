@@ -267,7 +267,9 @@ const AdminGlobalDashboard = () => {
         }
 
         let dbError: any = null;
+        let affectedUserId: string | null = null;
         if (existingUser?.id) {
+          affectedUserId = existingUser.id;
           const { error: updateError } = await supabase
             .from('utilizadores')
             .update({
@@ -283,8 +285,13 @@ const AdminGlobalDashboard = () => {
             setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
           }
         } else {
-          const { error: insertError } = await supabase.from('utilizadores').insert(payload);
+          const { data: insertedUser, error: insertError } = await supabase
+            .from('utilizadores')
+            .insert(payload)
+            .select('id')
+            .maybeSingle();
           dbError = insertError;
+          affectedUserId = insertedUser?.id || null;
           if (!insertError) {
             processedSuccessfully = true;
             setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
@@ -299,11 +306,27 @@ const AdminGlobalDashboard = () => {
             processedSuccessfully = true;
             setNotification({ type: 'success', message: `Registo já existia e foi validado para ${registration.nome}.` });
           } else if (isPermissionError(dbError)) {
-            processedSuccessfully = true;
-            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. Ajuste permissões RLS para sincronizar.` });
+            processedSuccessfully = false;
+            setNotification({ type: 'error', message: 'Não foi possível aprovar o registo por falta de permissão na base de dados.' });
           } else {
             console.error('Falha ao aprovar registo pendente:', dbError);
             setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });
+          }
+        }
+
+        if (processedSuccessfully && affectedUserId) {
+          const { error: activateError } = await supabase
+            .from('utilizadores')
+            .update({ status: 'active', is_active: true })
+            .eq('id', affectedUserId);
+
+          if (activateError) {
+            const activateMessage = String(activateError?.message || '').toLowerCase();
+            const activateCode = String(activateError?.code || '');
+            const missingColumn = activateCode === 'PGRST204' || activateMessage.includes('column') || activateMessage.includes('status') || activateMessage.includes('is_active');
+            if (!missingColumn) {
+              console.warn('Não foi possível ativar o utilizador aprovado:', activateError);
+            }
           }
         }
       } else {

@@ -155,12 +155,34 @@ const SystemLogin = () => {
 
       const userId = data.user.id;
       
-      // Buscar utilizador na NOVA tabela "utilizadores" criada no Supabase
-      const { data: user } = await supabase
+      // Buscar utilizador na tabela "utilizadores". Em bases antigas, auth_id pode estar vazio.
+      const { data: userByAuth } = await supabase
         .from("utilizadores")
         .select("*")
         .eq("auth_id", userId)
-        .single();
+        .maybeSingle();
+
+      let user = userByAuth;
+
+      if (!user) {
+        const { data: userByEmail } = await supabase
+          .from("utilizadores")
+          .select("*")
+          .eq("email", normalizedEmail)
+          .maybeSingle();
+
+        user = userByEmail;
+
+        if (user?.id && !user?.auth_id) {
+          // Melhor esforço para vincular o auth user à conta de domínio.
+          await supabase
+            .from("utilizadores")
+            .update({ auth_id: userId })
+            .eq("id", user.id);
+
+          user = { ...user, auth_id: userId };
+        }
+      }
 
       if (!user) {
         setErrorMessage(t('sistema.erro_login'));
@@ -183,6 +205,10 @@ const SystemLogin = () => {
         return;
       }
       if (accessProfile === 'teacher' && perfil !== 'professor' && perfil !== 'teacher' && perfil !== 'admin') {
+        setErrorMessage(t('sistema.perfil_nao_autorizado'));
+        return;
+      }
+      if (accessProfile === 'scanner' && perfil !== 'scanner' && perfil !== 'admin') {
         setErrorMessage(t('sistema.perfil_nao_autorizado'));
         return;
       }
@@ -294,7 +320,7 @@ const SystemLogin = () => {
         id: data?.user?.id || `pending-${Date.now()}`,
         nome: normalizedName,
         email: normalizedEmail,
-        perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : 'director',
+        perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : selectedRole === 'scanner' ? 'scanner' : 'director',
         escola_id: selectedSchoolId || null,
         is_active: false,
         status: 'pending',
@@ -388,24 +414,6 @@ const SystemLogin = () => {
     setInfoMessage(t('sistema.pagamento_registado'));
   };
 
-  const handleDemoAccess = (role: string) => {
-    let mockUser: any = null;
-
-    if (role === "scanner") {
-      mockUser = {
-        id: "demo-scanner",
-        perfil: "scanner",
-        nome: "Scanner",
-        escola_id: "demo-school-id",
-        password_changed: true
-      };
-      localStorage.setItem("currentUser", JSON.stringify(mockUser));
-      localStorage.setItem('eduguard_user', JSON.stringify({ id: mockUser.id, name: mockUser.nome, type: 'system_user', role: 'scanner', school_id: mockUser.escola_id, password_changed: true }));
-      navigate("/scanner");
-      return;
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
       {/* Background decoration */}
@@ -439,6 +447,7 @@ const SystemLogin = () => {
               <option value="director">{t('sistema.role_director')}</option>
               <option value="parent">{t('sistema.role_parent')}</option>
               <option value="teacher">{t('sistema.role_teacher')}</option>
+              <option value="scanner">Segurança QR Code</option>
             </select>
           </div>
         </div>
@@ -484,6 +493,7 @@ const SystemLogin = () => {
                 <option value="director">{t('sistema.role_director')}</option>
                 <option value="parent">{t('sistema.role_parent')}</option>
                 <option value="teacher">{t('sistema.role_teacher')}</option>
+                <option value="scanner">Segurança QR Code</option>
               </select>
               <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>
               <select
@@ -511,6 +521,7 @@ const SystemLogin = () => {
                       setAwaitingPin(false);
                       setPaymentPin("");
                     }}
+                    aria-label="Provedor de pagamento"
                     className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
                   >
                     <option value="mpesa">M-Pesa</option>
@@ -523,6 +534,7 @@ const SystemLogin = () => {
                       setPaymentDone(false);
                       setPaymentSummary(null);
                     }}
+                    aria-label="Ciclo de pagamento"
                     className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
                   >
                     <option value="monthly">{t('sistema.billing_monthly')} - {cycleConfig.monthly.amountMzn.toLocaleString()} MZN</option>
@@ -643,28 +655,6 @@ const SystemLogin = () => {
           )}
         </div>
 
-        <div className="mt-8">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[#2e5a6e]"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#132f3f] text-[#9bbbc9] font-medium tracking-wide text-xs uppercase">Acesso de Demonstração</span>
-            </div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-3">
-            <button 
-              onClick={() => handleDemoAccess("scanner")}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#1c3b4d] !important border border-[#2e5a6e] hover:bg-[#2e5a6e] transition-colors"
-            >
-              📷 Segurança QR
-            </button>
-          </div>
-          {infoMessage && (
-            <p className="mt-3 text-sm text-yellow-300">{infoMessage}</p>
-          )}
-        </div>
       </div>
     </div>
   );
