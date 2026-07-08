@@ -7,6 +7,7 @@ const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const LOCAL_SCHOOL_ID = 'local-school-default';
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
+const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -50,6 +51,20 @@ const writeLocalApprovedUsers = (items: any[]) => {
   localStorage.setItem(LOCAL_APPROVED_USERS_KEY, JSON.stringify(items));
 };
 
+const readGeneratedCredentialsLog = (): any[] => {
+  try {
+    const raw = localStorage.getItem(GENERATED_CREDENTIALS_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeGeneratedCredentialsLog = (items: any[]) => {
+  localStorage.setItem(GENERATED_CREDENTIALS_LOG_KEY, JSON.stringify(items));
+};
+
 const mapPendingRoleToEdgeRole = (perfil: string) => {
   const normalized = String(perfil || '').toLowerCase();
   if (normalized === 'scanner') return 'security';
@@ -83,6 +98,7 @@ const AdminGlobalDashboard = () => {
   const [repairLoading, setRepairLoading] = useState(false);
   const [repairAction, setRepairAction] = useState<string | null>(null);
   const [repairPasswords, setRepairPasswords] = useState<Record<string, string>>({});
+  const [recentCredentials, setRecentCredentials] = useState<any[]>([]);
   const [movementSearch, setMovementSearch] = useState('');
   const [movementClassFilter, setMovementClassFilter] = useState('all');
   const [movementStudentFilter, setMovementStudentFilter] = useState('all');
@@ -162,6 +178,7 @@ const AdminGlobalDashboard = () => {
     loadData();
     loadPendingRegistrations();
     loadRepairCandidates();
+    setRecentCredentials(readGeneratedCredentialsLog());
   }, []);
 
   useEffect(() => {
@@ -357,6 +374,37 @@ const AdminGlobalDashboard = () => {
       }
 
       setRepairPasswords((current) => ({ ...current, [user.id]: temporaryPassword }));
+
+      const approvedUsers = readLocalApprovedUsers();
+      const normalizedApproved = {
+        ...user,
+        email: String(user?.email || '').trim().toLowerCase(),
+        senha: temporaryPassword,
+        status: 'active',
+        is_active: true,
+        approved_locally: true,
+        approved_at: new Date().toISOString(),
+      };
+      const nextApprovedUsers = [
+        normalizedApproved,
+        ...approvedUsers.filter((item) => String(item.email || '').trim().toLowerCase() !== normalizedApproved.email),
+      ];
+      writeLocalApprovedUsers(nextApprovedUsers);
+
+      const credsLog = readGeneratedCredentialsLog();
+      const newLogItem = {
+        id: `${user.id}-${Date.now()}`,
+        nome: user.nome || 'Sem nome',
+        email: user.email || 'Sem email',
+        perfil: user.perfil || 'utilizador',
+        senha: temporaryPassword,
+        created_at: new Date().toISOString(),
+        origem: 'reparacao',
+      };
+      const nextLog = [newLogItem, ...credsLog].slice(0, 20);
+      writeGeneratedCredentialsLog(nextLog);
+      setRecentCredentials(nextLog);
+
       setNotification({ type: 'success', message: `Conta reparada para ${user.nome || user.email}. Palavra-passe temporária gerada.` });
       await loadRepairCandidates();
     } catch (error) {
@@ -567,6 +615,20 @@ const AdminGlobalDashboard = () => {
             ...approvedUsers.filter((item) => String(item.email || '').trim().toLowerCase() !== approvedEmail),
           ];
           writeLocalApprovedUsers(nextApprovedUsers);
+
+          const credsLog = readGeneratedCredentialsLog();
+          const newLogItem = {
+            id: `${registration.id || approvedEmail}-${Date.now()}`,
+            nome: registration.nome || 'Sem nome',
+            email: approvedEmail,
+            perfil: approvedProfile,
+            senha: effectivePassword,
+            created_at: new Date().toISOString(),
+            origem: 'aprovacao',
+          };
+          const nextLog = [newLogItem, ...credsLog].slice(0, 20);
+          writeGeneratedCredentialsLog(nextLog);
+          setRecentCredentials(nextLog);
         }
       } else {
         setNotification({ type: 'success', message: `Registo rejeitado para ${registration.nome}.` });
@@ -1075,6 +1137,38 @@ const AdminGlobalDashboard = () => {
                       <button onClick={() => handlePendingRegistrationAction(entry, 'approve')} disabled={approvalAction === entry.id} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{approvalAction === entry.id ? 'A processar...' : 'Aprovar'}</button>
                       <button onClick={() => handlePendingRegistrationAction(entry, 'reject')} disabled={approvalAction === entry.id} className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">Rejeitar</button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card bg-[#081825] border border-white/10 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Credenciais Geradas Recentemente</h2>
+                  <p className="text-sm text-gray-400">Use estas credenciais para primeiro acesso sem depender do aviso temporário.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300">{recentCredentials.length}</span>
+                  <button
+                    onClick={() => {
+                      writeGeneratedCredentialsLog([]);
+                      setRecentCredentials([]);
+                    }}
+                    className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {recentCredentials.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Ainda não existem credenciais geradas nesta sessão.</div>
+                ) : recentCredentials.map((entry) => (
+                  <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-1">
+                    <p className="font-semibold text-white">{entry.nome}</p>
+                    <p className="text-sm text-gray-300">{entry.email} · {getPendingRoleLabel(entry.perfil)}</p>
+                    <p className="text-sm text-emerald-300">Senha: {entry.senha}</p>
+                    <p className="text-xs text-gray-500">{new Date(entry.created_at).toLocaleString('pt-MZ')} · {entry.origem}</p>
                   </div>
                 ))}
               </div>
