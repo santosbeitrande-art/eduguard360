@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useNavigate } from "react-router-dom";
 
 type EntryRecord = {
   id: string;
@@ -17,6 +18,7 @@ type EntryRecord = {
 };
 
 const SchoolDashboard = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -164,6 +166,14 @@ const SchoolDashboard = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('eduguard_user');
+    localStorage.removeItem('eduguard_token');
+    void supabase.auth.signOut();
+    navigate('/sistema');
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -178,6 +188,12 @@ const SchoolDashboard = () => {
           <p className="text-gray-400 mt-1">Histórico completo de entradas e saídas com filtros por dia, mês, ano, turma/classe e aluno.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+          >
+            Terminar Sessao
+          </button>
           <button
             onClick={exportFilteredCsv}
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"

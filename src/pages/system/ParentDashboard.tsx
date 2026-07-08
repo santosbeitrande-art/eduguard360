@@ -264,6 +264,14 @@ const ParentDashboardContent: React.FC = () => {
     setTimeout(() => setSettingsMessage(''), 4000);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('eduguard_user');
+    localStorage.removeItem('eduguard_token');
+    logout();
+    navigate('/sistema');
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) { case 'in_school': return 'bg-[#2ecc71]'; case 'left_school': return 'bg-orange-500'; default: return 'bg-gray-500'; }
   };
@@ -294,7 +302,7 @@ const ParentDashboardContent: React.FC = () => {
           <Link to="/" className="flex items-center gap-2"><ShieldIcon /><span className="text-xl font-bold text-white">EDU<span className="text-[#2ecc71]">•</span>GUARD360</span></Link>
           <div className="flex items-center gap-4">
             <span className="text-gray-300 text-sm hidden sm:block">{user?.name}</span>
-            <button onClick={logout} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm">Sair</button>
+            <button onClick={handleLogout} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm">Terminar Sessao</button>
           </div>
         </div>
       </header>

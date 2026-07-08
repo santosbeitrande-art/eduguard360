@@ -656,6 +656,9 @@ const AdminGlobalDashboard = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('eduguard_user');
+    localStorage.removeItem('eduguard_token');
+    void supabase.auth.signOut();
     navigate('/sistema');
   };
 
@@ -1106,7 +1109,7 @@ const AdminGlobalDashboard = () => {
               <Building2 className="w-4 h-4" /> Ver Escolas
             </button>
             <button onClick={handleLogout} className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
-              <LogOut className="w-4 h-4" /> Logout
+              <LogOut className="w-4 h-4" /> Terminar Sessao
             </button>
           </div>
         </div>

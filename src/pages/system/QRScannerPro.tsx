@@ -3,6 +3,7 @@ import QrScanner from 'qr-scanner/qr-scanner.min.js';
 import { saveStudentEntry } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { CheckCircle2, ScanLine, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Student {
   code: string;
@@ -11,6 +12,7 @@ interface Student {
 }
 
 const QRScannerPro = () => {
+  const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<QrScanner | null>(null);
   const isScanningRef = useRef(true);
@@ -20,6 +22,14 @@ const QRScannerPro = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [cameraReady, setCameraReady] = useState(false);
   const [scannerStatus, setScannerStatus] = useState('A iniciar scanner...');
+
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('eduguard_user');
+    localStorage.removeItem('eduguard_token');
+    void supabase.auth.signOut();
+    navigate('/sistema');
+  };
 
   const parseStudentPayload = (rawData: string): Student | null => {
     const trimmedData = rawData.trim();
@@ -201,6 +211,14 @@ const QRScannerPro = () => {
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 flex flex-col items-center">
       <div className="w-full max-w-md card overflow-hidden">
         <div className="border-b border-[#2e5a6e] p-6 text-center">
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={handleLogout}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Terminar Sessao
+            </button>
+          </div>
           <div className="w-16 h-16 bg-[#2ecc71]/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
              <ScanLine className="h-8 w-8 text-[#2ecc71]" />
           </div>
