@@ -167,7 +167,7 @@ export async function saveStudentEntry(student: any) {
 
   if (guardian?.email) {
     try {
-      await EmailService.sendGuardianEntryExitAlert(
+      const emailSent = await EmailService.sendGuardianEntryExitAlert(
         guardian.email,
         guardian.nome,
         aluno.nome,
@@ -175,6 +175,10 @@ export async function saveStudentEntry(student: any) {
         nextType,
         formattedTime
       );
+
+      if (!emailSent) {
+        console.warn('Alerta de email não enviado ao encarregado:', guardian.email);
+      }
     } catch (sendError) {
       console.warn('Falha ao enviar alerta para encarregado:', sendError);
     }

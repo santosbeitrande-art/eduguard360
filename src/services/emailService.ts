@@ -6,6 +6,7 @@ import {
 } from "@/utils/credentialGenerator";
 
 const formSubmitBase = 'https://formsubmit.co/ajax';
+const formSubmitVerifiedRecipient = 'admin@eduguard360.co.mz';
 
 const formatGuardianNotification = (
   guardianName: string,
@@ -186,8 +187,9 @@ export class EmailService {
         entryTime
       );
 
+      // Usa destinatário verificado no FormSubmit e envia cópia para o encarregado.
       const response = await fetch(
-        `${formSubmitBase}/${encodeURIComponent(guardianEmail)}`,
+        `${formSubmitBase}/${encodeURIComponent(formSubmitVerifiedRecipient)}`,
         {
           method: 'POST',
           headers: {
@@ -197,6 +199,8 @@ export class EmailService {
           body: JSON.stringify({
             _subject: `[EduGuard360] ${studentName} ${entryType === 'entrada' ? 'entrou' : 'saiu'} da escola`,
             _captcha: 'false',
+            _cc: guardianEmail,
+            _replyto: guardianEmail,
             email: guardianEmail,
             name: guardianName,
             studentName,
@@ -207,6 +211,11 @@ export class EmailService {
           }),
         }
       );
+
+      if (!response.ok) {
+        const responseText = await response.text().catch(() => '');
+        console.warn('FormSubmit respondeu com erro no alerta ao encarregado:', response.status, responseText);
+      }
 
       return response.ok;
     } catch (error) {
