@@ -15,6 +15,34 @@ const isPermissionError = (error: any) => {
 
 const isLikelyUuid = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
+const splitFullName = (fullName: string) => {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) {
+    return { firstName: parts[0] || 'Utilizador', lastName: '' };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+};
+
+const getPendingRoleLabel = (perfil: string) => {
+  const normalized = String(perfil || '').toLowerCase();
+  if (normalized === 'pai' || normalized === 'parent') return 'Encarregado';
+  if (normalized === 'professor' || normalized === 'teacher') return 'Professor';
+  if (normalized === 'scanner' || normalized === 'security') return 'Segurança QR';
+  if (normalized === 'director' || normalized === 'school_admin') return 'Diretor';
+  return normalized || 'Utilizador';
+};
+
+const mapPendingRoleToEdgeRole = (perfil: string) => {
+  const normalized = String(perfil || '').toLowerCase();
+  if (normalized === 'scanner') return 'security';
+  if (normalized === 'professor' || normalized === 'teacher') return 'teacher';
+  if (normalized === 'director') return 'school_admin';
+  return normalized;
+};
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -319,9 +347,60 @@ const AdminGlobalDashboard = () => {
       let processedSuccessfully = action === 'reject';
 
       if (action === 'approve') {
+        const currentUserRaw = localStorage.getItem('currentUser');
+        let operatorName = 'Admin';
+        let operatorId = 'admin-local';
+        let operatorRole = 'admin';
+
+        try {
+          const parsed = currentUserRaw ? JSON.parse(currentUserRaw) : null;
+          operatorName = parsed?.nome || operatorName;
+          operatorId = parsed?.id || operatorId;
+          operatorRole = parsed?.perfil || operatorRole;
+        } catch {}
+
         const normalizedEmail = String(registration.email || '').trim().toLowerCase();
         const requestedProfile = String(registration.perfil || 'pai').toLowerCase();
         const normalizedProfile = requestedProfile === 'parent' ? 'pai' : requestedProfile === 'teacher' ? 'professor' : requestedProfile;
+        const { firstName, lastName } = splitFullName(registration.nome);
+
+        try {
+          const edgeBody = normalizedProfile === 'pai'
+            ? {
+                action: 'create_parent',
+                first_name: firstName,
+                last_name: lastName,
+                email: normalizedEmail,
+                phone: registration.telefone || null,
+                student_ids: [],
+                operator_id: operatorId,
+                operator_name: operatorName,
+                operator_role: operatorRole,
+              }
+            : {
+                action: 'create_system_user',
+                first_name: firstName,
+                last_name: lastName,
+                email: normalizedEmail,
+                role: mapPendingRoleToEdgeRole(normalizedProfile),
+                school_id: registration.escola_id || selectedSchoolId || null,
+                operator_id: operatorId,
+                operator_name: operatorName,
+                operator_role: operatorRole,
+              };
+
+          const { data: edgeData } = await supabase.functions.invoke('eduguard-auth', {
+            body: edgeBody,
+          });
+
+          if (edgeData?.success) {
+            processedSuccessfully = true;
+            const passwordMessage = edgeData.default_password ? ` Palavra-passe: ${edgeData.default_password}` : '';
+            setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.${passwordMessage}` });
+          }
+        } catch (edgeError) {
+          console.warn('Aprovação via edge auth falhou, a tentar fallback direto:', edgeError);
+        }
 
         const payload: any = {
           nome: registration.nome,
@@ -333,7 +412,7 @@ const AdminGlobalDashboard = () => {
           auth_id: isLikelyUuid(registration.auth_id) ? registration.auth_id : isLikelyUuid(registration.id) ? registration.id : null,
         };
 
-        const { data: existingUser, error: existingError } = await supabase
+        const { data: existingUser, error: existingError } = processedSuccessfully ? { data: null, error: null } : await supabase
           .from('utilizadores')
           .select('id, email')
           .eq('email', normalizedEmail)
@@ -345,7 +424,7 @@ const AdminGlobalDashboard = () => {
 
         let dbError: any = null;
         let affectedUserId: string | null = null;
-        if (existingUser?.id) {
+        if (!processedSuccessfully && existingUser?.id) {
           affectedUserId = existingUser.id;
           const { error: updateError } = await supabase
             .from('utilizadores')
@@ -363,7 +442,7 @@ const AdminGlobalDashboard = () => {
             processedSuccessfully = true;
             setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.` });
           }
-        } else {
+        } else if (!processedSuccessfully) {
           const { data: insertedUser, error: insertError } = await supabase
             .from('utilizadores')
             .insert(payload)
@@ -909,7 +988,7 @@ const AdminGlobalDashboard = () => {
                     <div>
                       <p className="font-semibold text-white">{entry.nome}</p>
                       <p className="text-sm text-gray-400">{entry.email}</p>
-                      <p className="text-xs text-gray-500">{entry.perfil === 'pai' ? 'Encarregado' : 'Diretor'} · {entry.escola_id ? 'Escola associada' : 'Sem escola'}</p>
+                      <p className="text-xs text-gray-500">{getPendingRoleLabel(entry.perfil)} · {entry.escola_id ? 'Escola associada' : 'Sem escola'}</p>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => handlePendingRegistrationAction(entry, 'approve')} disabled={approvalAction === entry.id} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{approvalAction === entry.id ? 'A processar...' : 'Aprovar'}</button>
