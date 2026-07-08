@@ -202,19 +202,21 @@ const AdminGlobalDashboard = () => {
       });
     }
 
-    if (escolasData) {
+    if (escolasData && escolasData.length > 0) {
       setEscolas(escolasData);
       writeSchoolsCache(escolasData);
       if (!selectedSchoolId && escolasData.length) {
         setSelectedSchoolId(escolasData[0].id);
       }
-    } else if (escolasError) {
+    } else {
       const cachedSchools = readSchoolsCache();
       if (cachedSchools.length > 0) {
         setEscolas(cachedSchools);
         if (!selectedSchoolId) {
           setSelectedSchoolId(cachedSchools[0].id);
         }
+      } else if (escolasData && escolasData.length === 0 && !escolasError) {
+        setEscolas([]);
       }
     }
 
@@ -256,6 +258,15 @@ const AdminGlobalDashboard = () => {
       }
       setStudentsLoading(false);
       return;
+    }
+
+    if ((!alunosData || alunosData.length === 0)) {
+      const cached = getCachedStudentsForSchool(schoolId);
+      if (cached.length > 0) {
+        setStudents(cached);
+        setStudentsLoading(false);
+        return;
+      }
     }
 
     const guardianIds = Array.from(new Set((alunosData || []).map((student: any) => student.encarregado_id).filter(Boolean)));
@@ -490,10 +501,12 @@ const AdminGlobalDashboard = () => {
             setNotification({ type: 'success', message: `Registo já existia e foi validado para ${registration.nome}.` });
           } else if (isPermissionError(dbError)) {
             const approvedUsers = readLocalApprovedUsers();
+            const localPassword = String(registration.senha || '').trim() || `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
             const normalizedApproved = {
               ...registration,
               email: normalizedEmail,
               perfil: normalizedProfile,
+              senha: localPassword,
               status: 'active',
               is_active: true,
               approved_locally: true,
@@ -505,7 +518,7 @@ const AdminGlobalDashboard = () => {
             ];
             writeLocalApprovedUsers(nextApprovedUsers);
             processedSuccessfully = true;
-            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. O acesso já pode ser feito neste navegador.` });
+            setNotification({ type: 'success', message: `Registo aprovado localmente para ${registration.nome}. Palavra-passe temporária: ${localPassword}` });
           } else {
             console.error('Falha ao aprovar registo pendente:', dbError);
             setNotification({ type: 'error', message: 'Não foi possível aprovar o registo na base de dados.' });

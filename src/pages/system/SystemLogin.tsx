@@ -27,6 +27,7 @@ type SchoolTrial = {
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
 const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
+const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -112,6 +113,20 @@ const readLocalApprovedUsers = (): any[] => {
   }
 };
 
+const readSchoolsCache = (): Array<{ id: string; nome: string }> => {
+  try {
+    const raw = localStorage.getItem(SCHOOLS_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSchoolsCache = (schools: Array<{ id: string; nome: string }>) => {
+  localStorage.setItem(SCHOOLS_CACHE_KEY, JSON.stringify(schools));
+};
+
 const SystemLoginContent = () => {
   const { t } = useLanguage();
   const { login: edgeLogin } = useSystemAuth();
@@ -142,9 +157,22 @@ const SystemLoginContent = () => {
       setLoadingSchools(true);
       try {
         const { data, error } = await supabase.from("escolas").select("id,nome").order("nome");
-        if (!error) setSchools((data || []) as Array<{ id: string; nome: string }>);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const fetchedSchools = (data || []) as Array<{ id: string; nome: string }>;
+          setSchools(fetchedSchools);
+          writeSchoolsCache(fetchedSchools);
+        } else {
+          const cachedSchools = readSchoolsCache();
+          if (cachedSchools.length > 0) {
+            setSchools(cachedSchools);
+          }
+        }
       } catch (err) {
         console.error(err);
+        const cachedSchools = readSchoolsCache();
+        if (cachedSchools.length > 0) {
+          setSchools(cachedSchools);
+        }
       } finally {
         setLoadingSchools(false);
       }
