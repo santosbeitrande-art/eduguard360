@@ -121,6 +121,7 @@ const AdminGlobalDashboard = () => {
   const [parentRequestAction, setParentRequestAction] = useState<string | null>(null);
   const [parentRequestDrafts, setParentRequestDrafts] = useState<Record<string, any>>({});
   const [parentRequestStatusFilter, setParentRequestStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'standby'>('all');
+  const [parentRequestTextFilter, setParentRequestTextFilter] = useState('');
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
   const [repairCandidates, setRepairCandidates] = useState<any[]>([]);
   const [repairLoading, setRepairLoading] = useState(false);
@@ -1390,8 +1391,20 @@ const AdminGlobalDashboard = () => {
   };
 
   const filteredParentStudentRequests = parentStudentRequests.filter((entry) => {
-    if (parentRequestStatusFilter === 'all') return true;
-    return String(entry?.status || '').toLowerCase() === parentRequestStatusFilter;
+    if (parentRequestStatusFilter !== 'all' && String(entry?.status || '').toLowerCase() !== parentRequestStatusFilter) {
+      return false;
+    }
+
+    const normalizedText = parentRequestTextFilter.trim().toLowerCase();
+    if (!normalizedText) return true;
+
+    const studentName = String(entry?.studentName || '').toLowerCase();
+    const guardianName = String(entry?.guardianName || '').toLowerCase();
+    const guardianEmail = String(entry?.guardianEmail || '').toLowerCase();
+
+    return studentName.includes(normalizedText)
+      || guardianName.includes(normalizedText)
+      || guardianEmail.includes(normalizedText);
   });
 
   const exportParentStudentRequestsCsv = () => {
@@ -1521,6 +1534,16 @@ const AdminGlobalDashboard = () => {
                   <button onClick={exportParentStudentRequestsCsv} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">Exportar CSV</button>
                   <button onClick={loadParentStudentRequests} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar</button>
                 </div>
+              </div>
+              <div className="mt-4">
+                <input
+                  type="text"
+                  value={parentRequestTextFilter}
+                  onChange={(e) => setParentRequestTextFilter(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                  placeholder="Procurar por nome do aluno, encarregado ou email"
+                  aria-label="Filtrar solicitações por texto"
+                />
               </div>
               <div className="mt-4 space-y-4">
                 {filteredParentStudentRequests.length === 0 ? (
