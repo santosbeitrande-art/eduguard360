@@ -348,15 +348,23 @@ const AdminGlobalDashboard = () => {
 
       if (action === 'approve') {
         const currentUserRaw = localStorage.getItem('currentUser');
+        const edgeUserRaw = localStorage.getItem('eduguard_user');
         let operatorName = 'Admin';
         let operatorId = 'admin-local';
-        let operatorRole = 'admin';
+        let operatorRole = 'super_admin';
 
         try {
           const parsed = currentUserRaw ? JSON.parse(currentUserRaw) : null;
           operatorName = parsed?.nome || operatorName;
           operatorId = parsed?.id || operatorId;
-          operatorRole = parsed?.perfil || operatorRole;
+          operatorRole = parsed?.perfil === 'admin' ? 'super_admin' : (parsed?.perfil || operatorRole);
+        } catch {}
+
+        try {
+          const edgeParsed = edgeUserRaw ? JSON.parse(edgeUserRaw) : null;
+          operatorName = edgeParsed?.name || operatorName;
+          operatorId = edgeParsed?.id || operatorId;
+          operatorRole = edgeParsed?.role || operatorRole;
         } catch {}
 
         const normalizedEmail = String(registration.email || '').trim().toLowerCase();
@@ -397,6 +405,8 @@ const AdminGlobalDashboard = () => {
             processedSuccessfully = true;
             const passwordMessage = edgeData.default_password ? ` Palavra-passe: ${edgeData.default_password}` : '';
             setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.${passwordMessage}` });
+          } else if (edgeData?.error) {
+            console.warn('Edge auth recusou aprovação:', edgeData.error);
           }
         } catch (edgeError) {
           console.warn('Aprovação via edge auth falhou, a tentar fallback direto:', edgeError);
