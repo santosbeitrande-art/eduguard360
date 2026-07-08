@@ -253,7 +253,26 @@ const SystemLogin = () => {
         }
 
         const fallbackPassword = String(domainUserByEmail?.senha || '');
-        if ((!authData?.user || authError) && domainUserByEmail?.id && fallbackPassword && fallbackPassword === normalizedPassword) {
+        const hasDomainUser = Boolean(domainUserByEmail?.id);
+        const hasStoredPassword = fallbackPassword.length > 0;
+
+        // Autonomous recovery path: if account exists in domain table but has no password yet,
+        // bootstrap it with the entered password and allow access for approved users.
+        if ((!authData?.user || authError) && hasDomainUser && !hasStoredPassword) {
+          const { error: setPasswordError } = await supabase
+            .from('utilizadores')
+            .update({ senha: normalizedPassword })
+            .eq('id', domainUserByEmail.id);
+
+          if (!setPasswordError) {
+            const didLogin = completeLogin({ ...domainUserByEmail, senha: normalizedPassword }, true);
+            if (didLogin) {
+              return;
+            }
+          }
+        }
+
+        if ((!authData?.user || authError) && hasDomainUser && hasStoredPassword && fallbackPassword === normalizedPassword) {
           const didLogin = completeLogin(domainUserByEmail, true);
           if (didLogin) {
             return;
