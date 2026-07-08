@@ -95,6 +95,11 @@ const isTrialActive = (trial: SchoolTrial | null): boolean => {
   return new Date(trial.validUntil).getTime() > Date.now();
 };
 
+const isAlreadyRegisteredError = (message: string): boolean => {
+  const text = message.toLowerCase();
+  return text.includes('already registered') || text.includes('already been registered') || text.includes('user already registered');
+};
+
 const SystemLogin = () => {
   const { t } = useLanguage();
   const [email, setEmail] = useState("");
@@ -143,17 +148,59 @@ const SystemLogin = () => {
     const normalizedPassword = password.trim();
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      let authData: any = null;
+      let authError: any = null;
+
+      const firstSignIn = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: normalizedPassword,
       });
 
-      if (error || !data.user) {
+      authData = firstSignIn.data;
+      authError = firstSignIn.error;
+
+      if (authError || !authData?.user) {
+        const { data: domainUserByEmail } = await supabase
+          .from("utilizadores")
+          .select("id, auth_id, status, is_active")
+          .eq("email", normalizedEmail)
+          .maybeSingle();
+
+        const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
+
+        if (canAutoProvisionAuth) {
+          const signUpAttempt = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password: normalizedPassword,
+            options: { data: { source: 'system-login-autoprovision' } }
+          });
+
+          const signUpErrorMessage = String(signUpAttempt.error?.message || '');
+          if (!signUpAttempt.error || isAlreadyRegisteredError(signUpErrorMessage)) {
+            const retrySignIn = await supabase.auth.signInWithPassword({
+              email: normalizedEmail,
+              password: normalizedPassword,
+            });
+
+            authData = retrySignIn.data;
+            authError = retrySignIn.error;
+          } else {
+            authError = signUpAttempt.error;
+          }
+        }
+      }
+
+      if (authError || !authData?.user) {
+        const authMessage = String(authError?.message || '').toLowerCase();
+        if (authMessage.includes('email not confirmed')) {
+          setErrorMessage('Email ainda não confirmado. Verifique a sua caixa de entrada para ativar a conta.');
+          return;
+        }
         setErrorMessage(t('sistema.erro_login'));
         return;
       }
 
-      const userId = data.user.id;
+      const userId = authData.user.id;
       
       // Buscar utilizador na tabela "utilizadores". Em bases antigas, auth_id pode estar vazio.
       const { data: userByAuth } = await supabase
@@ -335,7 +382,7 @@ const SystemLogin = () => {
         perfil: pendingUser.perfil,
         escola_id: pendingUser.escola_id,
         telefone: null,
-        senha: null
+        senha: normalizedPassword
       });
 
       const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
