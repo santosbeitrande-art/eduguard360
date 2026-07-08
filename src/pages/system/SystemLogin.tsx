@@ -127,6 +127,34 @@ const writeSchoolsCache = (schools: Array<{ id: string; nome: string }>) => {
   localStorage.setItem(SCHOOLS_CACHE_KEY, JSON.stringify(schools));
 };
 
+const readPendingRegistrations = (): any[] => {
+  try {
+    const raw = localStorage.getItem('eduguard_pending_registrations');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const buildFallbackSchoolsFromLocalSources = (): Array<{ id: string; nome: string }> => {
+  const fromCache = readSchoolsCache();
+  if (fromCache.length > 0) return fromCache;
+
+  const ids = new Set<string>();
+  for (const item of readPendingRegistrations()) {
+    if (item?.escola_id) ids.add(String(item.escola_id));
+  }
+  for (const item of readLocalApprovedUsers()) {
+    if (item?.escola_id) ids.add(String(item.escola_id));
+  }
+
+  return Array.from(ids).map((id) => ({
+    id,
+    nome: `Escola ${id.slice(0, 8)}`,
+  }));
+};
+
 const SystemLoginContent = () => {
   const { t } = useLanguage();
   const { login: edgeLogin } = useSystemAuth();
@@ -162,16 +190,16 @@ const SystemLoginContent = () => {
           setSchools(fetchedSchools);
           writeSchoolsCache(fetchedSchools);
         } else {
-          const cachedSchools = readSchoolsCache();
-          if (cachedSchools.length > 0) {
-            setSchools(cachedSchools);
+          const fallbackSchools = buildFallbackSchoolsFromLocalSources();
+          if (fallbackSchools.length > 0) {
+            setSchools(fallbackSchools);
           }
         }
       } catch (err) {
         console.error(err);
-        const cachedSchools = readSchoolsCache();
-        if (cachedSchools.length > 0) {
-          setSchools(cachedSchools);
+        const fallbackSchools = buildFallbackSchoolsFromLocalSources();
+        if (fallbackSchools.length > 0) {
+          setSchools(fallbackSchools);
         }
       } finally {
         setLoadingSchools(false);

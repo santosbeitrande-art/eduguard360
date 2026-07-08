@@ -371,6 +371,9 @@ const AdminGlobalDashboard = () => {
     setApprovalAction(registration.id);
     try {
       let processedSuccessfully = action === 'reject';
+      let approvedPassword: string | null = null;
+      let approvedProfile: string | null = null;
+      let approvedEmail: string | null = null;
 
       if (action === 'approve') {
         const currentUserRaw = localStorage.getItem('currentUser');
@@ -396,6 +399,9 @@ const AdminGlobalDashboard = () => {
         const normalizedEmail = String(registration.email || '').trim().toLowerCase();
         const requestedProfile = String(registration.perfil || 'pai').toLowerCase();
         const normalizedProfile = requestedProfile === 'parent' ? 'pai' : requestedProfile === 'teacher' ? 'professor' : requestedProfile;
+        approvedProfile = normalizedProfile;
+        approvedEmail = normalizedEmail;
+        approvedPassword = String(registration.senha || '').trim() || null;
         const { firstName, lastName } = splitFullName(registration.nome);
 
         try {
@@ -429,6 +435,7 @@ const AdminGlobalDashboard = () => {
 
           if (edgeData?.success) {
             processedSuccessfully = true;
+            approvedPassword = String(edgeData.default_password || approvedPassword || '').trim() || approvedPassword;
             const passwordMessage = edgeData.default_password ? ` Palavra-passe: ${edgeData.default_password}` : '';
             setNotification({ type: 'success', message: `Registo aprovado para ${registration.nome}.${passwordMessage}` });
           } else if (edgeData?.error) {
@@ -502,6 +509,7 @@ const AdminGlobalDashboard = () => {
           } else if (isPermissionError(dbError)) {
             const approvedUsers = readLocalApprovedUsers();
             const localPassword = String(registration.senha || '').trim() || `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
+            approvedPassword = localPassword;
             const normalizedApproved = {
               ...registration,
               email: normalizedEmail,
@@ -539,6 +547,26 @@ const AdminGlobalDashboard = () => {
               console.warn('Não foi possível ativar o utilizador aprovado:', activateError);
             }
           }
+        }
+
+        if (processedSuccessfully && approvedEmail && approvedProfile) {
+          const approvedUsers = readLocalApprovedUsers();
+          const effectivePassword = String(approvedPassword || '').trim() || `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
+          const normalizedApproved = {
+            ...registration,
+            email: approvedEmail,
+            perfil: approvedProfile,
+            senha: effectivePassword,
+            status: 'active',
+            is_active: true,
+            approved_locally: true,
+            approved_at: new Date().toISOString(),
+          };
+          const nextApprovedUsers = [
+            normalizedApproved,
+            ...approvedUsers.filter((item) => String(item.email || '').trim().toLowerCase() !== approvedEmail),
+          ];
+          writeLocalApprovedUsers(nextApprovedUsers);
         }
       } else {
         setNotification({ type: 'success', message: `Registo rejeitado para ${registration.nome}.` });
