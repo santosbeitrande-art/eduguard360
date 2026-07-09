@@ -98,6 +98,12 @@ const getStudentRequestStatusLabel = (status: string) => {
   return 'Em revisão';
 };
 
+const isDemoIdentity = (email: unknown, name?: unknown) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedName = String(name || '').trim().toLowerCase();
+  return normalizedEmail.includes('demo') || normalizedName.includes('demo');
+};
+
 const readRepairWorkflow = (): Record<string, { status: string; note?: string; updated_at: string }> => {
   try {
     const raw = localStorage.getItem(REPAIR_WORKFLOW_KEY);
@@ -398,6 +404,12 @@ const AdminGlobalDashboard = () => {
     const draft = parentRequestDrafts[requestId];
     if (!draft) return;
 
+    const source = readParentStudentRequests().find((entry) => entry.id === requestId);
+    if (source && isDemoIdentity(source.guardianEmail, source.guardianName)) {
+      setNotification({ type: 'success', message: 'Pedido demo é apenas ilustrativo e não recebe alterações operacionais.' });
+      return;
+    }
+
     const updated = readParentStudentRequests().map((entry) => {
       if (entry.id !== requestId) return entry;
       return {
@@ -423,6 +435,11 @@ const AdminGlobalDashboard = () => {
       const target = existingRequests.find((entry) => entry.id === requestId);
       if (!target) {
         setNotification({ type: 'error', message: 'Solicitação não encontrada.' });
+        return;
+      }
+
+      if (isDemoIdentity(target.guardianEmail, target.guardianName)) {
+        setNotification({ type: 'success', message: 'Pedido demo é apenas ilustrativo e não executa aprovação/rejeição real.' });
         return;
       }
 
@@ -651,6 +668,7 @@ const AdminGlobalDashboard = () => {
       const candidates = (data || []).filter((user: any) => {
         const perfil = String(user?.perfil || '').toLowerCase();
         if (!perfil || perfil === 'admin') return false;
+        if (isDemoIdentity(user?.email, user?.nome)) return false;
 
         const workflowEntry = workflow[String(user?.id || '')];
         if (workflowEntry?.status === 'standby') return false;
@@ -1743,6 +1761,7 @@ const AdminGlobalDashboard = () => {
                   const canApprove = normalizedStatus !== 'approved';
                   const canReject = normalizedStatus !== 'rejected';
                   const canStandby = normalizedStatus !== 'standby';
+                  const isDemoRequest = isDemoIdentity(entry?.guardianEmail, entry?.guardianName);
 
                   return (
                     <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -1800,12 +1819,15 @@ const AdminGlobalDashboard = () => {
                       {entry.admin_note && (
                         <p className="mt-1 text-xs text-amber-200">Nota: {entry.admin_note}</p>
                       )}
+                      {isDemoRequest && (
+                        <p className="mt-1 text-xs text-amber-200">Pedido demo: sem efeitos operacionais.</p>
+                      )}
 
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() => handleSaveParentStudentRequestChanges(entry.id)}
-                          disabled={isProcessing}
+                          disabled={isProcessing || isDemoRequest}
                           className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15 disabled:opacity-50"
                         >
                           Guardar Alteracoes
@@ -1813,7 +1835,7 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'approve')}
-                          disabled={isProcessing || !canApprove}
+                          disabled={isProcessing || isDemoRequest || !canApprove}
                           className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
                           {isProcessing ? 'A processar...' : 'Aprovar'}
@@ -1821,7 +1843,7 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'standby')}
-                          disabled={isProcessing || !canStandby}
+                          disabled={isProcessing || isDemoRequest || !canStandby}
                           className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                         >
                           Stand by
@@ -1829,7 +1851,7 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'reject')}
-                          disabled={isProcessing || !canReject}
+                          disabled={isProcessing || isDemoRequest || !canReject}
                           className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                         >
                           Rejeitar
