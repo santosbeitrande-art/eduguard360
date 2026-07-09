@@ -613,7 +613,8 @@ const AdminGlobalDashboard = () => {
         });
 
         await loadData();
-        if (activeSchoolId && selectedSchoolId === activeSchoolId) {
+        if (activeSchoolId) {
+          setSelectedSchoolId(activeSchoolId);
           await loadStudents(activeSchoolId);
         }
         return;
