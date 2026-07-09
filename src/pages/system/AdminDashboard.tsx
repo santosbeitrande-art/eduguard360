@@ -135,7 +135,7 @@ const AdminGlobalDashboard = () => {
   const [parentStudentRequests, setParentStudentRequests] = useState<any[]>([]);
   const [parentRequestAction, setParentRequestAction] = useState<string | null>(null);
   const [parentRequestDrafts, setParentRequestDrafts] = useState<Record<string, any>>({});
-  const [parentRequestStatusFilter, setParentRequestStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'standby'>('all');
+  const [parentRequestStatusFilter, setParentRequestStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'standby'>('pending');
   const [parentRequestTextFilter, setParentRequestTextFilter] = useState('');
   const [approvalAction, setApprovalAction] = useState<string | null>(null);
   const [repairCandidates, setRepairCandidates] = useState<any[]>([]);
@@ -587,6 +587,7 @@ const AdminGlobalDashboard = () => {
         );
 
         saveParentStudentRequestsAndRefresh(approvedRequests);
+        setParentRequestStatusFilter('pending');
         setNotification({
           type: 'success',
           message: localOnlyMode
@@ -618,6 +619,7 @@ const AdminGlobalDashboard = () => {
       );
 
       saveParentStudentRequestsAndRefresh(updatedRequests);
+      setParentRequestStatusFilter('pending');
       setNotification({
         type: 'success',
         message: action === 'reject'
@@ -1737,6 +1739,10 @@ const AdminGlobalDashboard = () => {
                 ) : filteredParentStudentRequests.map((entry) => {
                   const draft = parentRequestDrafts[entry.id] || {};
                   const isProcessing = parentRequestAction === entry.id;
+                  const normalizedStatus = String(entry?.status || '').toLowerCase();
+                  const canApprove = normalizedStatus !== 'approved';
+                  const canReject = normalizedStatus !== 'rejected';
+                  const canStandby = normalizedStatus !== 'standby';
 
                   return (
                     <div key={entry.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -1807,7 +1813,7 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'approve')}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !canApprove}
                           className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
                           {isProcessing ? 'A processar...' : 'Aprovar'}
@@ -1815,7 +1821,7 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'standby')}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !canStandby}
                           className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                         >
                           Stand by
@@ -1823,12 +1829,15 @@ const AdminGlobalDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'reject')}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !canReject}
                           className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                         >
                           Rejeitar
                         </button>
                       </div>
+                      {(normalizedStatus === 'approved' || normalizedStatus === 'rejected') && (
+                        <p className="mt-3 text-xs text-gray-400">Solicitação finalizada. Use o filtro para consultar decisões já concluídas.</p>
+                      )}
                     </div>
                   );
                 })}
