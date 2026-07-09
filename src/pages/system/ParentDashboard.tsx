@@ -73,6 +73,10 @@ const ParentDashboardContent: React.FC = () => {
   // Password change
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
+  const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+  const normalizedName = String(user?.name || '').trim().toLowerCase();
+  const isDemoAccount = normalizedEmail.includes('demo') || normalizedName.includes('demo');
+
   useEffect(() => {
     const legacyAuth = localStorage.getItem('eduguard_user') || localStorage.getItem('currentUser');
     if (!isLoading && !isAuthenticated && !legacyAuth) navigate('/sistema/login');
@@ -264,6 +268,11 @@ const ParentDashboardContent: React.FC = () => {
   };
 
   const saveProfile = async () => {
+    if (isDemoAccount) {
+      setSettingsMessage('Conta demo: definições apenas para ilustração, sem gravação.');
+      return;
+    }
+
     setSavingSettings(true);
     setSettingsMessage('');
     try {
@@ -291,6 +300,11 @@ const ParentDashboardContent: React.FC = () => {
   };
 
   const saveNotificationSettings = async () => {
+    if (isDemoAccount) {
+      setSettingsMessage('Conta demo: definições apenas para ilustração, sem gravação.');
+      return;
+    }
+
     setSavingSettings(true);
     setSettingsMessage('');
     try {
@@ -312,6 +326,11 @@ const ParentDashboardContent: React.FC = () => {
   };
 
   const handleCreateStudentRequest = () => {
+    if (isDemoAccount) {
+      setSettingsMessage('Conta demo não pode enviar pedidos de cadastro para validação do admin.');
+      return;
+    }
+
     if (!requestForm.nome.trim() || !requestForm.classe.trim()) {
       setSettingsMessage('Preencha o nome e a classe/turma do educando.');
       return;
@@ -540,6 +559,11 @@ const ParentDashboardContent: React.FC = () => {
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
               <h3 className="text-lg font-semibold text-white mb-1">Cadastrar Novo Educando</h3>
               <p className="text-sm text-gray-400 mb-4">O administrador vai validar, rejeitar, modificar ou deixar em stand by o pedido.</p>
+              {isDemoAccount && (
+                <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                  Conta demo: este formulário é apenas ilustrativo e não envia pedidos reais.
+                </div>
+              )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -548,6 +572,7 @@ const ParentDashboardContent: React.FC = () => {
                     type="text"
                     value={requestForm.nome}
                     onChange={(e) => setRequestForm({ ...requestForm, nome: e.target.value })}
+                    disabled={isDemoAccount}
                     placeholder="Ex: João Silva"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
                   />
@@ -558,6 +583,7 @@ const ParentDashboardContent: React.FC = () => {
                     type="text"
                     value={requestForm.classe}
                     onChange={(e) => setRequestForm({ ...requestForm, classe: e.target.value })}
+                    disabled={isDemoAccount}
                     placeholder="5a Classe - Turma A"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
                   />
@@ -568,6 +594,7 @@ const ParentDashboardContent: React.FC = () => {
                     type="tel"
                     value={requestForm.telefone}
                     onChange={(e) => setRequestForm({ ...requestForm, telefone: e.target.value })}
+                    disabled={isDemoAccount}
                     placeholder="+258 84 XXX XXXX"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
                   />
@@ -578,6 +605,7 @@ const ParentDashboardContent: React.FC = () => {
                     type="text"
                     value={requestForm.qrcode_id}
                     onChange={(e) => setRequestForm({ ...requestForm, qrcode_id: e.target.value })}
+                    disabled={isDemoAccount}
                     placeholder="Auto-gerado se vazio"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
                   />
@@ -586,7 +614,8 @@ const ParentDashboardContent: React.FC = () => {
 
               <button
                 onClick={handleCreateStudentRequest}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#2ecc71] px-5 py-3 font-semibold text-white hover:bg-[#27ae60]"
+                disabled={isDemoAccount}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#2ecc71] px-5 py-3 font-semibold text-white hover:bg-[#27ae60] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Enviar para Validacao
               </button>
@@ -626,6 +655,11 @@ const ParentDashboardContent: React.FC = () => {
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <div className="max-w-2xl space-y-6">
+            {isDemoAccount && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Conta demo: alterações em definições são apenas de demonstração e não produzem efeitos reais.
+              </div>
+            )}
             {/* Profile */}
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
               <div className="flex items-center justify-between mb-4">
@@ -634,7 +668,7 @@ const ParentDashboardContent: React.FC = () => {
                   Perfil
                 </h3>
                 {!editingProfile && (
-                  <button onClick={() => setEditingProfile(true)} className="text-[#2ecc71] text-sm hover:underline">Editar</button>
+                  <button onClick={() => !isDemoAccount && setEditingProfile(true)} disabled={isDemoAccount} className="text-[#2ecc71] text-sm hover:underline disabled:cursor-not-allowed disabled:opacity-60">Editar</button>
                 )}
               </div>
               
@@ -642,12 +676,12 @@ const ParentDashboardContent: React.FC = () => {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm text-gray-300 mb-1">Nome completo</label>
-                    <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)}
+                    <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Nome completo" title="Nome completo"
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]" />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-300 mb-1">Email</label>
-                    <input type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)}
+                    <input type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder="Email" title="Email"
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]" />
                   </div>
                   <div>
@@ -656,7 +690,7 @@ const ParentDashboardContent: React.FC = () => {
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]" />
                   </div>
                   <div className="flex gap-3">
-                    <button onClick={saveProfile} disabled={savingSettings} className="flex-1 py-3 bg-[#2ecc71] hover:bg-[#27ae60] text-white font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    <button onClick={saveProfile} disabled={savingSettings || isDemoAccount} className="flex-1 py-3 bg-[#2ecc71] hover:bg-[#27ae60] text-white font-semibold rounded-lg transition-colors disabled:opacity-50">
                       {savingSettings ? 'A guardar...' : 'Guardar'}
                     </button>
                     <button onClick={() => setEditingProfile(false)} className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors">Cancelar</button>
@@ -700,7 +734,7 @@ const ParentDashboardContent: React.FC = () => {
                     </div>
                     <div><p className="text-white font-medium">Email</p><p className="text-gray-400 text-sm">Receber notificações por email</p></div>
                   </div>
-                  <button onClick={() => setEmailEnabled(!emailEnabled)}
+                  <button onClick={() => !isDemoAccount && setEmailEnabled(!emailEnabled)} disabled={isDemoAccount} title="Ativar ou desativar notificações por email"
                     className={`relative w-14 h-7 rounded-full transition-colors ${emailEnabled ? 'bg-[#2ecc71]' : 'bg-gray-600'}`}>
                     <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${emailEnabled ? 'translate-x-7' : 'translate-x-0.5'}`}></div>
                   </button>
@@ -715,7 +749,7 @@ const ParentDashboardContent: React.FC = () => {
                       </div>
                       <div><p className="text-white font-medium">SMS</p><p className="text-gray-400 text-sm">Requer autorização do administrador</p></div>
                     </div>
-                    <button onClick={() => setSmsEnabled(!smsEnabled)}
+                    <button onClick={() => !isDemoAccount && setSmsEnabled(!smsEnabled)} disabled={isDemoAccount} title="Ativar ou desativar notificações por SMS"
                       className={`relative w-14 h-7 rounded-full transition-colors ${smsEnabled ? 'bg-[#2ecc71]' : 'bg-gray-600'}`}>
                       <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${smsEnabled ? 'translate-x-7' : 'translate-x-0.5'}`}></div>
                     </button>
@@ -723,7 +757,7 @@ const ParentDashboardContent: React.FC = () => {
                   {smsEnabled && (
                     <div>
                       <label className="block text-sm text-gray-300 mb-1">Número para SMS</label>
-                      <input type="tel" value={smsPhone} onChange={(e) => setSmsPhone(e.target.value)} placeholder="+258 84 XXX XXXX"
+                      <input type="tel" value={smsPhone} onChange={(e) => setSmsPhone(e.target.value)} disabled={isDemoAccount} placeholder="+258 84 XXX XXXX"
                         className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]" />
                       <p className="text-yellow-400/80 text-xs mt-1">Nota: O SMS só será enviado quando o administrador activar este serviço globalmente.</p>
                     </div>
@@ -736,7 +770,7 @@ const ParentDashboardContent: React.FC = () => {
                   </div>
                 )}
 
-                <button onClick={saveNotificationSettings} disabled={savingSettings}
+                <button onClick={saveNotificationSettings} disabled={savingSettings || isDemoAccount}
                   className="w-full py-3 bg-[#2ecc71] hover:bg-[#27ae60] text-white font-semibold rounded-lg transition-colors disabled:opacity-50">
                   {savingSettings ? 'A guardar...' : 'Guardar Definições de Notificação'}
                 </button>

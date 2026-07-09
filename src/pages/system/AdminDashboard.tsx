@@ -378,6 +378,12 @@ const AdminGlobalDashboard = () => {
     setParentRequestDrafts(drafts);
   };
 
+  const saveParentStudentRequestsAndRefresh = (items: any[]) => {
+    writeParentStudentRequests(items);
+    const sorted = [...items].sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+    setParentStudentRequests(sorted);
+  };
+
   const updateParentStudentRequestDraft = (requestId: string, patch: any) => {
     setParentRequestDrafts((current) => ({
       ...current,
@@ -406,8 +412,7 @@ const AdminGlobalDashboard = () => {
       };
     });
 
-    writeParentStudentRequests(updated);
-    loadParentStudentRequests();
+    saveParentStudentRequestsAndRefresh(updated);
     setNotification({ type: 'success', message: 'Solicitação atualizada com sucesso.' });
   };
 
@@ -581,8 +586,7 @@ const AdminGlobalDashboard = () => {
             : entry
         );
 
-        writeParentStudentRequests(approvedRequests);
-        loadParentStudentRequests();
+        saveParentStudentRequestsAndRefresh(approvedRequests);
         setNotification({
           type: 'success',
           message: localOnlyMode
@@ -613,8 +617,7 @@ const AdminGlobalDashboard = () => {
           : entry
       );
 
-      writeParentStudentRequests(updatedRequests);
-      loadParentStudentRequests();
+      saveParentStudentRequestsAndRefresh(updatedRequests);
       setNotification({
         type: 'success',
         message: action === 'reject'
@@ -1587,6 +1590,8 @@ const AdminGlobalDashboard = () => {
       || guardianEmail.includes(normalizedText);
   });
 
+  const standbyParentStudentRequests = parentStudentRequests.filter((entry) => String(entry?.status || '').toLowerCase() === 'standby');
+
   const exportParentStudentRequestsCsv = () => {
     const headers = [
       'Estado',
@@ -1715,6 +1720,7 @@ const AdminGlobalDashboard = () => {
                   <button onClick={loadParentStudentRequests} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar</button>
                 </div>
               </div>
+              <p className="mt-2 text-xs text-gray-500">Para consultar itens em espera, use o filtro de estado "Stand by" ou a lista rápida abaixo.</p>
               <div className="mt-4">
                 <input
                   type="text"
@@ -1791,6 +1797,7 @@ const AdminGlobalDashboard = () => {
 
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
+                          type="button"
                           onClick={() => handleSaveParentStudentRequestChanges(entry.id)}
                           disabled={isProcessing}
                           className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15 disabled:opacity-50"
@@ -1798,6 +1805,7 @@ const AdminGlobalDashboard = () => {
                           Guardar Alteracoes
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'approve')}
                           disabled={isProcessing}
                           className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
@@ -1805,6 +1813,7 @@ const AdminGlobalDashboard = () => {
                           {isProcessing ? 'A processar...' : 'Aprovar'}
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'standby')}
                           disabled={isProcessing}
                           className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
@@ -1812,6 +1821,7 @@ const AdminGlobalDashboard = () => {
                           Stand by
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleParentStudentRequestAction(entry.id, 'reject')}
                           disabled={isProcessing}
                           className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
@@ -1822,6 +1832,25 @@ const AdminGlobalDashboard = () => {
                     </div>
                   );
                 })}
+              </div>
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-white">Consulta Rápida: Stand by</h3>
+                  <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300">{standbyParentStudentRequests.length}</span>
+                </div>
+                {standbyParentStudentRequests.length === 0 ? (
+                  <p className="text-xs text-gray-400">Nenhuma solicitação em stand by no momento.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {standbyParentStudentRequests.slice(0, 5).map((entry) => (
+                      <div key={`standby-${entry.id}`} className="rounded-xl border border-white/10 bg-[#03121e] p-3">
+                        <p className="text-sm font-semibold text-white">{entry.studentName || 'Sem nome'}</p>
+                        <p className="text-xs text-gray-400">{entry.guardianName || 'Sem encarregado'} · {entry.guardianEmail || 'Sem email'}</p>
+                        <p className="text-xs text-gray-500">Atualizado: {entry.updated_at ? new Date(entry.updated_at).toLocaleString('pt-MZ') : 'N/A'}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="card bg-[#081825] border border-white/10 p-6">
