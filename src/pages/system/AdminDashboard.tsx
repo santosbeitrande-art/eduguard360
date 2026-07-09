@@ -671,7 +671,8 @@ const AdminGlobalDashboard = () => {
         if (isDemoIdentity(user?.email, user?.nome)) return false;
 
         const workflowEntry = workflow[String(user?.id || '')];
-        if (workflowEntry?.status === 'standby') return false;
+        const workflowStatus = String(workflowEntry?.status || '').toLowerCase();
+        if (workflowStatus === 'standby' || workflowStatus === 'validated' || workflowStatus === 'repaired') return false;
 
         const hasPassword = String(user?.senha || '').trim().length > 0;
         const hasAuthId = isLikelyUuid(user?.auth_id);
@@ -908,6 +909,14 @@ const AdminGlobalDashboard = () => {
       const nextLog = [newLogItem, ...credsLog].slice(0, 20);
       writeGeneratedCredentialsLog(nextLog);
       setRecentCredentials(nextLog);
+
+      const workflow = readRepairWorkflow();
+      workflow[String(user.id)] = {
+        status: 'repaired',
+        note: 'Conta reparada e removida da fila de reparação.',
+        updated_at: new Date().toISOString(),
+      };
+      writeRepairWorkflow(workflow);
 
       setNotification({ type: 'success', message: `Conta reparada para ${user.nome || user.email}. Palavra-passe temporária gerada.` });
       await loadRepairCandidates();
