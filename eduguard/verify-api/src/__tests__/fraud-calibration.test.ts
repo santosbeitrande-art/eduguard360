@@ -6,6 +6,7 @@ import path from 'path';
 import { analyzeDocument } from '../forensic';
 import { analyzeCaseDocuments } from '../document_intelligence';
 import { evaluateFraudRisk } from '../risk';
+import { applyCalibrationToTrust, buildCalibrationProfile } from '../calibration';
 
 type FixtureCase = {
   id: string;
@@ -47,6 +48,10 @@ test('fraud calibration fixtures keep false negatives low', () => {
     const forensic = analyzeDocument(filePath, fixture.text);
     const contextual = { found: { domains: [], emails: [] }, checks: [] };
     const risk = evaluateFraudRisk(forensic, contextual);
+    assert.ok(typeof (risk as any).riskScore === 'number', `Expected numeric riskScore for ${fixture.id}`);
+    assert.ok((risk as any).riskScore >= 0 && (risk as any).riskScore <= 100, `Invalid riskScore for ${fixture.id}: ${(risk as any).riskScore}`);
+    assert.ok(typeof (risk as any).confidence === 'number', `Expected numeric confidence for ${fixture.id}`);
+    assert.ok((risk as any).confidence >= 0 && (risk as any).confidence <= 99, `Invalid confidence for ${fixture.id}: ${(risk as any).confidence}`);
 
     if (fixture.label === 'fraud') {
       if (risk.likelyFraud) {
@@ -137,4 +142,71 @@ test('cross-document consistency detects fraudulent dossier mismatches', () => {
   assert.ok(codes.includes('name-mismatch'), 'Expected name-mismatch indicator');
   assert.ok(codes.includes('nuit-mismatch'), 'Expected nuit-mismatch indicator');
   assert.ok(result.score <= 60, `Expected low case score after mismatches, got ${result.score}`);
+});
+
+test('company training calibration shifts decision boundaries with sufficient examples', () => {
+  const trainingExamples = [
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 28 } },
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 33 } },
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 41 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 78 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 84 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 88 } }
+  ] as any;
+
+  const profile = buildCalibrationProfile(trainingExamples, 'comp-a');
+  assert.equal(profile.enabled, true, 'Expected profile to be enabled with enough examples');
+  assert.ok(profile.threshold >= 45 && profile.threshold <= 70, `Unexpected threshold ${profile.threshold}`);
+
+  const likelyLegit = applyCalibrationToTrust({
+    authenticityPercentage: 83,
+    likelyFraud: true,
+    riskLevel: 'medium',
+    riskScore: 58,
+    confidence: 64,
+    indicators: [{ code: 'weak-context', severity: 'low', reason: 'No strong context evidence.' }],
+    fraudReasons: ['No strong context evidence.']
+  }, profile);
+  assert.equal(likelyLegit.likelyFraud, false, 'Calibration should reduce false positive on high-score sample');
+
+  const likelyFraud = applyCalibrationToTrust({
+    authenticityPercentage: 37,
+    likelyFraud: false,
+    riskLevel: 'low',
+    riskScore: 32,
+    confidence: 52,
+    indicators: [{ code: 'text-template', severity: 'medium', reason: 'Template-like content.' }],
+    fraudReasons: ['Template-like content.']
+  }, profile);
+  assert.equal(likelyFraud.likelyFraud, true, 'Calibration should reduce false negative on low-score sample');
+});
+
+test('disabled calibration profile preserves trust decision for non-admin flow', () => {
+  const profile = {
+    enabled: false,
+    companyId: 'comp-z',
+    sampleSize: 0,
+    fraudCount: 0,
+    authenticCount: 0,
+    fraudMean: null,
+    authenticMean: null,
+    threshold: 55,
+    margin: 7,
+    confidence: 0,
+    reason: 'admin-access-required'
+  } as const;
+
+  const trust = applyCalibrationToTrust({
+    authenticityPercentage: 61,
+    likelyFraud: false,
+    riskLevel: 'low',
+    riskScore: 34,
+    confidence: 58,
+    indicators: [],
+    fraudReasons: []
+  }, profile as any);
+
+  assert.equal(trust.likelyFraud, false);
+  assert.equal(trust.riskScore, 34);
+  assert.equal(trust.calibration.reason, 'admin-access-required');
 });
