@@ -9,6 +9,7 @@ const LOCAL_SCHOOL_ID = 'local-school-default';
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
+const REPAIR_WORKFLOW_KEY = 'eduguard_repair_workflow';
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -97,6 +98,20 @@ const getStudentRequestStatusLabel = (status: string) => {
   return 'Em revisão';
 };
 
+const readRepairWorkflow = (): Record<string, { status: string; note?: string; updated_at: string }> => {
+  try {
+    const raw = localStorage.getItem(REPAIR_WORKFLOW_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeRepairWorkflow = (items: Record<string, { status: string; note?: string; updated_at: string }>) => {
+  localStorage.setItem(REPAIR_WORKFLOW_KEY, JSON.stringify(items));
+};
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -127,6 +142,7 @@ const AdminGlobalDashboard = () => {
   const [repairLoading, setRepairLoading] = useState(false);
   const [repairAction, setRepairAction] = useState<string | null>(null);
   const [repairPasswords, setRepairPasswords] = useState<Record<string, string>>({});
+  const [repairDrafts, setRepairDrafts] = useState<Record<string, any>>({});
   const [recentCredentials, setRecentCredentials] = useState<any[]>([]);
   const [movementSearch, setMovementSearch] = useState('');
   const [movementClassFilter, setMovementClassFilter] = useState('all');
@@ -616,6 +632,7 @@ const AdminGlobalDashboard = () => {
   const loadRepairCandidates = async () => {
     setRepairLoading(true);
     try {
+      const workflow = readRepairWorkflow();
       const { data, error } = await supabase
         .from('utilizadores')
         .select('*')
@@ -630,6 +647,9 @@ const AdminGlobalDashboard = () => {
         const perfil = String(user?.perfil || '').toLowerCase();
         if (!perfil || perfil === 'admin') return false;
 
+        const workflowEntry = workflow[String(user?.id || '')];
+        if (workflowEntry?.status === 'standby') return false;
+
         const hasPassword = String(user?.senha || '').trim().length > 0;
         const hasAuthId = isLikelyUuid(user?.auth_id);
         const status = String(user?.status || '').toLowerCase();
@@ -639,6 +659,17 @@ const AdminGlobalDashboard = () => {
       });
 
       setRepairCandidates(candidates);
+      const drafts: Record<string, any> = {};
+      for (const entry of candidates) {
+        drafts[entry.id] = {
+          nome: entry.nome || '',
+          email: entry.email || '',
+          perfil: entry.perfil || '',
+          telefone: entry.telefone || '',
+          senha: entry.senha || '',
+        };
+      }
+      setRepairDrafts(drafts);
     } catch (error) {
       console.error('Falha inesperada ao preparar reparações:', error);
     } finally {
@@ -646,13 +677,159 @@ const AdminGlobalDashboard = () => {
     }
   };
 
+  const updateRepairDraft = (userId: string, patch: any) => {
+    setRepairDrafts((current) => ({
+      ...current,
+      [userId]: {
+        ...(current[userId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSaveRepairCorrections = async (user: any) => {
+    const draft = repairDrafts[user.id] || {};
+    const nextName = String(draft.nome || user.nome || '').trim();
+    const nextEmail = String(draft.email || user.email || '').trim().toLowerCase();
+    const nextProfile = String(draft.perfil || user.perfil || '').trim().toLowerCase();
+    const nextPhone = String(draft.telefone || user.telefone || '').trim() || null;
+    const nextPassword = String(draft.senha || user.senha || '').trim() || null;
+
+    if (!nextName || !nextEmail || !nextProfile) {
+      setNotification({ type: 'error', message: 'Preencha nome, email e perfil para guardar correções.' });
+      return;
+    }
+
+    setRepairAction(user.id);
+    try {
+      const payload: any = {
+        nome: nextName,
+        email: nextEmail,
+        perfil: nextProfile,
+        telefone: nextPhone,
+      };
+      if (nextPassword) payload.senha = nextPassword;
+
+      const { error } = await supabase
+        .from('utilizadores')
+        .update(payload)
+        .eq('id', user.id);
+
+      if (error && !isPermissionError(error)) {
+        throw error;
+      }
+
+      const approvedUsers = readLocalApprovedUsers();
+      const nextApprovedUsers = [
+        {
+          ...user,
+          ...payload,
+          senha: nextPassword,
+          approved_locally: true,
+          approved_at: new Date().toISOString(),
+        },
+        ...approvedUsers.filter((item) => String(item?.email || '').trim().toLowerCase() !== nextEmail),
+      ];
+      writeLocalApprovedUsers(nextApprovedUsers);
+
+      setNotification({ type: 'success', message: `Correções guardadas para ${nextName}.` });
+      await loadRepairCandidates();
+    } catch (err) {
+      console.error('Erro ao guardar correções da conta:', err);
+      setNotification({ type: 'error', message: 'Não foi possível guardar as correções da conta.' });
+    } finally {
+      setRepairAction(null);
+    }
+  };
+
+  const handleValidateRepairCandidate = async (user: any) => {
+    const draft = repairDrafts[user.id] || {};
+    const nextName = String(draft.nome || user.nome || '').trim() || user.nome;
+    const nextEmail = String(draft.email || user.email || '').trim().toLowerCase() || String(user.email || '').trim().toLowerCase();
+    const nextProfile = String(draft.perfil || user.perfil || '').trim().toLowerCase() || String(user.perfil || '').trim().toLowerCase();
+    const nextPhone = String(draft.telefone || user.telefone || '').trim() || null;
+    const nextPassword = String(draft.senha || user.senha || '').trim() || null;
+
+    setRepairAction(user.id);
+    try {
+      const payload: any = {
+        nome: nextName,
+        email: nextEmail,
+        perfil: nextProfile,
+        telefone: nextPhone,
+        status: 'active',
+        is_active: true,
+      };
+      if (nextPassword) payload.senha = nextPassword;
+
+      const { error } = await supabase
+        .from('utilizadores')
+        .update(payload)
+        .eq('id', user.id);
+
+      if (error && !isPermissionError(error)) {
+        throw error;
+      }
+
+      const approvedUsers = readLocalApprovedUsers();
+      const nextApprovedUsers = [
+        {
+          ...user,
+          ...payload,
+          senha: nextPassword,
+          approved_locally: true,
+          approved_at: new Date().toISOString(),
+        },
+        ...approvedUsers.filter((item) => String(item?.email || '').trim().toLowerCase() !== nextEmail),
+      ];
+      writeLocalApprovedUsers(nextApprovedUsers);
+
+      const workflow = readRepairWorkflow();
+      workflow[String(user.id)] = {
+        status: 'validated',
+        note: 'Conta validada pelo admin.',
+        updated_at: new Date().toISOString(),
+      };
+      writeRepairWorkflow(workflow);
+
+      setNotification({ type: 'success', message: `Conta validada para ${nextName}.` });
+      await loadRepairCandidates();
+    } catch (error) {
+      console.error('Erro ao validar conta:', error);
+      setNotification({ type: 'error', message: 'Não foi possível validar a conta.' });
+    } finally {
+      setRepairAction(null);
+    }
+  };
+
+  const handleStandbyRepairCandidate = async (user: any) => {
+    const workflow = readRepairWorkflow();
+    workflow[String(user.id)] = {
+      status: 'standby',
+      note: 'Conta colocada em stand by pelo admin.',
+      updated_at: new Date().toISOString(),
+    };
+    writeRepairWorkflow(workflow);
+    setNotification({ type: 'success', message: `Conta ${user.nome || user.email} colocada em stand by.` });
+    await loadRepairCandidates();
+  };
+
   const generateTemporaryPassword = () => `EduGuard@${Math.floor(100000 + Math.random() * 900000)}`;
 
   const handleRepairLegacyUser = async (user: any) => {
     setRepairAction(user.id);
     try {
-      const temporaryPassword = String(user?.senha || '').trim() || generateTemporaryPassword();
+      const draft = repairDrafts[user.id] || {};
+      const normalizedName = String(draft.nome || user?.nome || '').trim() || user?.nome;
+      const normalizedEmail = String(draft.email || user?.email || '').trim().toLowerCase() || String(user?.email || '').trim().toLowerCase();
+      const normalizedProfile = String(draft.perfil || user?.perfil || '').trim().toLowerCase() || String(user?.perfil || '').trim().toLowerCase();
+      const normalizedPhone = String(draft.telefone || user?.telefone || '').trim() || null;
+      const temporaryPassword = String(draft.senha || user?.senha || '').trim() || generateTemporaryPassword();
       const payload: any = {
+        nome: normalizedName,
+        email: normalizedEmail,
+        perfil: normalizedProfile,
+        telefone: normalizedPhone,
         senha: temporaryPassword,
       };
 
@@ -679,7 +856,10 @@ const AdminGlobalDashboard = () => {
       const approvedUsers = readLocalApprovedUsers();
       const normalizedApproved = {
         ...user,
-        email: String(user?.email || '').trim().toLowerCase(),
+        nome: normalizedName,
+        email: normalizedEmail,
+        perfil: normalizedProfile,
+        telefone: normalizedPhone,
         senha: temporaryPassword,
         status: 'active',
         is_active: true,
@@ -1693,6 +1873,7 @@ const AdminGlobalDashboard = () => {
                 ) : repairCandidates.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Nenhuma conta antiga precisa de reparação neste momento.</div>
                 ) : repairCandidates.map((entry) => {
+                  const draft = repairDrafts[entry.id] || {};
                   const hasPassword = String(entry?.senha || '').trim().length > 0;
                   const hasAuthId = isLikelyUuid(entry?.auth_id);
                   const isInactive = entry?.is_active === false || String(entry?.status || '').toLowerCase() === 'pending' || String(entry?.status || '').toLowerCase() === 'inactive';
@@ -1705,17 +1886,68 @@ const AdminGlobalDashboard = () => {
                         <p className="text-xs text-gray-500">
                           {!hasPassword ? 'Sem senha' : 'Senha ok'} · {!hasAuthId ? 'Sem auth_id' : 'auth_id ok'} · {isInactive ? 'Inativo/Pendente' : 'Ativo'}
                         </p>
+                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+                          <input
+                            type="text"
+                            value={draft.nome || ''}
+                            onChange={(e) => updateRepairDraft(entry.id, { nome: e.target.value })}
+                            className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-xs text-white outline-none"
+                            placeholder="Nome"
+                          />
+                          <input
+                            type="email"
+                            value={draft.email || ''}
+                            onChange={(e) => updateRepairDraft(entry.id, { email: e.target.value })}
+                            className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-xs text-white outline-none"
+                            placeholder="Email"
+                          />
+                          <input
+                            type="text"
+                            value={draft.perfil || ''}
+                            onChange={(e) => updateRepairDraft(entry.id, { perfil: e.target.value })}
+                            className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-xs text-white outline-none"
+                            placeholder="Perfil"
+                          />
+                          <input
+                            type="tel"
+                            value={draft.telefone || ''}
+                            onChange={(e) => updateRepairDraft(entry.id, { telefone: e.target.value })}
+                            className="w-full rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-xs text-white outline-none"
+                            placeholder="Telefone"
+                          />
+                        </div>
                         {repairPasswords[entry.id] && (
                           <p className="mt-2 text-xs text-emerald-300">Palavra-passe temporária: {repairPasswords[entry.id]}</p>
                         )}
                       </div>
                       <div className="flex gap-2">
                         <button
+                          onClick={() => handleSaveRepairCorrections(entry)}
+                          disabled={repairAction === entry.id}
+                          className="rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                        >
+                          Guardar Correcoes
+                        </button>
+                        <button
+                          onClick={() => handleValidateRepairCandidate(entry)}
+                          disabled={repairAction === entry.id}
+                          className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                        >
+                          Validar
+                        </button>
+                        <button
                           onClick={() => handleRepairLegacyUser(entry)}
                           disabled={repairAction === entry.id}
                           className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
                         >
                           {repairAction === entry.id ? 'A reparar...' : 'Reparar Conta'}
+                        </button>
+                        <button
+                          onClick={() => handleStandbyRepairCandidate(entry)}
+                          disabled={repairAction === entry.id}
+                          className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          Stand by
                         </button>
                       </div>
                     </div>
