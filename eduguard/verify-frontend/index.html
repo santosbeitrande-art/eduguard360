@@ -78,6 +78,32 @@
         padding: 10px;
         margin-top: 8px;
       }
+      .model-window {
+        border: 1px solid rgba(125,211,252,.55);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 10px;
+        background: rgba(2, 32, 56, .55);
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,.18);
+      }
+      .model-window-title {
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: #bae6fd;
+      }
+      .model-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 8px;
+      }
+      .model-chip {
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 10px;
+        padding: 8px;
+        background: rgba(255,255,255,.06);
+      }
+      .model-chip-label { font-size: .78rem; opacity: .85; }
+      .model-chip-value { font-weight: 700; margin-top: 2px; }
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .training-card {
         border: 1px solid rgba(255,255,255,.16);
@@ -965,11 +991,23 @@
         const ai = result?.summary?.aiLikelihood || "unknown";
         const dates = result?.summary?.dateConsistency || "unknown";
         const mode = String(result?.processingMode || (offlineMode ? "local-heuristic-v2" : "api-internal-engine"));
+        const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "aprovado"));
+        const externalDecision = String(result?.externalValidation?.decision || "internal_only");
         const modeLabel = mode === "local-heuristic-v2"
           ? (lang === "pt" ? "Local Heurístico v2" : "Local Heuristic v2")
           : mode === "api-external-orchestrated"
             ? (lang === "pt" ? "API Externa Orquestrada" : "External Orchestrated API")
             : (lang === "pt" ? "API Interna" : "Internal API");
+        const finalDecisionLabel = finalDecision === "aprovado"
+          ? (lang === "pt" ? "Aprovado" : "Approved")
+          : finalDecision === "revisao_manual"
+            ? (lang === "pt" ? "Revisão Manual" : "Manual Review")
+            : (lang === "pt" ? "Motor Interno" : "Internal Engine");
+        const externalDecisionLabel = externalDecision === "approved"
+          ? (lang === "pt" ? "Aprovado" : "Approved")
+          : externalDecision === "manual_review"
+            ? (lang === "pt" ? "Revisão Manual" : "Manual Review")
+            : (lang === "pt" ? "Não aplicável" : "Not applicable");
 
         const reasonsHtml = reasons.length
           ? `<ul>${reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
@@ -981,6 +1019,27 @@
 
         return `
           <div class="report-block">
+            <div class="model-window">
+              <div class="model-window-title">${lang === "pt" ? "Painel do Novo Modelo de Avaliação" : "New Evaluation Model Panel"}</div>
+              <div class="model-grid">
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Modo de análise" : "Analysis mode"}</div>
+                  <div class="model-chip-value">${modeLabel}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Decisão final" : "Final decision"}</div>
+                  <div class="model-chip-value">${finalDecisionLabel}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Validação externa" : "External validation"}</div>
+                  <div class="model-chip-value">${externalDecisionLabel}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Confianca" : "Confidence"}</div>
+                  <div class="model-chip-value">${confidence}%</div>
+                </div>
+              </div>
+            </div>
             <strong>${lang === "pt" ? "Percentagem de autenticidade" : "Authenticity percentage"}:</strong> ${score}%<br>
             <strong>${lang === "pt" ? "Risco de fraude" : "Fraud risk"}:</strong> ${likelyFraud ? (lang === "pt" ? "Elevado" : "High") : (lang === "pt" ? "Baixo" : "Low")}<br>
             <strong>${lang === "pt" ? "Score de risco" : "Risk score"}:</strong> ${riskScore}<br>
