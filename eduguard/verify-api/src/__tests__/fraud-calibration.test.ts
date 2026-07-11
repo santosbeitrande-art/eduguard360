@@ -8,6 +8,7 @@ import { analyzeCaseDocuments } from '../document_intelligence';
 import { evaluateFraudRisk } from '../risk';
 import { applyCalibrationToTrust, buildCalibrationProfile } from '../calibration';
 import { combineExternalValidationResults } from '../external_validation';
+import { buildCaseVerificationExperience, buildSingleVerificationExperience } from '../verification_experience';
 
 type FixtureCase = {
   id: string;
@@ -233,4 +234,67 @@ test('external validation combines provider decisions conservatively', () => {
   );
   assert.equal(internalOnly.enabled, false);
   assert.equal(internalOnly.decision, 'internal_only');
+});
+
+test('single verification experience summarizes verdict and actions', () => {
+  const experience = buildSingleVerificationExperience({
+    fileName: 'bi-joao.pdf',
+    text: 'Bilhete de Identidade Nome: Joao Cossa Numero: 110234567891A Data: 2026-05-01',
+    forensic: {
+      summary: { documentType: 'identity', dateConsistency: 'consistent', aiLikelihood: 'likely-human' },
+      checks: {
+        extractedFields: {
+          dates: ['2026-05-01'],
+          amounts: [],
+          idNumbers: ['110234567891A'],
+          emails: []
+        }
+      }
+    },
+    trust: {
+      authenticityPercentage: 82,
+      riskScore: 24,
+      confidence: 79,
+      likelyFraud: false,
+      indicators: []
+    },
+    externalValidation: { enabled: true, decision: 'approved' },
+    processingMode: 'api-external-orchestrated',
+    finalDecision: 'aprovado'
+  });
+
+  assert.equal(experience.stages.length, 4);
+  assert.match(experience.summary, /Analise concluida/i);
+  assert.equal(experience.stages[3]?.status, 'ok');
+  assert.ok(experience.actions.some((item) => item.code === 'approve-and-archive'));
+});
+
+test('case verification experience escalates manual review when dossier has conflicts', () => {
+  const experience = buildCaseVerificationExperience({
+    documents: [
+      { status: 'done', textLength: 1200, forensic: { summary: { documentType: 'identity' } } },
+      { status: 'done', textLength: 980, forensic: { summary: { documentType: 'bank-statement' } } }
+    ],
+    caseAnalysis: {
+      indicators: [
+        { code: 'name-mismatch', severity: 'high', reason: 'Titulares diferentes no dossier.' }
+      ]
+    },
+    trust: {
+      authenticityPercentage: 46,
+      confidence: 68,
+      likelyFraud: true,
+      indicators: [
+        { code: 'name-mismatch', severity: 'high', reason: 'Titulares diferentes no dossier.' }
+      ]
+    },
+    externalValidation: { enabled: true, decision: 'manual_review', documents: [] },
+    processingMode: 'api-external-orchestrated',
+    finalDecision: 'revisao_manual'
+  });
+
+  assert.equal(experience.stages[2]?.status, 'attention');
+  assert.equal(experience.stages[3]?.status, 'attention');
+  assert.ok(experience.actions.some((item) => item.code === 'manual-review'));
+  assert.ok(experience.actions.some((item) => item.code === 'request-source-document'));
 });

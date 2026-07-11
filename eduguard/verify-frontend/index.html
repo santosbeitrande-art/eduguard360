@@ -103,6 +103,32 @@
       }
       .model-chip-label { font-size: .78rem; opacity: .85; }
       .model-chip-value { font-weight: 700; margin-top: 2px; }
+      .experience-stage {
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 12px;
+        padding: 10px;
+        background: rgba(255,255,255,.04);
+      }
+      .experience-stage-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .experience-stage-title { font-weight: 800; color: #f0f9ff; }
+      .experience-badge {
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: .72rem;
+        font-weight: 800;
+      }
+      .experience-badge.ok { background: rgba(16,185,129,.18); color: #a7f3d0; }
+      .experience-badge.attention { background: rgba(245,158,11,.18); color: #fde68a; }
+      .experience-badge.info { background: rgba(14,165,233,.18); color: #bae6fd; }
+      .experience-summary { color: #dbeafe; margin: 0 0 6px; }
+      .experience-details, .experience-actions { margin: 0; padding-left: 18px; }
+      .experience-actions li { margin-bottom: 6px; }
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .training-card {
         border: 1px solid rgba(255,255,255,.16);
@@ -1047,6 +1073,89 @@
         }
       }
 
+      function formatExperienceStatus(status) {
+        if (status === "ok") return lang === "pt" ? "OK" : "OK";
+        if (status === "attention") return lang === "pt" ? "Atencao" : "Attention";
+        return lang === "pt" ? "Info" : "Info";
+      }
+
+      function buildFallbackExperience(result) {
+        const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
+        const likelyFraud = !!result?.trust?.likelyFraud;
+        const riskScore = Number(result?.trust?.riskScore ?? Math.max(0, Math.min(100, 100 - Number(score || 0))));
+        const confidence = Number(result?.trust?.confidence ?? 60);
+        const indicators = result?.trust?.indicators || [];
+        const ai = result?.summary?.aiLikelihood || "unknown";
+        const dates = result?.summary?.dateConsistency || "unknown";
+        const mode = String(result?.processingMode || "local-heuristic-v2");
+        const decision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "motor_interno"));
+        const hasAttention = likelyFraud || indicators.some((item) => item?.severity === "high");
+
+        return {
+          summary: hasAttention
+            ? (lang === "pt" ? "Analise concluida com sinais que exigem atencao antes da aprovacao." : "Analysis completed with signals that require attention before approval.")
+            : (lang === "pt" ? "Analise concluida com sinais suficientes de consistencia." : "Analysis completed with sufficient consistency signals."),
+          decisionTitle: hasAttention
+            ? (lang === "pt" ? "Atencao requerida" : "Attention required")
+            : (lang === "pt" ? "Documento consistente" : "Document looks consistent"),
+          stages: [
+            {
+              title: "Understanding",
+              status: "ok",
+              summary: lang === "pt" ? `O documento foi classificado no modo ${mode}.` : `The document was classified in ${mode} mode.`,
+              details: [
+                `${lang === "pt" ? "Autenticidade" : "Authenticity"} ${score}%`,
+                `${lang === "pt" ? "Risco" : "Risk"} ${riskScore}/100`
+              ]
+            },
+            {
+              title: "Cross-validation",
+              status: hasAttention ? "attention" : "ok",
+              summary: lang === "pt"
+                ? "Foram avaliados sinais de IA, datas, estrutura e indicadores de risco."
+                : "AI signals, dates, structure, and risk indicators were evaluated.",
+              details: [`AI ${ai}`, `${lang === "pt" ? "Datas" : "Dates"} ${dates}`]
+            },
+            {
+              title: "Verdict",
+              status: hasAttention ? "attention" : "ok",
+              summary: lang === "pt" ? `Decisao atual: ${decision}.` : `Current decision: ${decision}.`,
+              details: [`${lang === "pt" ? "Confianca" : "Confidence"} ${confidence}%`]
+            }
+          ],
+          actions: hasAttention
+            ? [{ title: lang === "pt" ? "Enviar para revisao manual" : "Send to manual review", description: lang === "pt" ? "Confirmar com operador antes de aprovar o documento." : "Confirm with an operator before approving the document." }]
+            : [{ title: lang === "pt" ? "Continuar workflow" : "Continue workflow", description: lang === "pt" ? "Atualizar CRM, gerar relatorio e arquivar o documento." : "Update CRM, generate report, and archive the document." }]
+        };
+      }
+
+      function renderExperience(experience) {
+        const stages = Array.isArray(experience?.stages) ? experience.stages : [];
+        const actions = Array.isArray(experience?.actions) ? experience.actions : [];
+        const stagesHtml = stages.map((stage) => `
+          <div class="experience-stage">
+            <div class="experience-stage-head">
+              <div class="experience-stage-title">${stage.title}</div>
+              <span class="experience-badge ${stage.status || "info"}">${formatExperienceStatus(stage.status)}</span>
+            </div>
+            <p class="experience-summary">${stage.summary || ""}</p>
+            ${(stage.details || []).length ? `<ul class="experience-details">${stage.details.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+          </div>
+        `).join("");
+        const actionsHtml = actions.length
+          ? `<ul class="experience-actions">${actions.map((action) => `<li><strong>${action.title}</strong>: ${action.description}</li>`).join("")}</ul>`
+          : "";
+
+        return `
+          <div class="model-window">
+            <div class="model-window-title">${lang === "pt" ? "Resposta inteligente da verificacao" : "Smart verification response"}</div>
+            <p class="experience-summary"><strong>${experience?.decisionTitle || ""}</strong><br>${experience?.summary || ""}</p>
+            <div class="model-grid">${stagesHtml}</div>
+            ${actionsHtml ? `<div class="report-block"><strong>${lang === "pt" ? "Proximas acoes" : "Next actions"}</strong>${actionsHtml}</div>` : ""}
+          </div>
+        `;
+      }
+
       function renderTrust(result) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
@@ -1059,6 +1168,7 @@
         const mode = String(result?.processingMode || (offlineMode ? "local-heuristic-v2" : "api-internal-engine"));
         const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "aprovado"));
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
+        const experience = result?.experience || buildFallbackExperience(result);
         const modeLabel = mode === "local-heuristic-v2"
           ? (lang === "pt" ? "Local Heurístico v2" : "Local Heuristic v2")
           : mode === "api-external-orchestrated"
@@ -1067,13 +1177,13 @@
         const finalDecisionLabel = finalDecision === "aprovado"
           ? (lang === "pt" ? "Aprovado" : "Approved")
           : finalDecision === "revisao_manual"
-            ? (lang === "pt" ? "Revisão Manual" : "Manual Review")
+            ? (lang === "pt" ? "Revisao Manual" : "Manual Review")
             : (lang === "pt" ? "Motor Interno" : "Internal Engine");
         const externalDecisionLabel = externalDecision === "approved"
           ? (lang === "pt" ? "Aprovado" : "Approved")
           : externalDecision === "manual_review"
-            ? (lang === "pt" ? "Revisão Manual" : "Manual Review")
-            : (lang === "pt" ? "Não aplicável" : "Not applicable");
+            ? (lang === "pt" ? "Revisao Manual" : "Manual Review")
+            : (lang === "pt" ? "Nao aplicavel" : "Not applicable");
 
         const reasonsHtml = reasons.length
           ? `<ul>${reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
@@ -1086,18 +1196,18 @@
         return `
           <div class="report-block">
             <div class="model-window">
-              <div class="model-window-title">${lang === "pt" ? "Painel do Novo Modelo de Avaliação" : "New Evaluation Model Panel"}</div>
+              <div class="model-window-title">${lang === "pt" ? "Painel do Novo Modelo de Avaliacao" : "New Evaluation Model Panel"}</div>
               <div class="model-grid">
                 <div class="model-chip">
-                  <div class="model-chip-label">${lang === "pt" ? "Modo de análise" : "Analysis mode"}</div>
+                  <div class="model-chip-label">${lang === "pt" ? "Modo de analise" : "Analysis mode"}</div>
                   <div class="model-chip-value">${modeLabel}</div>
                 </div>
                 <div class="model-chip">
-                  <div class="model-chip-label">${lang === "pt" ? "Decisão final" : "Final decision"}</div>
+                  <div class="model-chip-label">${lang === "pt" ? "Decisao final" : "Final decision"}</div>
                   <div class="model-chip-value">${finalDecisionLabel}</div>
                 </div>
                 <div class="model-chip">
-                  <div class="model-chip-label">${lang === "pt" ? "Validação externa" : "External validation"}</div>
+                  <div class="model-chip-label">${lang === "pt" ? "Validacao externa" : "External validation"}</div>
                   <div class="model-chip-value">${externalDecisionLabel}</div>
                 </div>
                 <div class="model-chip">
@@ -1110,9 +1220,10 @@
             <strong>${lang === "pt" ? "Risco de fraude" : "Fraud risk"}:</strong> ${likelyFraud ? (lang === "pt" ? "Elevado" : "High") : (lang === "pt" ? "Baixo" : "Low")}<br>
             <strong>${lang === "pt" ? "Score de risco" : "Risk score"}:</strong> ${riskScore}<br>
             <strong>${lang === "pt" ? "Confianca" : "Confidence"}:</strong> ${confidence}%<br>
-            <strong>${lang === "pt" ? "Modo de análise" : "Analysis mode"}:</strong> ${modeLabel}<br>
+            <strong>${lang === "pt" ? "Modo de analise" : "Analysis mode"}:</strong> ${modeLabel}<br>
             <strong>AI:</strong> ${ai}<br>
             <strong>${lang === "pt" ? "Consistencia de datas" : "Date consistency"}:</strong> ${dates}
+            ${renderExperience(experience)}
             <div class="report-block">
               <strong>${lang === "pt" ? "Motivos e indicios" : "Reasons and indicators"}</strong>
               ${reasonsHtml}
