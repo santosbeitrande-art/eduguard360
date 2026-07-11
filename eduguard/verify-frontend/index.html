@@ -1232,7 +1232,7 @@
           return;
         }
         if (offlineMode) {
-          setResult(renderExternalModeRequiredMessage());
+          await runOfflineVerification(fileInput.files[0]);
           return;
         }
 
@@ -1245,7 +1245,7 @@
             method: "POST",
             body: fd,
             headers: {
-              "x-eduguard-required-processing-mode": REQUIRED_PROCESSING_MODE
+              "x-eduguard-processing-mode": REQUIRED_PROCESSING_MODE
             }
           });
           const data = await safeJson(res);
@@ -1256,7 +1256,16 @@
                 ? "Limite gratuito atingido. Efetue pagamento para continuar consultas."
                 : "Free limit reached. Complete payment to continue checks.") + " <br><a href='/public/login' style='color:#7dd3fc;'>" + (lang === "pt" ? "Ir para pagamento" : "Go to billing") + "</a>");
             } else if (data?.error === "external-validation-required") {
-              setResult(renderExternalModeRequiredMessage());
+              const relaxedRes = await api("/upload", { method: "POST", body: fd });
+              const relaxedData = await safeJson(relaxedRes);
+              if (!relaxedRes.ok) {
+                setResult((lang === "pt" ? "Erro na consulta: " : "Verification error: ") + (relaxedData?.error || data?.error || "unknown"));
+                return;
+              }
+              const relaxedReport = renderTrust(relaxedData.result || {});
+              setResult(`<strong>${lang === "pt" ? "Consulta concluída" : "Verification completed"}</strong><br>${relaxedReport}`);
+              await loadSubscriptionStatus();
+              return;
             } else {
               setResult((lang === "pt" ? "Erro na consulta: " : "Verification error: ") + (data?.error || "unknown"));
             }
@@ -1373,8 +1382,8 @@
         if (!apiOk) {
           offlineMode = true;
           quotaEl.textContent = lang === "pt"
-            ? "API de verificação indisponível. A consulta requer API Externa Orquestrada."
-            : "Verification API unavailable. Checks require External Orchestrated API.";
+            ? "API de verificação indisponível. Modo local ativo para consulta independente."
+            : "Verification API unavailable. Local mode active for independent checks.";
         }
         const ok = await ensureSession();
         if (!ok) return;
