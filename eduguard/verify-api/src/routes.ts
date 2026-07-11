@@ -5,7 +5,12 @@ import { getSession } from './auth';
 
 const router = express.Router();
 
+function getDeployVersion() {
+  return process.env.EDUGUARD_DEPLOY_VERSION || 'dev';
+}
+
 function sendNoCacheHtml(res: express.Response, filePath: string) {
+  res.setHeader('X-Deploy-Version', getDeployVersion());
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -14,7 +19,7 @@ function sendNoCacheHtml(res: express.Response, filePath: string) {
 }
 
 router.get('/', (_req, res) => {
-  res.redirect('/public');
+  res.redirect(`/public?v=${encodeURIComponent(getDeployVersion())}`);
 });
 
 router.get('/health', (_req, res) => {
@@ -28,7 +33,7 @@ router.get('/public/login', (_req, res) => {
 router.get('/public', (req, res) => {
   const session = getSession(req);
   if (!session) {
-    return res.redirect('/public/login');
+    return res.redirect(`/public/login?v=${encodeURIComponent(getDeployVersion())}`);
   }
   sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
 });
@@ -36,7 +41,7 @@ router.get('/public', (req, res) => {
 router.get('/public/', (req, res) => {
   const session = getSession(req);
   if (!session) {
-    return res.redirect('/public/login');
+    return res.redirect(`/public/login?v=${encodeURIComponent(getDeployVersion())}`);
   }
   sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
 });
