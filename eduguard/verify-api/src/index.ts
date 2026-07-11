@@ -27,6 +27,7 @@ import {
   type AuthContext
 } from './auth';
 import { runExternalValidation } from './external_validation';
+import { EXTERNAL_PROCESSING_MODE, isExternalProcessingModeRequired } from './processing_mode';
 
 const app = express();
 app.use(cors());
@@ -334,6 +335,24 @@ async function extractTextImmediately(filePath: string) {
   }
 }
 
+function buildExternalModeRequirementDetails(externalValidation: any) {
+  return {
+    requiredProcessingMode: EXTERNAL_PROCESSING_MODE,
+    providerStatus: {
+      energent: {
+        enabled: Boolean(externalValidation?.providers?.energent?.enabled),
+        status: String(externalValidation?.providers?.energent?.status || 'unknown'),
+        reason: externalValidation?.providers?.energent?.reason || null
+      },
+      checkfile: {
+        enabled: Boolean(externalValidation?.providers?.checkfile?.enabled),
+        status: String(externalValidation?.providers?.checkfile?.status || 'unknown'),
+        reason: externalValidation?.providers?.checkfile?.reason || null
+      }
+    }
+  };
+}
+
 app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const auth = (req as any).auth as AuthContext;
@@ -400,6 +419,24 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       fileName: req.file.originalname,
       text
     });
+    const externalModeRequired = isExternalProcessingModeRequired(req.headers as Record<string, unknown>);
+    if (externalModeRequired && !externalValidation.enabled) {
+      refundVerificationCredits(auth.companyId, jobId, 'external-validation-required');
+      const failedJob = {
+        ...job,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: 'external-validation-required',
+        details: buildExternalModeRequirementDetails(externalValidation)
+      };
+      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      return res.status(503).json({
+        jobId,
+        status: 'failed',
+        error: 'external-validation-required',
+        details: buildExternalModeRequirementDetails(externalValidation)
+      });
+    }
     if (externalValidation.enabled && externalValidation.decision === 'manual_review') {
       calibratedTrust.likelyFraud = true;
       calibratedTrust.riskLevel = calibratedTrust.riskLevel === 'high' ? 'high' : 'medium';
@@ -583,6 +620,37 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       });
     }));
     const enabledExternal = perDocumentExternal.filter((item) => item.enabled);
+    const externalModeRequired = isExternalProcessingModeRequired(req.headers as Record<string, unknown>);
+    if (externalModeRequired && !enabledExternal.length) {
+      const energentProvider = perDocumentExternal
+        .map((item) => item?.providers?.energent)
+        .find((provider) => provider) || { enabled: false, status: 'skipped', reason: 'missing-endpoint' };
+      const checkfileProvider = perDocumentExternal
+        .map((item) => item?.providers?.checkfile)
+        .find((provider) => provider) || { enabled: false, status: 'skipped', reason: 'missing-endpoint' };
+      const emptyExternal = {
+        enabled: false,
+        providers: {
+          energent: energentProvider,
+          checkfile: checkfileProvider
+        }
+      };
+      refundVerificationCredits(auth.companyId, jobId, 'external-validation-required');
+      const failedJob = {
+        ...job,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: 'external-validation-required',
+        details: buildExternalModeRequirementDetails(emptyExternal)
+      };
+      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      return res.status(503).json({
+        jobId,
+        status: 'failed',
+        error: 'external-validation-required',
+        details: buildExternalModeRequirementDetails(emptyExternal)
+      });
+    }
     const hasExternalManualReview = enabledExternal.some((item) => item.decision === 'manual_review');
     const caseExternalDecision = enabledExternal.length
       ? (hasExternalManualReview ? 'manual_review' : 'approved')

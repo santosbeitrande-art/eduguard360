@@ -189,6 +189,7 @@
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
       const INTERNAL_ADMIN_PASSWORD = "Admin@123";
       const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
+      const REQUIRED_PROCESSING_MODE = "api-external-orchestrated";
 
       const fileInput = document.getElementById("file");
       const uploadForm = document.getElementById("uploadForm");
@@ -462,6 +463,13 @@
 
       function setResult(text) {
         resultEl.innerHTML = text;
+      }
+
+      function renderExternalModeRequiredMessage() {
+        const apiHint = `<br><small>${lang === "pt" ? "Modo obrigatorio: API Externa Orquestrada." : "Required mode: External Orchestrated API."}</small>`;
+        return lang === "pt"
+          ? `Verificacao indisponivel sem API externa. Restabeleca ligacao ao backend para usar ${REQUIRED_PROCESSING_MODE}.${apiHint}`
+          : `Verification unavailable without external API. Restore backend connectivity to use ${REQUIRED_PROCESSING_MODE}.${apiHint}`;
       }
 
       async function extractPdfTextInBrowser(file) {
@@ -1089,7 +1097,7 @@
         const indicators = result?.trust?.indicators || [];
         const ai = result?.summary?.aiLikelihood || "unknown";
         const dates = result?.summary?.dateConsistency || "unknown";
-        const mode = String(result?.processingMode || (offlineMode ? "local-heuristic-v3" : "api-internal-engine"));
+        const mode = String(result?.processingMode || REQUIRED_PROCESSING_MODE);
         const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "aprovado"));
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
         const modeLabel = (mode === "local-heuristic-v2" || mode === "local-heuristic-v3")
@@ -1223,18 +1231,23 @@
           setResult(lang === "pt" ? "Escolha um ficheiro." : "Please choose a file.");
           return;
         }
+        if (offlineMode) {
+          setResult(renderExternalModeRequiredMessage());
+          return;
+        }
 
         setResult(lang === "pt" ? "A processar consulta..." : "Processing verification...");
         const fd = new FormData();
         fd.append("file", fileInput.files[0]);
 
-        if (offlineMode) {
-          await runOfflineVerification(fileInput.files[0]);
-          return;
-        }
-
         try {
-          const res = await api("/upload", { method: "POST", body: fd });
+          const res = await api("/upload", {
+            method: "POST",
+            body: fd,
+            headers: {
+              "x-eduguard-required-processing-mode": REQUIRED_PROCESSING_MODE
+            }
+          });
           const data = await safeJson(res);
 
           if (!res.ok) {
@@ -1242,6 +1255,8 @@
               setResult((lang === "pt"
                 ? "Limite gratuito atingido. Efetue pagamento para continuar consultas."
                 : "Free limit reached. Complete payment to continue checks.") + " <br><a href='/public/login' style='color:#7dd3fc;'>" + (lang === "pt" ? "Ir para pagamento" : "Go to billing") + "</a>");
+            } else if (data?.error === "external-validation-required") {
+              setResult(renderExternalModeRequiredMessage());
             } else {
               setResult((lang === "pt" ? "Erro na consulta: " : "Verification error: ") + (data?.error || "unknown"));
             }
@@ -1358,8 +1373,8 @@
         if (!apiOk) {
           offlineMode = true;
           quotaEl.textContent = lang === "pt"
-            ? "API de verificação indisponível. Modo local ativo para consulta independente."
-            : "Verification API unavailable. Local mode active for independent checks.";
+            ? "API de verificação indisponível. A consulta requer API Externa Orquestrada."
+            : "Verification API unavailable. Checks require External Orchestrated API.";
         }
         const ok = await ensureSession();
         if (!ok) return;

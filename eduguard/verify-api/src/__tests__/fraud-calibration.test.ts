@@ -8,6 +8,7 @@ import { analyzeCaseDocuments } from '../document_intelligence';
 import { evaluateFraudRisk } from '../risk';
 import { applyCalibrationToTrust, buildCalibrationProfile } from '../calibration';
 import { combineExternalValidationResults } from '../external_validation';
+import { getRequestedProcessingMode, isExternalProcessingModeRequired } from '../processing_mode';
 
 type FixtureCase = {
   id: string;
@@ -233,4 +234,17 @@ test('external validation combines provider decisions conservatively', () => {
   );
   assert.equal(internalOnly.enabled, false);
   assert.equal(internalOnly.decision, 'internal_only');
+});
+
+test('processing mode headers require external orchestrated mode when requested', () => {
+  const requiredHeaders = { 'x-eduguard-required-processing-mode': 'api-external-orchestrated' };
+  assert.equal(getRequestedProcessingMode(requiredHeaders), 'api-external-orchestrated');
+  assert.equal(isExternalProcessingModeRequired(requiredHeaders), true);
+
+  const fallbackHeader = { 'x-eduguard-processing-mode': 'api-external-orchestrated' };
+  assert.equal(getRequestedProcessingMode(fallbackHeader), 'api-external-orchestrated');
+  assert.equal(isExternalProcessingModeRequired(fallbackHeader), true);
+
+  const optionalHeader = { 'x-eduguard-required-processing-mode': 'api-internal-engine' };
+  assert.equal(isExternalProcessingModeRequired(optionalHeader), false);
 });
