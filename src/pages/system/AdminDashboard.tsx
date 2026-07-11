@@ -150,6 +150,7 @@ const AdminGlobalDashboard = () => {
   const [repairPasswords, setRepairPasswords] = useState<Record<string, string>>({});
   const [repairDrafts, setRepairDrafts] = useState<Record<string, any>>({});
   const [recentCredentials, setRecentCredentials] = useState<any[]>([]);
+  const [recentApprovedStudentId, setRecentApprovedStudentId] = useState<string | null>(null);
   const [movementSearch, setMovementSearch] = useState('');
   const [movementClassFilter, setMovementClassFilter] = useState('all');
   const [movementStudentFilter, setMovementStudentFilter] = useState('all');
@@ -574,6 +575,8 @@ const AdminGlobalDashboard = () => {
               localStudent,
               ...currentStudents.filter((student) => student.id !== localStudent.id),
             ]);
+            setRecentApprovedStudentId(localStudent.id);
+            setTimeout(() => setRecentApprovedStudentId(null), 7000);
           }
         } else if (insertedStudent && selectedSchoolId === activeSchoolId) {
           updateStudentsForSelectedSchool((currentStudents) => [
@@ -588,6 +591,8 @@ const AdminGlobalDashboard = () => {
             },
             ...currentStudents.filter((student) => student.id !== insertedStudent.id),
           ]);
+          setRecentApprovedStudentId(insertedStudent.id);
+          setTimeout(() => setRecentApprovedStudentId(null), 7000);
         }
 
         const approvedRequests = existingRequests.map((entry) =>
@@ -816,6 +821,8 @@ const AdminGlobalDashboard = () => {
         updated_at: new Date().toISOString(),
       };
       writeRepairWorkflow(workflow);
+
+      setRepairCandidates((current) => current.filter((entry) => entry.id !== user.id));
 
       setNotification({ type: 'success', message: `Conta validada para ${nextName}.` });
       await loadRepairCandidates();
@@ -2321,12 +2328,15 @@ const AdminGlobalDashboard = () => {
                 ) : (
                   <div className="space-y-4">
                     {filteredStudents.map((student) => (
-                      <div key={student.id} className="rounded-3xl border border-white/10 bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div key={student.id} className={`rounded-3xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${recentApprovedStudentId === student.id ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]' : 'border-white/10 bg-white/5'}`}>
                         <div>
                           <p className="font-semibold text-white">{student.nome}</p>
                           <p className="text-sm text-gray-400">{student.guardian?.email || 'Sem email'} · {student.guardian?.telefone || 'Sem telefone'}</p>
                           <p className="text-sm text-gray-500">{student.classe || 'Classe não definida'} · Enc: {student.guardian?.nome || 'Não registado'}</p>
                           <p className="text-xs text-gray-500 mt-1">QR Code ID: {student.qrcode_id || 'N/A'}</p>
+                          {recentApprovedStudentId === student.id && (
+                            <p className="mt-1 text-xs text-emerald-300">Novo aluno aprovado agora.</p>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <button onClick={() => handleStudentEdit(student)} className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-sm text-white">
