@@ -170,11 +170,15 @@
     </main>
 
     <script>
-      const API_CANDIDATES = [
+      const API_CANDIDATES = Array.from(new Set([
         window.EDUGUARD_VERIFY_API_BASE || "",
         localStorage.getItem("eduguard_verify_api_base") || "",
+        "https://api.eduguard360.co.mz",
+        `${window.location.origin}/verify-api`,
         window.location.origin
-      ].filter(Boolean);
+      ]
+        .filter(Boolean)
+        .map((candidate) => String(candidate).replace(/\/+$/, ""))));
       let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
@@ -460,6 +464,68 @@
         resultEl.innerHTML = text;
       }
 
+      async function extractPdfTextInBrowser(file) {
+        const empty = { text: "", pageCount: 0 };
+        try {
+          const module = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.mjs");
+          const pdfjsLib = module?.default || module;
+          if (!pdfjsLib?.getDocument) return empty;
+          if (pdfjsLib?.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.worker.min.mjs";
+          }
+
+          const raw = await file.arrayBuffer();
+          const loadingTask = pdfjsLib.getDocument({ data: raw });
+          const pdf = await loadingTask.promise;
+          const maxPages = Math.min(Number(pdf?.numPages || 0), 10);
+          const chunks = [];
+
+          for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            const pageText = (content?.items || [])
+              .map((item) => String(item?.str || "").trim())
+              .filter(Boolean)
+              .join(" ");
+            if (pageText) chunks.push(pageText);
+          }
+
+          return {
+            text: chunks.join("\n").replace(/\s+/g, " ").trim(),
+            pageCount: Number(pdf?.numPages || 0)
+          };
+        } catch {
+          return empty;
+        }
+      }
+
+      async function computeFileSignature(file) {
+        const empty = { signature: 0, uniqueByteRatio: 0, printableRatio: 0 };
+        try {
+          const sample = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+          if (!sample.length) return empty;
+
+          let hash = 2166136261;
+          let printable = 0;
+          const unique = new Set();
+
+          for (const byte of sample) {
+            hash ^= byte;
+            hash = Math.imul(hash, 16777619);
+            unique.add(byte);
+            if (byte >= 32 && byte <= 126) printable += 1;
+          }
+
+          return {
+            signature: Math.abs(hash >>> 0),
+            uniqueByteRatio: unique.size / 256,
+            printableRatio: printable / sample.length
+          };
+        } catch {
+          return empty;
+        }
+      }
+
       async function runOfflineVerification(file) {
         const localAccount = getLocalAccountFromSession();
         if (!localAccount) {
@@ -476,13 +542,19 @@
 
         const ext = (file.name.split(".").pop() || "").toLowerCase();
         let extractedText = "";
+        let pdfPageCount = 0;
         if (["txt", "csv", "json", "md"].includes(ext)) {
           try {
             extractedText = await file.text();
           } catch {
             extractedText = "";
           }
+        } else if (ext === "pdf") {
+          const pdfExtraction = await extractPdfTextInBrowser(file);
+          extractedText = pdfExtraction.text;
+          pdfPageCount = Number(pdfExtraction.pageCount || 0);
         }
+        const fileSignature = await computeFileSignature(file);
 
         const lowerText = extractedText.toLowerCase();
         const lines = extractedText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -536,6 +608,24 @@
           score += 4;
         }
 
+        if (ext === "pdf" && pdfPageCount > 0) {
+          if (pdfPageCount >= 4) score += 4;
+          else if (pdfPageCount === 1) score -= 1;
+          indicators.push({
+            code: "pdf-page-profile",
+            severity: "low",
+            reason: `Perfil PDF local: ${pdfPageCount} pagina(s) detetada(s).`
+          });
+        }
+
+        if (fileSignature.signature) {
+          const signatureDelta = (fileSignature.signature % 7) - 3;
+          score += signatureDelta;
+          if (fileSignature.uniqueByteRatio < 0.16) score -= 4;
+          else if (fileSignature.uniqueByteRatio > 0.4) score += 2;
+          if (!extractedText && fileSignature.printableRatio < 0.1) score -= 2;
+        }
+
         if (extractedText) {
           if (words.length >= 40) score += 8;
           else if (words.length >= 18) score += 4;
@@ -558,6 +648,12 @@
           score -= 18;
           indicators.push({ code: "empty-text-content", severity: "high", reason: "Conteudo textual vazio apos leitura local." });
           reasons.push(lang === "pt" ? "Conteudo textual vazio no documento." : "Textual content is empty after local extraction.");
+        } else if (ext === "pdf") {
+          score -= 6;
+          indicators.push({ code: "pdf-no-text-layer", severity: "medium", reason: "PDF sem camada de texto legivel no navegador." });
+          reasons.push(lang === "pt"
+            ? "PDF sem texto extraivel localmente; resultado depende de sinais estruturais."
+            : "PDF without extractable text locally; result depends on structural signals.");
         }
 
         if (matchedHints.length > 0) {
@@ -601,14 +697,17 @@
           }
         }
 
-        const aiSignals = matchedHints.length + (uniqueRatio < 0.32 ? 1 : 0) + (repeatedCharPattern ? 1 : 0);
-        const aiLikelihood = aiSignals >= 3 ? "likely-ai" : aiSignals >= 1 ? "possible-ai" : "unlikely-ai";
-        if (aiLikelihood === "likely-ai") {
-          score -= 10;
-          indicators.push({ code: "ai-likelihood", severity: "medium", reason: "Padrao textual fortemente associado a geracao automatica." });
-          reasons.push(lang === "pt" ? "Padrao de texto com forte indicio de geracao automatica." : "Text pattern strongly suggests automated generation.");
-        } else if (aiLikelihood === "possible-ai") {
-          score -= 4;
+        let aiLikelihood = "unknown";
+        if (words.length >= 20) {
+          const aiSignals = matchedHints.length + (uniqueRatio < 0.32 ? 1 : 0) + (repeatedCharPattern ? 1 : 0);
+          aiLikelihood = aiSignals >= 3 ? "likely-ai" : aiSignals >= 1 ? "possible-ai" : "unlikely-ai";
+          if (aiLikelihood === "likely-ai") {
+            score -= 10;
+            indicators.push({ code: "ai-likelihood", severity: "medium", reason: "Padrao textual fortemente associado a geracao automatica." });
+            reasons.push(lang === "pt" ? "Padrao de texto com forte indicio de geracao automatica." : "Text pattern strongly suggests automated generation.");
+          } else if (aiLikelihood === "possible-ai") {
+            score -= 4;
+          }
         }
 
         score = Math.max(8, Math.min(98, Math.round(score)));
@@ -617,7 +716,7 @@
         const likelyFraud = highCount > 0 || score < 50 || mediumCount >= 3;
 
         const result = {
-          processingMode: "local-heuristic-v2",
+          processingMode: "local-heuristic-v3",
           summary: {
             authenticityScore: score,
             aiLikelihood,
@@ -990,11 +1089,11 @@
         const indicators = result?.trust?.indicators || [];
         const ai = result?.summary?.aiLikelihood || "unknown";
         const dates = result?.summary?.dateConsistency || "unknown";
-        const mode = String(result?.processingMode || (offlineMode ? "local-heuristic-v2" : "api-internal-engine"));
+        const mode = String(result?.processingMode || (offlineMode ? "local-heuristic-v3" : "api-internal-engine"));
         const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "aprovado"));
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
-        const modeLabel = mode === "local-heuristic-v2"
-          ? (lang === "pt" ? "Local Heurístico v2" : "Local Heuristic v2")
+        const modeLabel = (mode === "local-heuristic-v2" || mode === "local-heuristic-v3")
+          ? (lang === "pt" ? "Local Heuristico v3" : "Local Heuristic v3")
           : mode === "api-external-orchestrated"
             ? (lang === "pt" ? "API Externa Orquestrada" : "External Orchestrated API")
             : (lang === "pt" ? "API Interna" : "Internal API");

@@ -238,11 +238,15 @@
     </main>
 
     <script>
-      const API_CANDIDATES = [
+      const API_CANDIDATES = Array.from(new Set([
         window.EDUGUARD_VERIFY_API_BASE || "",
         localStorage.getItem("eduguard_verify_api_base") || "",
+        "https://api.eduguard360.co.mz",
+        `${window.location.origin}/verify-api`,
         window.location.origin
-      ].filter(Boolean);
+      ]
+        .filter(Boolean)
+        .map((candidate) => String(candidate).replace(/\/+$/, ""))));
       let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
