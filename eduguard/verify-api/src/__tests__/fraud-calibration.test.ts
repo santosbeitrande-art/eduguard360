@@ -7,6 +7,7 @@ import { analyzeDocument } from '../forensic';
 import { analyzeCaseDocuments } from '../document_intelligence';
 import { evaluateFraudRisk } from '../risk';
 import { applyCalibrationToTrust, buildCalibrationProfile } from '../calibration';
+import { combineExternalValidationResults } from '../external_validation';
 
 type FixtureCase = {
   id: string;
@@ -209,4 +210,27 @@ test('disabled calibration profile preserves trust decision for non-admin flow',
   assert.equal(trust.likelyFraud, false);
   assert.equal(trust.riskScore, 34);
   assert.equal(trust.calibration.reason, 'admin-access-required');
+});
+
+test('external validation combines provider decisions conservatively', () => {
+  const approved = combineExternalValidationResults(
+    { provider: 'energent', enabled: true, ok: true, pass: true, status: 'ok' },
+    { provider: 'checkfile', enabled: true, ok: true, pass: true, status: 'valid' }
+  );
+  assert.equal(approved.enabled, true);
+  assert.equal(approved.decision, 'approved');
+
+  const manualReview = combineExternalValidationResults(
+    { provider: 'energent', enabled: true, ok: true, pass: true, status: 'ok' },
+    { provider: 'checkfile', enabled: true, ok: true, pass: false, status: 'invalid' }
+  );
+  assert.equal(manualReview.enabled, true);
+  assert.equal(manualReview.decision, 'manual_review');
+
+  const internalOnly = combineExternalValidationResults(
+    { provider: 'energent', enabled: false, ok: false, pass: null, status: 'skipped', reason: 'missing-endpoint' },
+    { provider: 'checkfile', enabled: false, ok: false, pass: null, status: 'skipped', reason: 'missing-endpoint' }
+  );
+  assert.equal(internalOnly.enabled, false);
+  assert.equal(internalOnly.decision, 'internal_only');
 });

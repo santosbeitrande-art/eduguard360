@@ -26,6 +26,7 @@ import {
   requireCompanyAuth,
   type AuthContext
 } from './auth';
+import { runExternalValidation } from './external_validation';
 
 const app = express();
 app.use(cors());
@@ -392,6 +393,26 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       fraudReasons: fraudSignals.reasons,
       indicators: fraudSignals.indicators
     } as CalibrationTrustInput, calibrationProfile);
+    const externalValidation = await runExternalValidation({
+      jobId,
+      companyId: auth.companyId,
+      filePath: req.file.path,
+      fileName: req.file.originalname,
+      text
+    });
+    if (externalValidation.enabled && externalValidation.decision === 'manual_review') {
+      calibratedTrust.likelyFraud = true;
+      calibratedTrust.riskLevel = calibratedTrust.riskLevel === 'high' ? 'high' : 'medium';
+      calibratedTrust.riskScore = Math.max(62, Number(calibratedTrust.riskScore || 0));
+      calibratedTrust.indicators.push({
+        code: 'external-validation-manual-review',
+        severity: 'medium',
+        reason: 'Validacao externa (Energent.ai/CheckFile.ai) requer revisao manual.'
+      });
+      calibratedTrust.fraudReasons = Array.from(
+        new Set([...(calibratedTrust.fraudReasons || []), 'Validacao externa sinalizou revisao manual.'])
+      );
+    }
     const aiSignals = forensic.checks?.aiLikelihood === 'likely-ai' || forensic.checks?.aiLikelihood === 'possible-ai';
     const contextualSignals = (contextual.checks || []).length > 0 || ((contextual.found?.domains || []).length > 0) || ((contextual.found?.emails || []).length > 0);
     const passiveIssuesFound = forensic.checks?.dateConsistency === 'inconsistent' || forensic.checks?.aiLikelihood === 'likely-ai' || forensic.score < 45;
@@ -401,11 +422,18 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       contextual,
       summary: forensic.summary,
       trust: calibratedTrust,
+      externalValidation,
+      finalDecision: externalValidation.enabled
+        ? (externalValidation.decision === 'approved' ? 'aprovado' : 'revisao_manual')
+        : 'motor_interno',
       verdicts: {
         passive: passiveIssuesFound ? 'found' : 'not_found',
         contextual: contextualSignals ? 'found' : 'not_found',
         ai: aiSignals ? 'found' : 'not_found',
-        fraud: calibratedTrust.likelyFraud ? 'found' : 'not_found'
+        fraud: calibratedTrust.likelyFraud ? 'found' : 'not_found',
+        external: externalValidation.enabled
+          ? (externalValidation.decision === 'approved' ? 'not_found' : 'found')
+          : 'not_found'
       },
       status: 'done'
     };
@@ -542,17 +570,57 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     };
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust(baseTrust, calibrationProfile);
+    const perDocumentExternal = await Promise.all(successfulDocs.map(async (item) => {
+      const matchingInput = caseInputs.find((doc) => doc.fileName === item.fileName);
+      const textForPayload = matchingInput?.text || '';
+      return runExternalValidation({
+        jobId,
+        companyId: auth.companyId,
+        filePath: item.filePath,
+        fileName: item.fileName,
+        text: textForPayload
+      });
+    }));
+    const enabledExternal = perDocumentExternal.filter((item) => item.enabled);
+    const hasExternalManualReview = enabledExternal.some((item) => item.decision === 'manual_review');
+    const caseExternalDecision = enabledExternal.length
+      ? (hasExternalManualReview ? 'manual_review' : 'approved')
+      : 'internal_only';
+    if (caseExternalDecision === 'manual_review') {
+      calibratedTrust.likelyFraud = true;
+      calibratedTrust.riskLevel = calibratedTrust.riskLevel === 'high' ? 'high' : 'medium';
+      calibratedTrust.riskScore = Math.max(62, Number(calibratedTrust.riskScore || 0));
+      calibratedTrust.indicators.push({
+        code: 'external-validation-manual-review',
+        severity: 'medium',
+        reason: 'Validacao externa do dossier requer revisao manual.'
+      });
+      calibratedTrust.fraudReasons = Array.from(
+        new Set([...(calibratedTrust.fraudReasons || []), 'Validacao externa sinalizou revisao manual no dossier.'])
+      );
+    }
 
     const result = {
       documents: documentResults,
       case: caseAnalysis,
       contextual,
       trust: calibratedTrust,
+      externalValidation: {
+        enabled: enabledExternal.length > 0,
+        decision: caseExternalDecision,
+        documents: perDocumentExternal
+      },
+      finalDecision: enabledExternal.length
+        ? (caseExternalDecision === 'approved' ? 'aprovado' : 'revisao_manual')
+        : 'motor_interno',
       verdicts: {
         passive: caseAnalysis.indicators.length > 0 ? 'found' : 'not_found',
         contextual: (contextual.checks || []).length > 0 ? 'found' : 'not_found',
         ai: documentResults.some((item) => item.forensic?.checks?.aiLikelihood === 'likely-ai' || item.forensic?.checks?.aiLikelihood === 'possible-ai') ? 'found' : 'not_found',
-        fraud: calibratedTrust.likelyFraud ? 'found' : 'not_found'
+        fraud: calibratedTrust.likelyFraud ? 'found' : 'not_found',
+        external: enabledExternal.length
+          ? (caseExternalDecision === 'approved' ? 'not_found' : 'found')
+          : 'not_found'
       },
       status: 'done'
     };
