@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import imageSize from 'image-size';
 import mime from 'mime-types';
-import { detectAiStyle } from './ai_detector';
+import { detectAiStyle, detectAiStyleDetails } from './ai_detector';
 import { analyzeTextIntelligence } from './document_intelligence';
 
 const SCORE_BASELINE = 42;
@@ -87,7 +87,10 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
   if (avgWordLen < 4) aiScore += 1;
 
   const aiStyle = detectAiStyle(text);
+  const aiStyleDetails = detectAiStyleDetails(text);
   result.checks.aiStyle = aiStyle;
+  result.checks.aiSuspicion = aiStyleDetails.score;
+  result.checks.aiFeatures = aiStyleDetails.features;
   const textIntel = analyzeTextIntelligence(text);
   result.checks.documentType = textIntel.extracted.documentType;
   result.checks.extractedFields = textIntel.extracted;
@@ -95,9 +98,9 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
 
   if (words.length < 20) {
     result.checks.aiLikelihood = 'unknown';
-  } else if (aiScore >= 3 || aiStyle === 'likely-ai') {
+  } else if (aiScore >= 3 || aiStyle === 'likely-ai' || aiStyleDetails.score >= 0.68) {
     result.checks.aiLikelihood = 'likely-ai';
-  } else if (aiScore >= 1 || aiStyle === 'possible-ai') {
+  } else if (aiScore >= 1 || aiStyle === 'possible-ai' || aiStyleDetails.score >= 0.42) {
     result.checks.aiLikelihood = 'possible-ai';
   } else {
     result.checks.aiLikelihood = 'likely-human';
@@ -143,10 +146,26 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
 
   // Score calculation: baseline, penalize AI-likelihood and date inconsistencies
   let score = SCORE_BASELINE + Math.floor(uniqRatio * UNIQUE_RATIO_WEIGHT) - aiScore * AI_SCORE_WEIGHT;
+  score -= Math.round(aiStyleDetails.score * 10);
   if (result.metadata.dimensions) score += 5;
   if (result.checks.dateConsistency === 'inconsistent') score -= DATE_INCONSISTENT_PENALTY;
   if (result.checks.dateConsistency === 'unknown' && words.length >= 30) score -= DATE_UNKNOWN_PENALTY;
   score -= textIntel.penalty;
+
+  // Document-type-aware trust bonuses to reduce false positives on structured genuine documents.
+  const extracted = textIntel.extracted;
+  const highIntelCount = Array.isArray(textIntel.indicators)
+    ? textIntel.indicators.filter((item) => item?.severity === 'high').length
+    : 0;
+  const canApplyStrongBonus = highIntelCount === 0 && result.checks.dateConsistency !== 'inconsistent';
+
+  if (canApplyStrongBonus && extracted.documentType === 'identity' && extracted.idNumbers.length > 0) score += 6;
+  if (canApplyStrongBonus && extracted.documentType === 'income-statement' && extracted.employers.length > 0 && extracted.amounts.length > 0) score += 8;
+  if (canApplyStrongBonus && extracted.documentType === 'bank-statement' && result.checks.dateConsistency === 'consistent' && (extracted.accountNumbers.length > 0 || extracted.ibanLike.length > 0)) score += 8;
+  if (canApplyStrongBonus && extracted.dates.length >= 1 && result.checks.dateConsistency === 'consistent') score += 3;
+  if ((extracted.emails.length > 0 || extracted.phones.length > 0) && highIntelCount <= 1) score += 2;
+  if (extracted.documentType === 'unknown' && words.length > 30) score -= 6;
+
   score = Math.max(0, Math.min(100, score));
   result.score = score;
 

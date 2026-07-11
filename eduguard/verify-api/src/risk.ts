@@ -4,6 +4,10 @@ export interface FraudIndicator {
   reason: string;
 }
 
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, value));
+}
+
 export function evaluateFraudRisk(forensic: any, contextual: any) {
   const reasons: string[] = [];
   const indicators: FraudIndicator[] = [];
@@ -50,22 +54,50 @@ export function evaluateFraudRisk(forensic: any, contextual: any) {
 
   const highCount = indicators.filter((item) => item.severity === 'high').length;
   const mediumCount = indicators.filter((item) => item.severity === 'medium').length;
+  const lowCount = indicators.filter((item) => item.severity === 'low').length;
   const score = Number(forensic?.summary?.authenticityScore ?? forensic?.score ?? 0);
+  const aiLikelihood = String(forensic?.checks?.aiLikelihood || forensic?.summary?.aiLikelihood || 'unknown');
+  const dateConsistency = String(forensic?.checks?.dateConsistency || forensic?.summary?.dateConsistency || 'unknown');
+  const corroborationStrength = Math.min(1, (contextualDomains * 0.35) + (contextualEmails * 0.5));
 
-  const likelyFraud = highCount > 0
+  let riskScore = 100 - score;
+  riskScore += highCount * 20 + mediumCount * 9 + lowCount * 3;
+  if (aiLikelihood === 'likely-ai') riskScore += 10;
+  else if (aiLikelihood === 'possible-ai') riskScore += 4;
+  if (dateConsistency === 'inconsistent') riskScore += 12;
+  else if (dateConsistency === 'unknown') riskScore += 3;
+  riskScore -= Math.round(corroborationStrength * 10);
+  riskScore = clamp(riskScore);
+
+  const likelyFraudBySignals = highCount > 0
     || mediumCount >= 2
     || score <= 50
     || (mediumCount >= 1 && score <= 65);
+  const likelyFraud = likelyFraudBySignals || riskScore >= 56;
 
-  const riskLevel = highCount > 0 || score <= 40
+  const riskLevel = riskScore >= 72
     ? 'high'
-    : likelyFraud
+    : riskScore >= 46
       ? 'medium'
       : 'low';
+
+  const confidence = clamp(
+    35
+      + highCount * 15
+      + mediumCount * 8
+      + Math.min(10, lowCount * 2)
+      + Math.round(corroborationStrength * 10)
+      + (dateConsistency === 'inconsistent' ? 8 : 0)
+      + (aiLikelihood === 'likely-ai' ? 6 : aiLikelihood === 'possible-ai' ? 3 : 0),
+    0,
+    99
+  );
 
   return {
     likelyFraud,
     riskLevel,
+    riskScore,
+    confidence,
     indicators,
     reasons
   };
