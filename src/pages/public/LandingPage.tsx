@@ -7,6 +7,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import EducuardNavigation from "@/components/EducuardNavigation";
 import PortalsPromoSection from "@/components/PortalsPromoSection";
 import NewFeaturesNavigation from "@/components/NewFeaturesNavigation";
+import IntegrationPartnersSection from "@/components/IntegrationPartnersSection";
+import VerificationWorkflowSection from "@/components/VerificationWorkflowSection";
 
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -161,6 +163,12 @@ const LandingPage = () => {
 
       {/* Novos Portais Educacionais */}
       <NewFeaturesNavigation />
+
+      {/* Integrações */}
+      <IntegrationPartnersSection />
+
+      {/* Fluxo de validação */}
+      <VerificationWorkflowSection />
 
       {/* Sobre Section */}
       <section id="sobre" className="py-20 bg-[#0f2e3d]">
