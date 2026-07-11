@@ -423,6 +423,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       summary: forensic.summary,
       trust: calibratedTrust,
       externalValidation,
+      processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine',
       finalDecision: externalValidation.enabled
         ? (externalValidation.decision === 'approved' ? 'aprovado' : 'revisao_manual')
         : 'motor_interno',
@@ -610,6 +611,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         decision: caseExternalDecision,
         documents: perDocumentExternal
       },
+      processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine',
       finalDecision: enabledExternal.length
         ? (caseExternalDecision === 'approved' ? 'aprovado' : 'revisao_manual')
         : 'motor_interno',
