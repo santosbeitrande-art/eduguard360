@@ -1,0 +1,21 @@
+[Unit]
+Description=EduGuard Verify AI API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/eduguard360/eduguard/verify-api
+EnvironmentFile=-/etc/eduguard/verify-api.env
+ExecStart=/usr/bin/node /var/www/eduguard360/eduguard/verify-api/dist/index.js
+Restart=always
+RestartSec=10
+Environment=PORT=4000
+Environment=NODE_ENV=production
+User=www-data
+Group=www-data
+StandardOutput=append:/var/log/eduguard-api.log
+StandardError=append:/var/log/eduguard-api.log
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

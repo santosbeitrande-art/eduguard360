@@ -32,6 +32,15 @@ Se a API estiver em outro host, ajuste o valor em:
 - `www`: CNAME para Vercel
 - `api`: apontar para o backend (Render/Railway/Fly/Kubernetes/VPS futuro)
 
+### Restaurar DNS do subdominio da API (Cloudflare)
+No Windows/PowerShell:
+
+```powershell
+./restore-api-dns.ps1 -ApiHost api.eduguard360.co.mz -TargetHost <backend-host> -RecordType CNAME
+```
+
+Use `-RecordType A` quando o target for IP.
+
 ## Opcao B - VPS (legado)
 
 Este fluxo publica o mesmo sistema em ambiente estavel, sem URL temporaria.
@@ -82,14 +91,15 @@ sudo systemctl reload nginx
 
 ### 5) HTTPS fixo com Let's Encrypt
 ```bash
-sudo certbot --nginx -d eduguard360.co.mz -d www.eduguard360.co.mz
+sudo certbot --nginx -d eduguard360.co.mz -d www.eduguard360.co.mz -d api.eduguard360.co.mz
 ```
 
 ## Verificacao final
 ```bash
 sudo systemctl status eduguard --no-pager
 curl -I https://eduguard360.co.mz/public/login
-curl https://eduguard360.co.mz/health
+curl https://eduguard360.co.mz/verify-api/health
+curl https://api.eduguard360.co.mz/health
 ```
 
 ## URLs finais
