@@ -201,6 +201,12 @@
       ]
         .filter(Boolean)
         .map((candidate) => String(candidate).replace(/\/+$/, ""))));
+      const apiBaseFromQuery = String(new URLSearchParams(window.location.search).get("apiBase") || "")
+        .trim()
+        .replace(/\/+$/, "");
+      if (apiBaseFromQuery && !API_CANDIDATES.includes(apiBaseFromQuery)) {
+        API_CANDIDATES.unshift(apiBaseFromQuery);
+      }
       let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
@@ -301,6 +307,11 @@
           accounts.push(account);
         }
         writeLocalAccounts(accounts);
+      }
+
+      function clearLocalOfflineArtifacts() {
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+        localStorage.removeItem(LOCAL_ACCOUNTS_KEY);
       }
 
 
@@ -807,12 +818,9 @@
 
       async function loadSubscriptionStatus() {
         if (offlineMode) {
-          const localAccount = getLocalAccountFromSession();
-          if (!localAccount) {
-            quotaEl.textContent = lang === "pt" ? "Sessao local invalida. Volte ao login." : "Invalid local session. Return to login.";
-            return false;
-          }
-          quotaEl.textContent = `${localAccount.companyName || localAccount.fullName || localAccount.email} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${Number(localAccount.remainingQueries || 0)} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(localAccount.validUntil).toLocaleDateString()} | ${lang === "pt" ? "modo local" : "local mode"}`;
+          quotaEl.textContent = lang === "pt"
+            ? "Modo local desativado. A verificacao requer API Externa Orquestrada."
+            : "Local mode disabled. Verification requires External Orchestrated API.";
           return true;
         }
 
@@ -857,12 +865,7 @@
         const refreshed = await refreshToken();
         if (refreshed) return true;
 
-        const localSession = getLocalSession();
-        if (localSession?.email && getLocalAccountFromSession()) {
-          offlineMode = true;
-          return true;
-        }
-
+        clearLocalOfflineArtifacts();
         window.location.href = "/public/login";
         return false;
       }
@@ -925,8 +928,8 @@
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (offlineMode) {
           setResult(lang === "pt"
-            ? "Pagamento indisponivel no modo local. Assim que API estiver online, renove a subscricao."
-            : "Payment unavailable in local mode. Renew subscription once API is online.");
+            ? "Pagamento indisponivel sem API externa. Restabeleca ligacao ao backend."
+            : "Payment unavailable without external API. Restore backend connectivity.");
           return;
         }
         setResult(lang === "pt" ? "A iniciar pagamento..." : "Starting checkout...");
@@ -961,7 +964,7 @@
       document.getElementById("btnLogout").addEventListener("click", () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
-        localStorage.removeItem(LOCAL_SESSION_KEY);
+        clearLocalOfflineArtifacts();
         window.location.href = "/public/login";
       });
 
@@ -979,6 +982,7 @@
         applyLanguage();
         const apiOk = await resolveApiBase();
         if (!apiOk) {
+          clearLocalOfflineArtifacts();
           offlineMode = true;
           quotaEl.textContent = lang === "pt"
             ? "API de verificacao indisponivel. A consulta requer API Externa Orquestrada."

@@ -247,6 +247,12 @@
       ]
         .filter(Boolean)
         .map((candidate) => String(candidate).replace(/\/+$/, ""))));
+      const apiBaseFromQuery = String(new URLSearchParams(window.location.search).get("apiBase") || "")
+        .trim()
+        .replace(/\/+$/, "");
+      if (apiBaseFromQuery && !API_CANDIDATES.includes(apiBaseFromQuery)) {
+        API_CANDIDATES.unshift(apiBaseFromQuery);
+      }
       let API_BASE = API_CANDIDATES[0];
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
@@ -768,6 +774,12 @@
         msg.textContent = text;
       }
 
+      function externalApiUnavailableMessage() {
+        return lang === "pt"
+          ? "API externa indisponivel. O modo local foi desativado. Restabeleca a ligacao com o backend."
+          : "External API unavailable. Local mode has been disabled. Restore backend connectivity.";
+      }
+
       function getToken() {
         return localStorage.getItem(TOKEN_KEY) || "";
       }
@@ -783,6 +795,7 @@
         if (value === "email-already-registered") return lang === "pt" ? "email ja registado" : "email already registered";
         if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para admin interno" : "email reserved for internal admin";
         if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligacao com API" : "API unreachable";
+        if (value === "external-api-required") return lang === "pt" ? "API externa obrigatoria" : "external API required";
         return value;
       }
 
@@ -835,6 +848,12 @@
         localStorage.removeItem(LOCAL_SESSION_KEY);
       }
 
+      function clearLocalOfflineArtifacts() {
+        clearLocalSession();
+        localStorage.removeItem(LOCAL_ACCOUNTS_KEY);
+        localStorage.removeItem(LOCAL_TRAINING_EXAMPLES_KEY);
+      }
+
       function findLocalAccount(email) {
         const target = normalizeEmail(email);
         return readLocalAccounts().find((account) => normalizeEmail(account.email) === target) || null;
@@ -864,72 +883,11 @@
       }
 
       function tryLocalSignup(payload) {
-        const email = normalizeEmail(payload.email);
-        if (email === INTERNAL_ADMIN_EMAIL) {
-          return { ok: false, error: "reserved-admin-email" };
-        }
-        if (findLocalAccount(email)) {
-          return { ok: false, error: "email-already-registered" };
-        }
-        if (!payload.fullName || !email || !payload.password) {
-          return { ok: false, error: "missing-signup-fields" };
-        }
-        if (!email.includes("@")) {
-          return { ok: false, error: "invalid-email" };
-        }
-        if (String(payload.password).length < 8) {
-          return { ok: false, error: "weak-password" };
-        }
-
-        const now = new Date();
-        const validUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        const account = {
-          email,
-          password: String(payload.password),
-          fullName: String(payload.fullName || "").trim(),
-          companyName: String(payload.companyName || payload.fullName || "").trim(),
-          companyWebsite: String(payload.companyWebsite || "").trim(),
-          remainingQueries: 10,
-          validUntil,
-          createdAt: now.toISOString()
-        };
-
-        upsertLocalAccount(account);
-        setLocalSession(email);
-        return {
-          ok: true,
-          trial: { remaining: 10, validUntil },
-          mode: "offline"
-        };
+        return { ok: false, error: "external-api-required" };
       }
 
       function tryLocalLogin(emailRaw, passwordRaw) {
-        const email = normalizeEmail(emailRaw);
-        const password = String(passwordRaw || "");
-
-        if (email === INTERNAL_ADMIN_EMAIL && password === INTERNAL_ADMIN_PASSWORD) {
-          const adminAccount = findLocalAccount(email) || {
-            email,
-            password: INTERNAL_ADMIN_PASSWORD,
-            fullName: "Admin EduGuard",
-            companyName: "EduGuard360",
-            companyWebsite: "https://eduguard360.co.mz",
-            remainingQueries: 999999,
-            validUntil: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString(),
-            createdAt: new Date().toISOString(),
-            isInternalAdmin: true
-          };
-          upsertLocalAccount(adminAccount);
-          setLocalSession(email);
-          return { ok: true, mode: "offline-admin" };
-        }
-
-        const account = findLocalAccount(email);
-        if (!account || account.password !== password) {
-          return { ok: false, error: "invalid-credentials" };
-        }
-        setLocalSession(email);
-        return { ok: true, mode: "offline" };
+        return { ok: false, error: "external-api-required" };
       }
 
       function setTokens(accessToken, refreshToken) {
@@ -1050,11 +1008,6 @@
       async function loadSubscriptionStatus() {
         const token = getToken();
         if (!token) {
-          const localStatus = getLocalStatusSummary();
-          if (localStatus) {
-            accountStatus.textContent = `${localStatus.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${localStatus.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(localStatus.validUntil).toLocaleDateString()}${offlineMode ? (lang === "pt" ? " | modo local" : " | local mode") : ""}`;
-            return;
-          }
           accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
           return;
         }
@@ -1116,39 +1069,18 @@
           const data = await safeJson(res);
 
           if (!res.ok) {
-            const local = tryLocalLogin(payload.username, payload.password);
-            if (local.ok) {
-              offlineMode = true;
-              setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
-              await loadSubscriptionStatus();
-              if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
-                adminPanel.classList.remove("hidden");
-                await loadTrainingExamples();
-              }
-              return;
-            }
             setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
 
           setTokens(data.accessToken, data.refreshToken);
-          setLocalSession(payload.username);
+          clearLocalSession();
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
         } catch {
-          const local = tryLocalLogin(payload.username, payload.password);
-          if (local.ok) {
-            offlineMode = true;
-            setMessage(lang === "pt" ? "Login local efetuado (modo independente)." : "Local login successful (independent mode).");
-            await loadSubscriptionStatus();
-            if (local.mode === "offline-admin" && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1") {
-              adminPanel.classList.remove("hidden");
-              await loadTrainingExamples();
-            }
-            return;
-          }
-          setMessage(lang === "pt" ? "Erro de ligacao." : "Connection error.");
+          clearLocalOfflineArtifacts();
+          setMessage(externalApiUnavailableMessage());
         }
       });
 
@@ -1156,7 +1088,7 @@
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_KEY);
         localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
-        clearLocalSession();
+        clearLocalOfflineArtifacts();
         hideAdminPanel();
         accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
         setMessage(lang === "pt" ? "Sessao terminada." : "Signed out.");
@@ -1201,25 +1133,6 @@
               return;
             }
 
-            const local = tryLocalSignup(payload);
-            if (local.ok) {
-              offlineMode = true;
-              setMessage(lang === "pt"
-                ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
-                : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
-              document.getElementById("loginEmail").value = payload.email;
-              document.getElementById("loginPassword").value = payload.password;
-              await loadSubscriptionStatus();
-              return;
-            }
-
-            if (local.error === "email-already-registered") {
-              setMessage(lang === "pt"
-                ? "Este email ja existe no modo local. Entre com as mesmas credenciais."
-                : "This email already exists in local mode. Sign in with the same credentials.");
-              return;
-            }
-
             setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
@@ -1230,19 +1143,8 @@
           document.getElementById("loginEmail").value = payload.email;
           document.getElementById("loginPassword").value = payload.password;
         } catch {
-          const local = tryLocalSignup(payload);
-          if (local.ok) {
-            offlineMode = true;
-            setMessage(lang === "pt"
-              ? `Conta criada em modo local. Tem ${local.trial.remaining} consultas gratis.`
-              : `Account created in local mode. You have ${local.trial.remaining} free checks.`);
-            document.getElementById("loginEmail").value = payload.email;
-            document.getElementById("loginPassword").value = payload.password;
-            await loadSubscriptionStatus();
-            return;
-          }
-
-          setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(local.error || "connection-error"));
+          clearLocalOfflineArtifacts();
+          setMessage(externalApiUnavailableMessage());
         }
       });
 
@@ -1326,8 +1228,8 @@
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (offlineMode) {
           setMessage(lang === "pt"
-            ? "Pagamento indisponivel em modo local. Assim que API voltar, podera pagar e sincronizar."
-            : "Payment unavailable in local mode. Once API is online, you can pay and sync.");
+            ? "Pagamento indisponivel sem API externa. Restabeleca a ligacao com o backend."
+            : "Payment unavailable without external API. Restore backend connectivity.");
           return;
         }
         if (!getToken()) {
@@ -1415,10 +1317,9 @@
         applyLanguage();
         const ok = await resolveApiBase();
         if (!ok) {
+          clearLocalOfflineArtifacts();
           offlineMode = true;
-          setMessage(lang === "pt"
-            ? "API indisponivel. Modo independente ativo para cadastro/login e acesso local."
-            : "API unavailable. Independent mode active for local signup/login and access.");
+          setMessage(externalApiUnavailableMessage());
         }
         await loadPlans();
         await loadSubscriptionStatus();
