@@ -32,6 +32,18 @@ Se a API estiver em outro host, ajuste o valor em:
 - `www`: CNAME para Vercel
 - `api`: apontar para o backend (Render/Railway/Fly/Kubernetes/VPS futuro)
 
+### Modo `api-external-orchestrated` no Render
+Se o frontend `/public` exigir modo externo obrigatório, configure também estes env vars no serviço da API:
+
+```env
+ENERGENT_API_URL=https://api.eduguard360.co.mz/external/providers/energent/verify
+CHECKFILE_API_URL=https://api.eduguard360.co.mz/external/providers/checkfile/verify
+ENERGENT_API_KEY=<segredo-forte>
+CHECKFILE_API_KEY=<segredo-forte>
+```
+
+Com isso, a API mantém o fluxo orquestrado externo ativo e deixa de devolver `external-validation-required` por falta de endpoint/chave.
+
 ### Restaurar DNS do subdominio da API (Cloudflare)
 No Windows/PowerShell:
 
