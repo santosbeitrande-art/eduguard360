@@ -1237,17 +1237,19 @@ function cycleMonths(cycle: BillingCycle) {
 
 export function registerAuthRoutes(app: any) {
   app.get('/auth/me', (req: Request, res: Response) => {
-    const session = getSession(req);
-    if (!session) return res.status(401).json({ authenticated: false });
+    const auth = getAuthContext(req);
+    if (!auth || auth.principalType !== 'user') {
+      return res.status(401).json({ authenticated: false });
+    }
 
     const store = ensureStore();
-    const company = store.companies.find((c) => c.id === session.companyId);
+    const company = store.companies.find((c) => c.id === auth.companyId);
     return res.json({
       authenticated: true,
       user: {
-        username: session.username,
-        role: roleForLegacyUser(session.role),
-        companyId: session.companyId,
+        username: auth.username,
+        role: roleForLegacyUser(auth.role),
+        companyId: auth.companyId,
         companyName: company?.name || null
       },
       company: company ? {
