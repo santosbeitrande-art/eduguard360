@@ -8,14 +8,15 @@ sudo chown -R www-data:www-data /var/www/eduguard360 /var/log/eduguard-api.log
 DEPLOY_VERSION="$(date -u +%Y%m%d%H%M%S)"
 
 if [ ! -f /etc/eduguard/verify-api.env ]; then
-  cat <<'EOF' | sudo tee /etc/eduguard/verify-api.env >/dev/null
-VERIFY_ADMIN_TOKEN=change-me-now
+	cat <<'EOF' | sudo tee /etc/eduguard/verify-api.env >/dev/null
+VERIFY_ADMIN_TOKEN=SET_STRONG_ADMIN_TOKEN
+INTERNAL_ADMIN_PASSWORD=SET_STRONG_INTERNAL_ADMIN_PASSWORD
 JWT_SECRET=change-me-jwt-secret
 AUDIT_EXPORT_SECRET=change-me-audit-secret
 PAYMENT_SUCCESS_URL=https://eduguard360.co.mz/public
 PAYMENT_CANCEL_URL=https://eduguard360.co.mz/public/login
 EOF
-  sudo chmod 600 /etc/eduguard/verify-api.env
+	sudo chmod 600 /etc/eduguard/verify-api.env
 fi
 
 sudo bash -c '

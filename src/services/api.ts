@@ -31,6 +31,11 @@ const mockDemoRequests: DemoRequest[] = [
 
 // Environment check for mocking
 const isMockMode = import.meta.env.VITE_MOCK_API === 'true';
+const mockAdminEmail = String(import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@eduguard360.co.mz').trim().toLowerCase();
+const mockAdminPasswords = String(import.meta.env.VITE_MOCK_ADMIN_PASSWORDS || import.meta.env.VITE_MOCK_ADMIN_PASSWORD || '')
+  .split(/[,\n;]/)
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 // Consolidated API service
 export class ApiService {
@@ -89,11 +94,7 @@ export class ApiService {
     const normalizedPassword = password.trim();
     if (isMockMode) {
       // Mock auth
-      if (normalizedEmail === 'admin@eduguard360.co.mz' && [
-        'EduGuard@360!2026',
-        'Admin1234admin',
-        'Admin@1234'
-      ].includes(normalizedPassword)) {
+      if (normalizedEmail === mockAdminEmail && mockAdminPasswords.includes(normalizedPassword)) {
         return { data: { user: { email: normalizedEmail }, session: { access_token: 'mock_token' } } };
       }
       return { error: 'Invalid credentials' };

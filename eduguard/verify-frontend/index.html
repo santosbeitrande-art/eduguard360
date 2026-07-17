@@ -193,7 +193,6 @@
       const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
       const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
-      const INTERNAL_ADMIN_PASSWORD = "Admin@123";
       const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
       const REQUIRED_PROCESSING_MODE = "api-external-orchestrated";
 
@@ -281,10 +280,6 @@
         if (normalized === "high") return lang === "pt" ? "Elevado" : "High";
         if (normalized === "medium") return lang === "pt" ? "Médio" : "Medium";
         return lang === "pt" ? "Baixo" : "Low";
-      }
-
-      function isInternalAdminCredential(emailRaw, passwordRaw) {
-        return normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL && String(passwordRaw || "") === INTERNAL_ADMIN_PASSWORD;
       }
 
       function isCurrentUserInternalAdmin() {

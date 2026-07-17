@@ -39,6 +39,7 @@ Authentication:
 - Enterprise token/API key via header x-enterprise-token (or x-api-key)
 - JWT bearer access token via Authorization: Bearer <token>
 - Admin operations via x-admin-token
+- Required env vars for admin bootstrap/access: `VERIFY_ADMIN_TOKEN` and `INTERNAL_ADMIN_PASSWORD`
 
 Access enforcement:
 - `/public/login` is public (plans + registration + login)
@@ -89,7 +90,7 @@ Bootstrap all online dev next-steps in one command:
 
 ```bash
 set BASE_URL=http://127.0.0.1:4100
-set ADMIN_TOKEN=change-me-now
+set ADMIN_TOKEN=<seu_token_admin>
 npm run bootstrap:online
 ```
 
@@ -99,7 +100,7 @@ Security housekeeping command:
 
 ```bash
 set BASE_URL=http://127.0.0.1:4100
-set ADMIN_TOKEN=change-me-now
+set ADMIN_TOKEN=<seu_token_admin>
 set DRY_RUN=true
 npm run security:housekeeping
 ```

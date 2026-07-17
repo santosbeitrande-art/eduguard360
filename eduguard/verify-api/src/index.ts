@@ -42,6 +42,8 @@ if (!fs.existsSync(JOBS_DIR)) fs.mkdirSync(JOBS_DIR, { recursive: true });
 const FRAUD_DIR = path.join(__dirname, '..', '..', 'eduguard_fraud');
 if (!fs.existsSync(FRAUD_DIR)) fs.mkdirSync(FRAUD_DIR, { recursive: true });
 const INTERNAL_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
+const SUPPORTED_UPLOAD_FORMATS = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff', 'txt', 'csv', 'json', 'md', 'docx'];
+const METADATA_FALLBACK_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff', '.docx']);
 const TRAINING_DIR = path.join(FRAUD_DIR, 'training_examples');
 const TRAINING_FILES_DIR = path.join(TRAINING_DIR, 'files');
 const TRAINING_INDEX_FILE = path.join(TRAINING_DIR, 'examples.json');
@@ -76,6 +78,11 @@ interface TrainingFilterOptions {
   search?: string;
   limit?: number;
   scopeAll?: boolean;
+}
+
+interface ExtractedTextResult {
+  text: string;
+  usedMetadataFallback: boolean;
 }
 
 const storage = multer.diskStorage({
@@ -241,7 +248,8 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
     throw new Error('reasons-required');
   }
 
-  const text = await extractTextImmediately(file.path);
+  const extraction = await extractTextForAnalysis(file);
+  const text = extraction.text;
   const forensic = analyzeDocument(file.path, text || '');
   const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
   const risk = evaluateFraudRisk(forensic, contextual);
@@ -333,6 +341,75 @@ async function extractTextImmediately(filePath: string) {
   } catch (error) {
     return '';
   }
+}
+
+function uploadedFileExtension(file: Pick<Express.Multer.File, 'originalname' | 'path'>) {
+  return path.extname(file.originalname || file.path).toLowerCase();
+}
+
+function buildMetadataFallbackText(file: Express.Multer.File) {
+  const extension = uploadedFileExtension(file) || '.unknown';
+  const safeFileName = sanitizeFileName(file.originalname || path.basename(file.path));
+  const size = Number(file.size || (fs.existsSync(file.path) ? fs.statSync(file.path).size : 0));
+  return [
+    'document_metadata_fallback',
+    `file_name:${safeFileName}`,
+    `extension:${extension}`,
+    `file_size_bytes:${size}`,
+    'warning:no_extractable_text',
+    `generated_at:${new Date().toISOString()}`
+  ].join('\n');
+}
+
+async function extractTextForAnalysis(file: Express.Multer.File): Promise<ExtractedTextResult> {
+  let extracted = '';
+  try {
+    extracted = await extractTextImmediately(file.path);
+  } catch (error: any) {
+    const reason = String(error?.message || error);
+    if (reason !== 'unsupported-file-format') {
+      throw error;
+    }
+  }
+
+  if (extracted && String(extracted).trim()) {
+    return { text: extracted, usedMetadataFallback: false };
+  }
+
+  if (!METADATA_FALLBACK_EXTENSIONS.has(uploadedFileExtension(file))) {
+    return { text: '', usedMetadataFallback: false };
+  }
+
+  return {
+    text: buildMetadataFallbackText(file),
+    usedMetadataFallback: true
+  };
+}
+
+function applyNoExtractableTextRisk(trust: CalibrationTrustInput, fileNames: string[]) {
+  const uniqueNames = Array.from(
+    new Set(
+      fileNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (!uniqueNames.length) return;
+
+  const reason = uniqueNames.length === 1
+    ? `Documento sem texto extraivel (${uniqueNames[0]}). Revisao manual recomendada.`
+    : `Documentos sem texto extraivel (${uniqueNames.join(', ')}). Revisao manual recomendada.`;
+
+  trust.likelyFraud = true;
+  trust.riskLevel = trust.riskLevel === 'high' ? 'high' : 'medium';
+  trust.riskScore = Math.max(68, Number(trust.riskScore || 0));
+  trust.confidence = Math.max(70, Number(trust.confidence || 0));
+  trust.fraudReasons = Array.from(new Set([...(trust.fraudReasons || []), reason]));
+  trust.indicators.push({
+    code: 'no-extractable-text',
+    severity: 'medium',
+    reason
+  });
 }
 
 function buildExternalModeRequirementDetails(externalValidation: any) {
@@ -520,7 +597,8 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
   fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(job, null, 2));
 
   try {
-    const text = await extractTextImmediately(req.file.path);
+    const extraction = await extractTextForAnalysis(req.file);
+    const text = extraction.text;
     if (!text || !String(text).trim()) {
       refundVerificationCredits(auth.companyId, jobId, 'empty-text-extraction');
       const failedJob = {
@@ -534,7 +612,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         jobId,
         status: 'failed',
         error: 'unsupported-or-empty-document',
-        supportedFormats: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff', 'txt', 'csv', 'json', 'md', 'docx']
+        supportedFormats: SUPPORTED_UPLOAD_FORMATS
       });
     }
     const forensic = analyzeDocument(req.file.path, text);
@@ -575,6 +653,12 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         details: buildExternalModeRequirementDetails(externalValidation)
       });
     }
+    if (extraction.usedMetadataFallback) {
+      applyNoExtractableTextRisk(calibratedTrust, [req.file.originalname]);
+      if (externalValidation.enabled && externalValidation.decision === 'approved') {
+        externalValidation.decision = 'manual_review';
+      }
+    }
     if (externalValidation.enabled && externalValidation.decision === 'manual_review') {
       calibratedTrust.likelyFraud = true;
       calibratedTrust.riskLevel = calibratedTrust.riskLevel === 'high' ? 'high' : 'medium';
@@ -598,6 +682,10 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       summary: forensic.summary,
       trust: calibratedTrust,
       externalValidation,
+      extraction: {
+        mode: extraction.usedMetadataFallback ? 'metadata-fallback' : 'text',
+        warning: extraction.usedMetadataFallback ? 'no-extractable-text' : null
+      },
       processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine',
       finalDecision: externalValidation.enabled
         ? (externalValidation.decision === 'approved' ? 'aprovado' : 'revisao_manual')
@@ -673,20 +761,24 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       fileName: string;
       filePath: string;
       status: 'done' | 'failed';
+      extractionMode: 'text' | 'metadata-fallback';
       textLength: number;
       forensic?: any;
       error?: string;
     }> = [];
     const caseInputs: CaseDocumentInput[] = [];
     const textChunks: string[] = [];
+    const fallbackFileNames: string[] = [];
 
     for (const file of files) {
-      const text = await extractTextImmediately(file.path);
+      const extraction = await extractTextForAnalysis(file);
+      const text = extraction.text;
       if (!text || !String(text).trim()) {
         documentResults.push({
           fileName: file.originalname,
           filePath: file.path,
           status: 'failed',
+          extractionMode: 'text',
           textLength: 0,
           error: 'unsupported-or-empty-document'
         });
@@ -694,10 +786,14 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       }
 
       const forensic = analyzeDocument(file.path, text);
+      if (extraction.usedMetadataFallback) {
+        fallbackFileNames.push(file.originalname);
+      }
       documentResults.push({
         fileName: file.originalname,
         filePath: file.path,
         status: 'done',
+        extractionMode: extraction.usedMetadataFallback ? 'metadata-fallback' : 'text',
         textLength: text.length,
         forensic
       });
@@ -746,6 +842,9 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     };
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust(baseTrust, calibrationProfile);
+    if (fallbackFileNames.length) {
+      applyNoExtractableTextRisk(calibratedTrust, fallbackFileNames);
+    }
     const perDocumentExternal = await Promise.all(successfulDocs.map(async (item) => {
       const matchingInput = caseInputs.find((doc) => doc.fileName === item.fileName);
       const textForPayload = matchingInput?.text || '';
@@ -789,7 +888,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         details: buildExternalModeRequirementDetails(emptyExternal)
       });
     }
-    const hasExternalManualReview = enabledExternal.some((item) => item.decision === 'manual_review');
+    const hasExternalManualReview = enabledExternal.some((item) => item.decision === 'manual_review') || fallbackFileNames.length > 0;
     const caseExternalDecision = enabledExternal.length
       ? (hasExternalManualReview ? 'manual_review' : 'approved')
       : 'internal_only';

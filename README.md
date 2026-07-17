@@ -126,12 +126,11 @@ Garantir:
 
 A aplicação está disponível em: **https://eduguard360.co.mz**
 
-### Credenciais de Teste (Administrador)
-- **Email**: admin@eduguard360.co.mz
-- **Senha**: EduGuard@360!2026
-- **Senha alternativa**: Admin1234admin
+### Acesso de Teste (Administrador)
+- **Utilizador admin**: provisionado no backend
+- **Senha admin**: configurada por variável de ambiente (`INTERNAL_ADMIN_PASSWORD`)
 
-⚠️ **Importante**: Altere estas credenciais antes do deploy em produção.
+⚠️ **Importante**: mantenha credenciais e tokens apenas em variáveis de ambiente seguras.
 
 ## 💰 Modelo de Negócio
 

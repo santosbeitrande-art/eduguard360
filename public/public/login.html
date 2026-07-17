@@ -262,7 +262,6 @@
       const LOCAL_SESSION_KEY = "eduguard_verify_local_session";
       const LOCAL_TRAINING_EXAMPLES_KEY = "eduguard_verify_training_examples";
       const INTERNAL_ADMIN_EMAIL = "admin@eduguard360.co.mz";
-      const INTERNAL_ADMIN_PASSWORD = "Admin@123";
       const INTERNAL_ADMIN_SESSION_KEY = "eduguard_verify_internal_admin_session_v2";
 
       const msg = document.getElementById("msg");
@@ -799,12 +798,8 @@
         return value;
       }
 
-      function isInternalAdminCredential(emailRaw, passwordRaw) {
-        return normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL && String(passwordRaw || "") === INTERNAL_ADMIN_PASSWORD;
-      }
-
-      function updateInternalAdminSession(emailRaw, passwordRaw) {
-        if (isInternalAdminCredential(emailRaw, passwordRaw)) {
+      function updateInternalAdminSession(emailRaw, loginSucceeded) {
+        if (loginSucceeded && normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL) {
           localStorage.setItem(INTERNAL_ADMIN_SESSION_KEY, "1");
           return;
         }
@@ -1058,7 +1053,6 @@
           username: document.getElementById("loginEmail").value,
           password: document.getElementById("loginPassword").value
         };
-        updateInternalAdminSession(payload.username, payload.password);
 
         try {
           const res = await api("/auth/login/jwt", {
@@ -1069,16 +1063,19 @@
           const data = await safeJson(res);
 
           if (!res.ok) {
+            updateInternalAdminSession(payload.username, false);
             setMessage((lang === "pt" ? "Falha de login: " : "Login failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
 
+          updateInternalAdminSession(payload.username, true);
           setTokens(data.accessToken, data.refreshToken);
           clearLocalSession();
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
         } catch {
+          updateInternalAdminSession(payload.username, false);
           clearLocalOfflineArtifacts();
           setMessage(externalApiUnavailableMessage());
         }

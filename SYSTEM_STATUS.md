@@ -12,9 +12,8 @@ O EduGuard360 está **completamente operacional e pronto para todas as operaçõ
 
 ### 1. ✅ AUTENTICAÇÃO E SEGURANÇA
 - **Admin Global**
-  - Email: `admin@eduguard360.co.mz`
-  - Senha (forte): `EduGuard@360!2026`
-  - Senha alternativa: `Admin1234admin`
+  - Utilizador: provisionado no backend
+  - Senha: definida via variável de ambiente segura (`INTERNAL_ADMIN_PASSWORD`)
   - Acesso a: Dashboard Admin, Área de Pais, Área de Escolas
   
 - **Credenciais de Acesso**
@@ -76,8 +75,8 @@ O EduGuard360 está **completamente operacional e pronto para todas as operaçõ
 
 ### Fluxo 1: Novo Utilizador Admin
 1. Admin acessa: `https://eduguard360.co.mz/sistema`
-2. Email: `admin@eduguard360.co.mz`
-3. Senha: `EduGuard@360!2026`
+2. Utilizador admin provisionado no ambiente
+3. Senha admin definida via ambiente seguro
 4. Acesso imediato ao Dashboard Admin ✅
 
 ### Fluxo 2: Novo Director de Escola
@@ -132,7 +131,7 @@ O EduGuard360 está **completamente operacional e pronto para todas as operaçõ
 
 | Tipo | Email | Senha/Código |
 |------|-------|--------------|
-| Admin | `admin@eduguard360.co.mz` | `EduGuard@360!2026` |
+| Admin | Definido no ambiente seguro | Definido no ambiente seguro |
 | Demo Director | Acesso via botão "Dir. Escola" | `demo123` |
 | Demo Segurança | Acesso via botão "Segurança QR" | `demo123` |
 | Demo Pai | Acesso via botão "Global Mestre" | `demo123` |

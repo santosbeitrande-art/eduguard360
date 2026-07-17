@@ -7,16 +7,8 @@ API_DIR="$ROOT/eduguard/verify-api"
 SERVICE_FILE="/etc/systemd/system/eduguard.service"
 NGINX_TARGET="/etc/nginx/conf.d/eduguard.conf"
 NGINX_SOURCE=""
-
-RAW_DOMAIN="${1:-eduguard360.co.mz}"
-BASE_DOMAIN="${RAW_DOMAIN#http://}"
-BASE_DOMAIN="${BASE_DOMAIN#https://}"
-BASE_DOMAIN="${BASE_DOMAIN%%/*}"
-BASE_DOMAIN="${BASE_DOMAIN#www.}"
-BASE_DOMAIN="${BASE_DOMAIN#api.}"
-WWW_DOMAIN="www.${BASE_DOMAIN}"
-API_DOMAIN="api.${BASE_DOMAIN}"
-CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@${BASE_DOMAIN}}"
+DOMAIN="${1:-eduguard360.co.mz}"
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@${DOMAIN}}"
 
 if [ -f "$ROOT/deploy-eduguard-nginx.conf" ]; then
   NGINX_SOURCE="$ROOT/deploy-eduguard-nginx.conf"
@@ -50,11 +42,12 @@ sudo cp "$ROOT/deploy-eduguard.service" "$SERVICE_FILE"
 sudo mkdir -p /etc/eduguard
 if [ ! -f /etc/eduguard/verify-api.env ]; then
   cat <<EOF | sudo tee /etc/eduguard/verify-api.env >/dev/null
-VERIFY_ADMIN_TOKEN=change-me-now
+VERIFY_ADMIN_TOKEN=SET_STRONG_ADMIN_TOKEN
+INTERNAL_ADMIN_PASSWORD=SET_STRONG_INTERNAL_ADMIN_PASSWORD
 JWT_SECRET=change-me-jwt-secret
 AUDIT_EXPORT_SECRET=change-me-audit-secret
-PAYMENT_SUCCESS_URL=https://${BASE_DOMAIN}/public
-PAYMENT_CANCEL_URL=https://${BASE_DOMAIN}/public/login
+PAYMENT_SUCCESS_URL=https://${DOMAIN}/public
+PAYMENT_CANCEL_URL=https://${DOMAIN}/public/login
 EOF
   sudo chmod 600 /etc/eduguard/verify-api.env
 fi
@@ -67,12 +60,11 @@ sudo systemctl --no-pager --full status eduguard | sed -n '1,20p'
 
 echo "[4/7] Applying canonical Nginx config..."
 sudo cp "$NGINX_SOURCE" "$NGINX_TARGET"
-sudo sed -i "s/eduguard360\.co\.mz/${BASE_DOMAIN}/g" "$NGINX_TARGET"
 sudo nginx -t
 sudo systemctl reload nginx
 
-echo "[5/7] Ensuring HTTPS certificates (web + api)..."
-sudo certbot --nginx --cert-name "$BASE_DOMAIN" -d "$BASE_DOMAIN" -d "$WWW_DOMAIN" -d "$API_DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL" || true
+echo "[5/7] Ensuring HTTPS certificate..."
+sudo certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL" || true
 sudo nginx -t
 sudo systemctl reload nginx
 
@@ -81,12 +73,9 @@ curl -fsS "http://127.0.0.1:4000/health" >/dev/null
 curl -fsS "http://127.0.0.1:4000/public/login" | grep -qi "EduGuard Verify AI"
 
 echo "[7/7] Public URL checks..."
-curl -fsSIL "https://${BASE_DOMAIN}/public" >/dev/null
-curl -fsS "https://${BASE_DOMAIN}/public/login" | grep -qi "EduGuard Verify AI"
-curl -fsS "https://${BASE_DOMAIN}/verify-api/health" | grep -qi "eduguard-verify-api"
-curl -fsS "https://${API_DOMAIN}/health" | grep -qi "eduguard-verify-api"
+curl -fsSIL "https://${DOMAIN}/public" >/dev/null
+curl -fsS "https://${DOMAIN}/public/login" | grep -qi "EduGuard Verify AI"
 
 echo "Normalization complete."
-echo "Portal URL: https://${BASE_DOMAIN}/public"
-echo "Login URL:  https://${BASE_DOMAIN}/public/login"
-echo "API URL:    https://${API_DOMAIN}/health"
+echo "Portal URL: https://${DOMAIN}/public"
+echo "Login URL:  https://${DOMAIN}/public/login"

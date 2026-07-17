@@ -178,8 +178,17 @@ const DEFAULT_MONTHLY_QUOTA = 150;
 const FREE_TRIAL_QUERIES = 10;
 const FREE_TRIAL_DAYS = 30;
 const INTERNAL_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
-const INTERNAL_ADMIN_PASSWORD = 'Admin@123';
 const UNLIMITED_QUOTA = 1000000000;
+
+function readInternalAdminPasswordFromEnv() {
+  const value = String(process.env.INTERNAL_ADMIN_PASSWORD || '').trim();
+  return value || null;
+}
+
+function readAdminTokenFromEnv() {
+  const value = String(process.env.VERIFY_ADMIN_TOKEN || '').trim();
+  return value || null;
+}
 
 const SUBSCRIPTION_PLANS: Record<SubscriptionPlanCode, {
   code: SubscriptionPlanCode;
@@ -439,8 +448,12 @@ function applySubscriptionPlan(company: Company, plan: SubscriptionPlanCode) {
 
 function ensureStore(): Store {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const configuredInternalAdminPassword = readInternalAdminPasswordFromEnv();
 
   if (!fs.existsSync(STORE_FILE)) {
+    if (!configuredInternalAdminPassword) {
+      throw new Error('internal-admin-password-not-configured');
+    }
     const now = new Date();
     const valid = new Date(now);
     valid.setMonth(valid.getMonth() + 12);
@@ -450,7 +463,7 @@ function ensureStore(): Store {
       id: crypto.randomUUID(),
       companyId,
       username: INTERNAL_ADMIN_EMAIL,
-      passwordHash: hashPassword(INTERNAL_ADMIN_PASSWORD),
+      passwordHash: hashPassword(configuredInternalAdminPassword),
       role: 'owner',
       isActive: true,
       createdAt: now.toISOString()
@@ -541,11 +554,14 @@ function ensureStore(): Store {
 
     let internalAdmin = normalized.credentials.find((c) => c.username.toLowerCase() === INTERNAL_ADMIN_EMAIL);
     if (!internalAdmin) {
+      if (!configuredInternalAdminPassword) {
+        throw new Error('internal-admin-password-not-configured');
+      }
       internalAdmin = {
         id: crypto.randomUUID(),
         companyId: internalCompany.id,
         username: INTERNAL_ADMIN_EMAIL,
-        passwordHash: hashPassword(INTERNAL_ADMIN_PASSWORD),
+        passwordHash: hashPassword(configuredInternalAdminPassword),
         role: 'owner',
         isActive: true,
         createdAt: new Date().toISOString()
@@ -553,14 +569,20 @@ function ensureStore(): Store {
       normalized.credentials.push(internalAdmin);
     } else {
       internalAdmin.companyId = internalCompany.id;
-      internalAdmin.passwordHash = hashPassword(INTERNAL_ADMIN_PASSWORD);
+      if (configuredInternalAdminPassword) {
+        internalAdmin.passwordHash = hashPassword(configuredInternalAdminPassword);
+      }
       internalAdmin.role = 'owner';
       internalAdmin.isActive = true;
     }
 
     saveStore(normalized);
     return normalized;
-  } catch {
+  } catch (error: any) {
+    const reason = String(error?.message || error);
+    if (reason === 'internal-admin-password-not-configured') {
+      throw error;
+    }
     return {
       companies: [],
       credentials: [],
@@ -1191,7 +1213,10 @@ export function requireCompanyAuth(req: Request, res: Response, next: NextFuncti
 
 function requireAdminToken(req: Request, res: Response, next: NextFunction) {
   const token = req.header('x-admin-token');
-  const expected = process.env.VERIFY_ADMIN_TOKEN || 'change-me-now';
+  const expected = readAdminTokenFromEnv();
+  if (!expected) {
+    return res.status(503).json({ error: 'admin-token-not-configured' });
+  }
   if (!token || token !== expected) {
     return res.status(403).json({ error: 'admin-token-required' });
   }
@@ -1455,7 +1480,10 @@ export function registerAuthRoutes(app: any) {
     if (auth.username.toLowerCase() !== INTERNAL_ADMIN_EMAIL) {
       return res.status(403).json({ error: 'admin-access-required' });
     }
-    const token = process.env.VERIFY_ADMIN_TOKEN || 'change-me-now';
+    const token = readAdminTokenFromEnv();
+    if (!token) {
+      return res.status(503).json({ error: 'admin-token-not-configured' });
+    }
     return res.json({ ok: true, adminToken: token });
   });
 
