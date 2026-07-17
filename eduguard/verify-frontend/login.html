@@ -1074,6 +1074,7 @@
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
+          window.location.href = "/public";
         } catch {
           updateInternalAdminSession(payload.username, false);
           clearLocalOfflineArtifacts();

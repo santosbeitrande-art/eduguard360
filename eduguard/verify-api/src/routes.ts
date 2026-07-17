@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { getSession } from './auth';
 
 const router = express.Router();
 
@@ -26,18 +25,10 @@ router.get('/public/login', (_req, res) => {
 });
 
 router.get('/public', (req, res) => {
-  const session = getSession(req);
-  if (!session) {
-    return res.redirect('/public/login');
-  }
   sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
 });
 
 router.get('/public/', (req, res) => {
-  const session = getSession(req);
-  if (!session) {
-    return res.redirect('/public/login');
-  }
   sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
 });
 
