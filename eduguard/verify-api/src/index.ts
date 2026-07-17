@@ -28,6 +28,8 @@ import {
 } from './auth';
 import { runExternalValidation } from './external_validation';
 import { EXTERNAL_PROCESSING_MODE, isExternalProcessingModeRequired } from './processing_mode';
+import { runInternalBenchmark } from './internal_benchmark';
+import { buildAuditableDecision, toLegacyFinalDecision } from './decision_policy';
 
 const app = express();
 app.use(cors());
@@ -47,6 +49,7 @@ const METADATA_FALLBACK_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '
 const TRAINING_DIR = path.join(FRAUD_DIR, 'training_examples');
 const TRAINING_FILES_DIR = path.join(TRAINING_DIR, 'files');
 const TRAINING_INDEX_FILE = path.join(TRAINING_DIR, 'examples.json');
+const FEEDBACK_INDEX_FILE = path.join(TRAINING_DIR, 'verification_feedback.json');
 if (!fs.existsSync(TRAINING_DIR)) fs.mkdirSync(TRAINING_DIR, { recursive: true });
 if (!fs.existsSync(TRAINING_FILES_DIR)) fs.mkdirSync(TRAINING_FILES_DIR, { recursive: true });
 
@@ -83,6 +86,22 @@ interface TrainingFilterOptions {
 interface ExtractedTextResult {
   text: string;
   usedMetadataFallback: boolean;
+
+type ReviewerOutcome = 'fraud_confirmed' | 'authenticity_confirmed' | 'inconclusive';
+
+interface VerificationFeedbackRecord {
+  id: string;
+  companyId: string;
+  jobId: string;
+  outcome: ReviewerOutcome;
+  reviewer: string;
+  reviewerConfidence: number;
+  notes: string;
+  authenticityScore: number | null;
+  riskScore: number | null;
+  decisionStatus: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const storage = multer.diskStorage({
@@ -90,6 +109,66 @@ const storage = multer.diskStorage({
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 const upload = multer({ storage });
+
+const TEXT_LIKE_EXTENSIONS = new Set([
+  '.txt', '.csv', '.tsv', '.json', '.md', '.log', '.rtf', '.xml', '.html', '.htm', '.yaml', '.yml', '.ini', '.cfg'
+]);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
+const SUPPORTED_FORMATS = [
+  'pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff',
+  'txt', 'csv', 'tsv', 'json', 'md', 'docx', 'rtf', 'xml', 'html', 'htm', 'yaml', 'yml', 'log', 'ini', 'cfg'
+];
+
+function normalizeExtractedText(value: unknown) {
+  return String(value || '')
+    .replace(/\u0000/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t ]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function stripMarkup(text: string) {
+  return text
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+function stripRtf(text: string) {
+  return text
+    .replace(/\\par[d]?/g, '\n')
+    .replace(/\\'[0-9a-fA-F]{2}/g, ' ')
+    .replace(/\\[a-zA-Z]+-?\d* ?/g, ' ')
+    .replace(/[{}]/g, ' ');
+}
+
+function tryReadTextFallback(filePath: string) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > 30 * 1024 * 1024) return '';
+    const raw = fs.readFileSync(filePath);
+    const decoded = raw.toString('utf8');
+    if (!decoded.trim()) return '';
+
+    const sample = decoded.slice(0, 12000);
+    const printable = (sample.match(/[\x20-\x7E\n\r\t]/g) || []).length;
+    const replacement = (sample.match(/\uFFFD/g) || []).length;
+    const ratio = sample.length ? printable / sample.length : 0;
+
+    if (ratio < 0.45 || replacement > sample.length * 0.1) return '';
+    return decoded;
+  } catch {
+    return '';
+  }
+}
 
 function readTrainingExamples(): TrainingExampleRecord[] {
   if (!fs.existsSync(TRAINING_INDEX_FILE)) return [];
@@ -99,6 +178,20 @@ function readTrainingExamples(): TrainingExampleRecord[] {
   } catch {
     return [];
   }
+}
+
+function readVerificationFeedback(): VerificationFeedbackRecord[] {
+  if (!fs.existsSync(FEEDBACK_INDEX_FILE)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(FEEDBACK_INDEX_FILE, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeVerificationFeedback(rows: VerificationFeedbackRecord[]) {
+  fs.writeFileSync(FEEDBACK_INDEX_FILE, JSON.stringify(rows, null, 2));
 }
 
 function writeTrainingExamples(examples: TrainingExampleRecord[]) {
@@ -217,25 +310,39 @@ function queryTrainingExamples(options: TrainingFilterOptions) {
   };
 }
 
-function getCompanyCalibrationProfile(auth: AuthContext, companyId: string): CalibrationProfile {
-  if (!requireInternalAdmin(auth)) {
-    return {
-      enabled: false,
-      companyId,
-      sampleSize: 0,
-      fraudCount: 0,
-      authenticCount: 0,
-      fraudMean: null,
-      authenticMean: null,
-      threshold: 55,
-      margin: 7,
-      confidence: 0,
-      reason: 'admin-access-required'
-    };
+function readJob(jobId: string): any | null {
+  const safeId = String(jobId || '').trim();
+  if (!safeId) return null;
+  const filePath = path.join(JOBS_DIR, `${safeId}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
   }
+}
 
-  const examples = readTrainingExamples() as TrainingExampleLite[];
-  return buildCalibrationProfile(examples, companyId);
+function toCalibrationExamplesFromFeedback(feedbackRows: VerificationFeedbackRecord[], companyId: string): TrainingExampleLite[] {
+  const minConfidence = 60;
+  return feedbackRows
+    .filter((item) => item.companyId === companyId)
+    .filter((item) => item.outcome === 'fraud_confirmed' || item.outcome === 'authenticity_confirmed')
+    .filter((item) => Number.isFinite(Number(item.authenticityScore)))
+    .filter((item) => Number(item.reviewerConfidence || 0) >= minConfidence)
+    .map((item) => ({
+      companyId: item.companyId,
+      category: item.outcome === 'fraud_confirmed' ? 'high-risk-fraud' : 'high-authenticity',
+      analysis: {
+        authenticityScore: Number(item.authenticityScore || 0)
+      }
+    }));
+}
+
+function getCompanyCalibrationProfile(auth: AuthContext, companyId: string): CalibrationProfile {
+  const trainingExamples = readTrainingExamples() as TrainingExampleLite[];
+  const feedbackExamples = toCalibrationExamplesFromFeedback(readVerificationFeedback(), companyId);
+  const merged = [...trainingExamples, ...feedbackExamples];
+  return buildCalibrationProfile(merged, companyId);
 }
 
 async function createTrainingExampleRecord(auth: AuthContext, file: Express.Multer.File, payload: { category?: unknown; reasons?: unknown; notes?: unknown }) {
@@ -290,24 +397,28 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
 
 async function extractTextImmediately(filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
-  const textLikeExtensions = new Set(['.txt', '.csv', '.json', '.md']);
-  const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
 
   if (ext === '.pdf') {
     try {
       const pdfParse = require('pdf-parse');
       const buffer = fs.readFileSync(filePath);
       const pdf = await pdfParse(buffer);
-      return typeof pdf?.text === 'string' ? pdf.text : '';
-    } catch (error) {
+      return normalizeExtractedText(typeof pdf?.text === 'string' ? pdf.text : '');
+    } catch {
       return '';
     }
   }
 
-  if (textLikeExtensions.has(ext)) {
+  if (TEXT_LIKE_EXTENSIONS.has(ext)) {
     try {
-      return fs.readFileSync(filePath, 'utf8');
-    } catch (error) {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const cleaned = ext === '.html' || ext === '.htm' || ext === '.xml'
+        ? stripMarkup(raw)
+        : ext === '.rtf'
+          ? stripRtf(raw)
+          : raw;
+      return normalizeExtractedText(cleaned);
+    } catch {
       return '';
     }
   }
@@ -315,32 +426,34 @@ async function extractTextImmediately(filePath: string) {
   if (ext === '.docx') {
     try {
       const output = await mammoth.extractRawText({ path: filePath });
-      return output?.value || '';
-    } catch (error) {
+      return normalizeExtractedText(output?.value || '');
+    } catch {
       return '';
     }
   }
 
-  if (!imageExtensions.has(ext)) {
-    throw new Error('unsupported-file-format');
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    const workerPath = path.join(__dirname, '..', '..', 'ocr-worker', 'worker.py');
+    const result = spawnSync('python', [workerPath, filePath], {
+      encoding: 'utf8',
+      timeout: 120000
+    });
+
+    if (result.status !== 0 || !result.stdout) {
+      return '';
+    }
+
+    try {
+      const parsed = JSON.parse(result.stdout);
+      return normalizeExtractedText(parsed?.text || '');
+    } catch {
+      return '';
+    }
   }
 
-  const workerPath = path.join(__dirname, '..', '..', 'ocr-worker', 'worker.py');
-  const result = spawnSync('python', [workerPath, filePath], {
-    encoding: 'utf8',
-    timeout: 120000
-  });
-
-  if (result.status !== 0 || !result.stdout) {
-    return '';
-  }
-
-  try {
-    const parsed = JSON.parse(result.stdout);
-    return parsed?.text || '';
-  } catch (error) {
-    return '';
-  }
+  const fallback = normalizeExtractedText(tryReadTextFallback(filePath));
+  if (fallback) return fallback;
+  throw new Error('unsupported-file-format');
 }
 
 function uploadedFileExtension(file: Pick<Express.Multer.File, 'originalname' | 'path'>) {
@@ -613,6 +726,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         status: 'failed',
         error: 'unsupported-or-empty-document',
         supportedFormats: SUPPORTED_UPLOAD_FORMATS
+        supportedFormats: SUPPORTED_UPLOAD_FORMATS
       });
     }
     const forensic = analyzeDocument(req.file.path, text);
@@ -675,7 +789,22 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
     const aiSignals = forensic.checks?.aiLikelihood === 'likely-ai' || forensic.checks?.aiLikelihood === 'possible-ai';
     const contextualSignals = (contextual.checks || []).length > 0 || ((contextual.found?.domains || []).length > 0) || ((contextual.found?.emails || []).length > 0);
     const passiveIssuesFound = forensic.checks?.dateConsistency === 'inconsistent' || forensic.checks?.aiLikelihood === 'likely-ai' || forensic.score < 45;
+    const auditableDecision = buildAuditableDecision({
+      trust: {
+        authenticityPercentage: Number(calibratedTrust.authenticityPercentage || 0),
+        likelyFraud: Boolean(calibratedTrust.likelyFraud),
+        riskLevel: String(calibratedTrust.riskLevel || 'unknown'),
+        riskScore: Number(calibratedTrust.riskScore || 0),
+        confidence: Number(calibratedTrust.confidence || 0),
+        indicators: Array.isArray(calibratedTrust.indicators) ? calibratedTrust.indicators : []
+      },
+      externalDecision: externalValidation.decision,
+      calibration: calibratedTrust.calibration || null,
+      mode: 'recommendation'
+    });
+
     const result = {
+      decision: auditableDecision,
       text,
       forensic,
       contextual,
@@ -687,9 +816,8 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         warning: extraction.usedMetadataFallback ? 'no-extractable-text' : null
       },
       processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine',
-      finalDecision: externalValidation.enabled
-        ? (externalValidation.decision === 'approved' ? 'aprovado' : 'revisao_manual')
-        : 'motor_interno',
+      finalDecision: toLegacyFinalDecision(auditableDecision.status),
+      decisionMode: 'recommendation',
       verdicts: {
         passive: passiveIssuesFound ? 'found' : 'not_found',
         contextual: contextualSignals ? 'found' : 'not_found',
@@ -829,16 +957,23 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
 
     const caseAnalysis = analyzeCaseDocuments(caseInputs);
     const contextual = await contextualizeText(textChunks.join('\n'));
+    const metadataIndicatorsFromDocs = successfulDocs
+      .flatMap((item) => Array.isArray(item.forensic?.checks?.metadataIndicators) ? item.forensic.checks.metadataIndicators : [])
+      .slice(0, 20);
     const baseLikelyFraud = caseAnalysis.indicators.some((item) => item.severity === 'high')
-      || caseAnalysis.indicators.filter((item) => item.severity === 'medium').length >= 2;
+      || caseAnalysis.indicators.filter((item) => item.severity === 'medium').length >= 2
+      || metadataIndicatorsFromDocs.filter((item) => item?.severity === 'medium').length >= 3;
     const baseTrust: CalibrationTrustInput = {
       authenticityPercentage: caseAnalysis.score,
       likelyFraud: baseLikelyFraud,
       riskLevel: baseLikelyFraud ? 'medium' : 'low',
-      riskScore: baseLikelyFraud ? 60 : 35,
-      confidence: caseAnalysis.indicators.length ? 70 : 50,
-      fraudReasons: caseAnalysis.indicators.map((item) => item.reason),
-      indicators: caseAnalysis.indicators
+      riskScore: Math.min(100, (baseLikelyFraud ? 60 : 35) + (metadataIndicatorsFromDocs.filter((item) => item?.severity === 'medium').length * 4)),
+      confidence: Math.min(95, (caseAnalysis.indicators.length ? 70 : 50) + metadataIndicatorsFromDocs.length),
+      fraudReasons: [
+        ...caseAnalysis.indicators.map((item) => item.reason),
+        ...metadataIndicatorsFromDocs.map((item) => String(item.reason || ''))
+      ].filter(Boolean),
+      indicators: [...caseAnalysis.indicators, ...metadataIndicatorsFromDocs]
     };
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust(baseTrust, calibrationProfile);
@@ -906,7 +1041,22 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       );
     }
 
+    const caseDecision = buildAuditableDecision({
+      trust: {
+        authenticityPercentage: Number(calibratedTrust.authenticityPercentage || 0),
+        likelyFraud: Boolean(calibratedTrust.likelyFraud),
+        riskLevel: String(calibratedTrust.riskLevel || 'unknown'),
+        riskScore: Number(calibratedTrust.riskScore || 0),
+        confidence: Number(calibratedTrust.confidence || 0),
+        indicators: Array.isArray(calibratedTrust.indicators) ? calibratedTrust.indicators : []
+      },
+      externalDecision: caseExternalDecision,
+      calibration: calibratedTrust.calibration || null,
+      mode: 'recommendation'
+    });
+
     const result = {
+      decision: caseDecision,
       documents: documentResults,
       case: caseAnalysis,
       contextual,
@@ -917,9 +1067,8 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         documents: perDocumentExternal
       },
       processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine',
-      finalDecision: enabledExternal.length
-        ? (caseExternalDecision === 'approved' ? 'aprovado' : 'revisao_manual')
-        : 'motor_interno',
+      finalDecision: toLegacyFinalDecision(caseDecision.status),
+      decisionMode: 'recommendation',
       verdicts: {
         passive: caseAnalysis.indicators.length > 0 ? 'found' : 'not_found',
         contextual: (contextual.checks || []).length > 0 ? 'found' : 'not_found',
@@ -953,6 +1102,92 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
     return res.status(500).json({ jobId, status: 'failed', error: failedJob.error });
   }
+});
+
+app.get('/benchmark/internal', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) {
+    return res.status(403).json({ error: 'admin-access-required' });
+  }
+
+  try {
+    const report = runInternalBenchmark();
+    return res.json(report);
+  } catch (error: any) {
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.post('/verification-feedback', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const jobId = String(req.body?.jobId || '').trim();
+  const outcome = String(req.body?.outcome || '').trim().toLowerCase() as ReviewerOutcome;
+  const notes = String(req.body?.notes || '').trim().slice(0, 2000);
+  const reviewerConfidenceRaw = Number(req.body?.reviewerConfidence ?? 70);
+  const reviewerConfidence = Number.isFinite(reviewerConfidenceRaw)
+    ? Math.max(0, Math.min(100, Math.round(reviewerConfidenceRaw)))
+    : 70;
+
+  if (!jobId) return res.status(400).json({ error: 'job-id-required' });
+  if (!['fraud_confirmed', 'authenticity_confirmed', 'inconclusive'].includes(outcome)) {
+    return res.status(400).json({ error: 'invalid-outcome' });
+  }
+
+  const job = readJob(jobId);
+  if (!job) return res.status(404).json({ error: 'job-not-found' });
+  if (String(job.companyId || '') !== String(auth.companyId || '')) {
+    return res.status(403).json({ error: 'job-access-denied' });
+  }
+
+  const authenticityScoreRaw = Number(job?.result?.trust?.authenticityPercentage ?? job?.result?.summary?.authenticityScore);
+  const riskScoreRaw = Number(job?.result?.trust?.riskScore);
+
+  const now = new Date().toISOString();
+  const all = readVerificationFeedback();
+  const existingIdx = all.findIndex((item) => item.companyId === auth.companyId && item.jobId === jobId);
+
+  const payload: VerificationFeedbackRecord = {
+    id: existingIdx >= 0 ? all[existingIdx].id : uuidv4(),
+    companyId: auth.companyId,
+    jobId,
+    outcome,
+    reviewer: auth.username,
+    reviewerConfidence,
+    notes,
+    authenticityScore: Number.isFinite(authenticityScoreRaw) ? authenticityScoreRaw : null,
+    riskScore: Number.isFinite(riskScoreRaw) ? riskScoreRaw : null,
+    decisionStatus: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
+    createdAt: existingIdx >= 0 ? all[existingIdx].createdAt : now,
+    updatedAt: now
+  };
+
+  if (existingIdx >= 0) {
+    all[existingIdx] = payload;
+  } else {
+    all.unshift(payload);
+  }
+
+  writeVerificationFeedback(all.slice(0, 10000));
+  const calibration = getCompanyCalibrationProfile(auth, auth.companyId);
+  return res.json({ ok: true, feedback: payload, calibration });
+});
+
+app.get('/verification-feedback', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const scopeAll = String(req.query?.scope || '').trim().toLowerCase() === 'all';
+  const limitRaw = Number(req.query?.limit ?? 50);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50;
+
+  const all = readVerificationFeedback();
+  const rows = scopeAll && requireInternalAdmin(auth)
+    ? all
+    : all.filter((item) => item.companyId === auth.companyId);
+
+  return res.json({
+    feedback: rows.slice(0, limit),
+    total: rows.length,
+    calibration: getCompanyCalibrationProfile(auth, auth.companyId)
+  });
 });
 
 app.post('/training-examples', requireCompanyAuth, upload.single('file'), async (req, res) => {

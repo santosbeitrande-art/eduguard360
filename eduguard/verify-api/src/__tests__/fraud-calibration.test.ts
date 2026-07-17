@@ -9,6 +9,9 @@ import { evaluateFraudRisk } from '../risk';
 import { applyCalibrationToTrust, buildCalibrationProfile } from '../calibration';
 import { combineExternalValidationResults } from '../external_validation';
 import { getRequestedProcessingMode, isExternalProcessingModeRequired } from '../processing_mode';
+import { buildAuditableDecision } from '../decision_policy';
+import { runInternalBenchmark } from '../internal_benchmark';
+import { buildMetadataIndicators } from '../metadata_forensics';
 
 type FixtureCase = {
   id: string;
@@ -151,9 +154,15 @@ test('company training calibration shifts decision boundaries with sufficient ex
     { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 28 } },
     { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 33 } },
     { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 41 } },
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 36 } },
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 30 } },
+    { companyId: 'comp-a', category: 'high-risk-fraud', analysis: { authenticityScore: 39 } },
     { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 78 } },
     { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 84 } },
-    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 88 } }
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 88 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 81 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 86 } },
+    { companyId: 'comp-a', category: 'high-authenticity', analysis: { authenticityScore: 90 } }
   ] as any;
 
   const profile = buildCalibrationProfile(trainingExamples, 'comp-a');
@@ -211,6 +220,138 @@ test('disabled calibration profile preserves trust decision for non-admin flow',
   assert.equal(trust.likelyFraud, false);
   assert.equal(trust.riskScore, 34);
   assert.equal(trust.calibration.reason, 'admin-access-required');
+});
+
+test('auditable decision policy routes validated/review/blocked with explanation', () => {
+  const validated = buildAuditableDecision({
+    trust: {
+      authenticityPercentage: 83,
+      likelyFraud: false,
+      riskLevel: 'low',
+      riskScore: 21,
+      confidence: 74,
+      indicators: [{ code: 'weak-context', severity: 'low', reason: 'Low corroboration only.' }]
+    },
+    externalDecision: 'internal_only',
+    mode: 'recommendation',
+    calibration: null
+  });
+  assert.equal(validated.status, 'validated');
+  assert.equal(validated.mode, 'recommendation');
+  assert.equal(validated.ruleVersion.length > 0, true);
+
+  const review = buildAuditableDecision({
+    trust: {
+      authenticityPercentage: 57,
+      likelyFraud: true,
+      riskLevel: 'medium',
+      riskScore: 58,
+      confidence: 64,
+      indicators: [{ code: 'date-inconsistency', severity: 'high', reason: 'Date conflict.' }]
+    },
+    externalDecision: 'manual_review',
+    mode: 'recommendation',
+    calibration: null
+  });
+  assert.equal(review.status, 'review_required');
+  assert.equal(review.reasonCode, 'external-manual-review');
+
+  const blocked = buildAuditableDecision({
+    trust: {
+      authenticityPercentage: 18,
+      likelyFraud: true,
+      riskLevel: 'high',
+      riskScore: 93,
+      confidence: 81,
+      indicators: [{ code: 'document-invalid', severity: 'high', reason: 'Invalid digital signature.' }]
+    },
+    externalDecision: 'internal_only',
+    mode: 'recommendation',
+    calibration: null
+  });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.statusLabel, 'Bloqueado por evidencia critica');
+});
+
+test('internal benchmark reports precision/recall and review rates by document type', () => {
+  const report = runInternalBenchmark();
+
+  assert.ok(typeof report.overall.precision === 'number');
+  assert.ok(typeof report.overall.recall === 'number');
+  assert.ok(typeof report.overall.falsePositiveRate === 'number');
+  assert.ok(typeof report.overall.falseNegativeRate === 'number');
+  assert.ok(typeof report.overall.reviewRate === 'number');
+  assert.ok(report.totals.fixtures >= 5);
+  assert.ok(report.totals.documentTypes >= 2);
+  assert.ok(Object.keys(report.byDocumentType).length >= 2);
+  assert.equal(report.policy.mode, 'recommendation');
+});
+
+test('metadata signals require contextual conflict and do not punish missing EXIF', () => {
+  const noExifIndicators = buildMetadataIndicators({
+    ext: '.jpg',
+    text: 'BILHETE DE IDENTIDADE Nome: Carlos Alberto Mucavele Data de Emissao: 2025-08-12',
+    documentType: 'identity',
+    employers: [],
+    ocrDates: ['2025-08-12'],
+    fileMtime: '2025-08-12T10:00:00.000Z',
+    metadata: {
+      format: 'image',
+      image: {}
+    }
+  });
+
+  assert.equal(noExifIndicators.length, 0, 'Missing EXIF alone must not produce risk signal');
+
+  const pdfMismatchIndicators = buildMetadataIndicators({
+    ext: '.pdf',
+    text: 'DECLARACAO DE RENDIMENTOS Entidade Patronal: Banco Nacional de Mocambique Data de Emissao: 2026-06-01',
+    documentType: 'income-statement',
+    employers: ['Banco Nacional de Mocambique'],
+    ocrDates: ['2026-06-01'],
+    fileMtime: '2026-07-01T10:00:00.000Z',
+    metadata: {
+      format: 'pdf',
+      pdf: {
+        producer: 'Canva PDF Generator',
+        creator: 'Canva',
+        creationDate: 'D:20260701120000',
+        modDate: 'D:20260702120000'
+      }
+    }
+  });
+
+  assert.ok(
+    pdfMismatchIndicators.some((item) => item.code === 'pdf-producer-context-mismatch'),
+    'Expected PDF producer/context mismatch signal'
+  );
+});
+
+test('risk engine includes metadata indicators as contextual risk factors', () => {
+  const risk = evaluateFraudRisk({
+    summary: { authenticityScore: 74, aiLikelihood: 'unlikely-ai', dateConsistency: 'consistent' },
+    checks: {
+      aiLikelihood: 'unlikely-ai',
+      dateConsistency: 'consistent',
+      documentFraudIndicators: [],
+      metadataIndicators: [
+        {
+          code: 'office-content-metadata-date-conflict',
+          severity: 'medium',
+          reason: 'Datas de conteudo e metadata Office divergem fortemente.'
+        }
+      ]
+    }
+  }, {
+    found: { domains: ['example.org'], emails: ['rh@example.org'] },
+    checks: []
+  });
+
+  assert.ok(
+    risk.indicators.some((item: any) => item.code === 'office-content-metadata-date-conflict'),
+    'Expected metadata indicator to be part of risk indicators'
+  );
+  assert.ok(risk.riskScore >= 20, 'Expected non-trivial risk score contribution from metadata conflict');
 });
 
 test('external validation combines provider decisions conservatively', () => {

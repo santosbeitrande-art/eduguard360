@@ -4,21 +4,13 @@ import imageSize from 'image-size';
 import mime from 'mime-types';
 import { detectAiStyle, detectAiStyleDetails } from './ai_detector';
 import { analyzeTextIntelligence } from './document_intelligence';
+import { extractFormatMetadata, buildMetadataIndicators } from './metadata_forensics';
 
 const SCORE_BASELINE = 42;
 const UNIQUE_RATIO_WEIGHT = 28;
 const AI_SCORE_WEIGHT = 12;
 const DATE_INCONSISTENT_PENALTY = 12;
 const DATE_UNKNOWN_PENALTY = 4;
-
-let pdfParse: any = null;
-try {
-  // optional import; may not be installed in all environments
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  pdfParse = require('pdf-parse');
-} catch (e) {
-  pdfParse = null;
-}
 
 export function analyzeDocument(filePath: string, ocrText?: string) {
   const result: any = { metadata: {}, checks: {}, score: 0 };
@@ -44,26 +36,11 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
     result.metadata.dimensionsError = String(e);
   }
 
-  // PDF metadata extraction when possible
+  // Format-specific metadata extraction (PDF/image/Office).
   try {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.pdf' && pdfParse) {
-      const data = fs.readFileSync(filePath);
-      // pdf-parse returns metadata and text; keep metadata for forensic checks
-      // Note: this is synchronous for prototype; in production use async
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      pdfParse(data).then((pdfRes: any) => {
-        result.metadata.pdfInfo = {
-          info: pdfRes.info || null,
-          metadata: pdfRes.metadata || null,
-          numPages: pdfRes.numpages || null
-        };
-      }).catch((e: any) => {
-        result.metadata.pdfError = String(e);
-      });
-    }
+    result.metadata.formatDetails = extractFormatMetadata(filePath, result.metadata.ext || '');
   } catch (e) {
-    result.metadata.pdfError = String(e);
+    result.metadata.formatDetailsError = String(e);
   }
 
   // Simple OCR-based heuristics for AI-generation detection
@@ -144,6 +121,17 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
     result.checks.dateConsistency = 'error';
   }
 
+  const metadataIndicators = buildMetadataIndicators({
+    ext: result.metadata.ext || '',
+    text,
+    documentType: textIntel.extracted.documentType,
+    employers: textIntel.extracted.employers,
+    ocrDates: dateMatches,
+    fileMtime: result.metadata.mtime,
+    metadata: result.metadata.formatDetails || { format: 'other' }
+  });
+  result.checks.metadataIndicators = metadataIndicators;
+
   // Score calculation: baseline, penalize AI-likelihood and date inconsistencies
   let score = SCORE_BASELINE + Math.floor(uniqRatio * UNIQUE_RATIO_WEIGHT) - aiScore * AI_SCORE_WEIGHT;
   score -= Math.round(aiStyleDetails.score * 10);
@@ -151,6 +139,12 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
   if (result.checks.dateConsistency === 'inconsistent') score -= DATE_INCONSISTENT_PENALTY;
   if (result.checks.dateConsistency === 'unknown' && words.length >= 30) score -= DATE_UNKNOWN_PENALTY;
   score -= textIntel.penalty;
+  const metadataPenalty = metadataIndicators.reduce((acc: number, item: any) => {
+    if (item?.severity === 'medium') return acc + 6;
+    if (item?.severity === 'low') return acc + 2;
+    return acc;
+  }, 0);
+  score -= Math.min(16, metadataPenalty);
 
   // Document-type-aware trust bonuses to reduce false positives on structured genuine documents.
   const extracted = textIntel.extracted;
@@ -174,7 +168,8 @@ export function analyzeDocument(filePath: string, ocrText?: string) {
     aiLikelihood: result.checks.aiLikelihood,
     dateConsistency: result.checks.dateConsistency || 'unknown',
     documentType: result.checks.documentType,
-    indicatorCount: (textIntel.indicators || []).length
+    indicatorCount: (textIntel.indicators || []).length,
+    metadataIndicatorCount: metadataIndicators.length
   };
 
   return result;

@@ -142,7 +142,7 @@
       <section class="panel">
         <form id="uploadForm">
           <label for="file" id="lblFile">Selecionar ficheiro</label>
-          <input type="file" id="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.csv,.json,.md,.docx" />
+          <input type="file" id="file" name="file" />
           <button class="btn" type="submit" id="btnVerify" style="margin-top:10px;">Verificar documento</button>
         </form>
         <div id="result" class="status" style="margin-top:10px;">Pronto para consulta.</div>
@@ -170,10 +170,13 @@
     </main>
 
     <script>
+      const QUERY_API_BASE = new URLSearchParams(window.location.search).get("apiBase") || "";
+      const CANONICAL_API_BASE = "https://api.eduguard360.co.mz";
       const API_CANDIDATES = Array.from(new Set([
+        QUERY_API_BASE,
         window.EDUGUARD_VERIFY_API_BASE || "",
         localStorage.getItem("eduguard_verify_api_base") || "",
-        "https://api.eduguard360.co.mz",
+        CANONICAL_API_BASE,
         `${window.location.origin}/verify-api`,
         window.location.origin
       ]
@@ -210,6 +213,7 @@
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
+      let lastVerificationJobId = "";
       let trainingQueryState = {
         category: "",
         search: ""
@@ -1095,7 +1099,54 @@
         }
       }
 
-      function renderTrust(result) {
+      async function submitHumanFeedback(outcome, jobId) {
+        if (!jobId || offlineMode) return;
+        const notesPrompt = lang === "pt"
+          ? "Notas do revisor (opcional):"
+          : "Reviewer notes (optional):";
+        const notes = String(window.prompt(notesPrompt, "") || "").trim();
+        const reviewerConfidence = Number(resultEl.getAttribute("data-last-confidence") || 70);
+
+        try {
+          const res = await api("/verification-feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId,
+              outcome,
+              notes,
+              reviewerConfidence
+            })
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setResult((lang === "pt" ? "Falha ao registar feedback: " : "Failed to save feedback: ") + (data?.error || "unknown"));
+            return;
+          }
+          const calibrationInfo = data?.calibration
+            ? (lang === "pt"
+              ? ` Calibração: amostras=${data.calibration.sampleSize}, estado=${data.calibration.enabled ? "ativa" : "segura-global"}.`
+              : ` Calibration: samples=${data.calibration.sampleSize}, state=${data.calibration.enabled ? "enabled" : "global-safe"}.`)
+            : "";
+          setResult((lang === "pt" ? "Feedback humano registado com sucesso." : "Human feedback saved successfully.") + calibrationInfo);
+        } catch {
+          setResult(lang === "pt" ? "Erro de ligação ao registar feedback." : "Connection error while saving feedback.");
+        }
+      }
+
+      function bindFeedbackActions(jobId) {
+        if (!jobId) return;
+        const buttons = document.querySelectorAll("button[data-feedback-outcome]");
+        buttons.forEach((button) => {
+          button.addEventListener("click", async () => {
+            const outcome = button.getAttribute("data-feedback-outcome");
+            if (!outcome) return;
+            await submitHumanFeedback(outcome, jobId);
+          });
+        });
+      }
+
+      function renderTrust(result, jobId) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
         const riskScore = Number(result?.trust?.riskScore ?? 0);
@@ -1104,19 +1155,26 @@
         const indicators = result?.trust?.indicators || [];
         const ai = result?.summary?.aiLikelihood || "unknown";
         const dates = result?.summary?.dateConsistency || "unknown";
-        const mode = String(result?.processingMode || REQUIRED_PROCESSING_MODE);
-        const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_manual" : "aprovado"));
+  const mode = String(result?.processingMode || REQUIRED_PROCESSING_MODE);
+        const decisionStatus = String(result?.decision?.status || "").trim();
+        const decisionStatusLabelFromApi = String(result?.decision?.statusLabel || "").trim();
+        const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_obrigatoria" : "validado"));
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
         const modeLabel = (mode === "local-heuristic-v2" || mode === "local-heuristic-v3")
           ? (lang === "pt" ? "Local Heuristico v3" : "Local Heuristic v3")
           : mode === "api-external-orchestrated"
             ? (lang === "pt" ? "API Externa Orquestrada" : "External Orchestrated API")
             : (lang === "pt" ? "API Interna" : "Internal API");
-        const finalDecisionLabel = finalDecision === "aprovado"
-          ? (lang === "pt" ? "Aprovado" : "Approved")
-          : finalDecision === "revisao_manual"
-            ? (lang === "pt" ? "Revisão Manual" : "Manual Review")
-            : (lang === "pt" ? "Motor Interno" : "Internal Engine");
+        const normalizedDecision = decisionStatus || finalDecision;
+        const finalDecisionLabel = decisionStatusLabelFromApi || (
+          ["validated", "validado", "aprovado"].includes(normalizedDecision)
+            ? (lang === "pt" ? "Validado" : "Validated")
+            : ["review_required", "revisao_obrigatoria", "revisao_manual"].includes(normalizedDecision)
+              ? (lang === "pt" ? "Revisão obrigatória" : "Required review")
+              : ["blocked", "bloqueado_evidencia_critica"].includes(normalizedDecision)
+                ? (lang === "pt" ? "Bloqueado por evidência crítica" : "Blocked by critical evidence")
+                : (lang === "pt" ? "Revisão obrigatória" : "Required review")
+        );
         const externalDecisionLabel = externalDecision === "approved"
           ? (lang === "pt" ? "Aprovado" : "Approved")
           : externalDecision === "manual_review"
@@ -1129,6 +1187,19 @@
 
         const indicatorsHtml = indicators.length
           ? `<ul>${indicators.map((i) => `<li><strong>${i.code}</strong> (${i.severity}): ${i.reason}</li>`).join("")}</ul>`
+          : "";
+
+        const feedbackPanel = (!offlineMode && jobId)
+          ? `
+            <div class="report-block">
+              <strong>${lang === "pt" ? "Feedback do revisor humano" : "Human reviewer feedback"}</strong>
+              <div class="row" style="margin-top:8px;">
+                <button type="button" class="ghost" data-feedback-outcome="authenticity_confirmed">${lang === "pt" ? "Autenticidade confirmada" : "Authenticity confirmed"}</button>
+                <button type="button" class="ghost" data-feedback-outcome="fraud_confirmed">${lang === "pt" ? "Fraude confirmada" : "Fraud confirmed"}</button>
+                <button type="button" class="ghost" data-feedback-outcome="inconclusive">${lang === "pt" ? "Inconclusivo" : "Inconclusive"}</button>
+              </div>
+            </div>
+          `
           : "";
 
         return `
@@ -1166,6 +1237,7 @@
               ${reasonsHtml}
               ${indicatorsHtml}
             </div>
+            ${feedbackPanel}
           </div>
         `;
       }
@@ -1215,7 +1287,22 @@
       }
 
       async function ensureSession() {
-        if (getToken()) return true;
+        if (getToken()) {
+          try {
+            const probe = await api("/auth/me");
+            if (probe.ok) return true;
+            if (probe.status === 401) {
+              const refreshed = await refreshToken();
+              if (refreshed) {
+                const secondProbe = await api("/auth/me");
+                if (secondProbe.ok) return true;
+              }
+            }
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(REFRESH_KEY);
+          } catch {}
+        }
+
         const refreshed = await refreshToken();
         if (refreshed) return true;
 
@@ -1244,19 +1331,35 @@
           await loadSubscriptionStatus();
         }
 
+        const sessionOk = await ensureSession();
+        if (!sessionOk) {
+          setResult(lang === "pt" ? "Sessão expirada. Entre novamente." : "Session expired. Please sign in again.");
+          return;
+        }
+
         setResult(lang === "pt" ? "A processar consulta..." : "Processing verification...");
         const fd = new FormData();
         fd.append("file", fileInput.files[0]);
 
         try {
-          const res = await api("/upload", {
+          const requestOptions = {
             method: "POST",
             body: fd,
             headers: {
               "x-eduguard-required-processing-mode": REQUIRED_PROCESSING_MODE
             }
-          });
-          const data = await safeJson(res);
+          };
+
+          let res = await api("/upload", requestOptions);
+          let data = await safeJson(res);
+
+          if (!res.ok && data?.error === "auth-required") {
+            const refreshed = await refreshToken();
+            if (refreshed) {
+              res = await api("/upload", requestOptions);
+              data = await safeJson(res);
+            }
+          }
 
           if (!res.ok) {
             if (data?.error === "verification-limit-reached" || data?.error === "subscription-inactive") {
@@ -1265,14 +1368,21 @@
                 : "Free limit reached. Complete payment to continue checks.") + " <br><a href='/public/login' style='color:#7dd3fc;'>" + (lang === "pt" ? "Ir para pagamento" : "Go to billing") + "</a>");
             } else if (data?.error === "external-validation-required") {
               setResult(renderExternalModeRequiredMessage());
+            } else if (data?.error === "auth-required") {
+              localStorage.removeItem(TOKEN_KEY);
+              localStorage.removeItem(REFRESH_KEY);
+              setResult((lang === "pt" ? "Sessão expirada. Entre novamente." : "Session expired. Please sign in again.") + " <br><a href='/public/login' style='color:#7dd3fc;'>" + (lang === "pt" ? "Ir para login" : "Go to login") + "</a>");
             } else {
               setResult((lang === "pt" ? "Erro na consulta: " : "Verification error: ") + (data?.error || "unknown"));
             }
             return;
           }
 
-          const report = renderTrust(data.result || {});
+          lastVerificationJobId = String(data?.jobId || "");
+          resultEl.setAttribute("data-last-confidence", String(Number(data?.result?.trust?.confidence ?? 70)));
+          const report = renderTrust(data.result || {}, lastVerificationJobId);
           setResult(`<strong>${lang === "pt" ? "Consulta concluída" : "Verification completed"}</strong><br>${report}`);
+          bindFeedbackActions(lastVerificationJobId);
           await loadSubscriptionStatus();
         } catch {
           setResult(lang === "pt" ? "Falha de ligação ao servidor." : "Server connection failed.");

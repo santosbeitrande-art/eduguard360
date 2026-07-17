@@ -10,11 +10,14 @@
     "bootstrap:online": "node scripts/bootstrap-online.mjs",
     "security:housekeeping": "node scripts/security-housekeeping.mjs",
     "build": "tsc",
+    "benchmark:fraud": "npm run build && node -e \"const { runInternalBenchmark } = require('./dist/internal_benchmark.js'); console.log(JSON.stringify(runInternalBenchmark(), null, 2));\"",
     "test": "npm run test:fraud",
     "test:fraud": "npm run build && node --test dist/__tests__/fraud-calibration.test.js"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "cors": "^2.8.5",
+    "exif-parser": "^0.1.12",
     "express": "^4.18.2",
     "image-size": "^1.0.1",
     "localtunnel": "^2.0.2",

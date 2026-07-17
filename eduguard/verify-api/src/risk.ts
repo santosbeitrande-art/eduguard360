@@ -41,6 +41,17 @@ export function evaluateFraudRisk(forensic: any, contextual: any) {
     }
   }
 
+  const metadataIndicators = Array.isArray(forensic?.checks?.metadataIndicators)
+    ? forensic.checks.metadataIndicators
+    : [];
+
+  for (const item of metadataIndicators) {
+    if (item?.code && item?.severity && item?.reason) {
+      indicators.push({ code: item.code, severity: item.severity, reason: item.reason });
+      reasons.push(item.reason);
+    }
+  }
+
   const contextualDomains = (contextual?.found?.domains || []).length;
   const contextualEmails = (contextual?.found?.emails || []).length;
   if (contextualDomains === 0 && contextualEmails === 0) {
