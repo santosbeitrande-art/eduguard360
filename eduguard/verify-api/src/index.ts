@@ -4,6 +4,7 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import mammoth from 'mammoth';
 import routes from './routes';
@@ -321,6 +322,25 @@ function readJob(jobId: string): any | null {
   } catch {
     return null;
   }
+}
+
+function computeFileSha256(filePath: string): string {
+  try {
+    const digest = crypto.createHash('sha256');
+    digest.update(fs.readFileSync(filePath));
+    return digest.digest('hex');
+  } catch {
+    return 'unavailable';
+  }
+}
+
+function normalizeEvidenceForAudit(evidence: any[] | undefined) {
+  if (!Array.isArray(evidence)) return [];
+  return evidence.slice(0, 12).map((item) => ({
+    code: String(item?.code || 'signal'),
+    severity: String(item?.severity || 'low'),
+    reason: String(item?.reason || 'no-reason')
+  }));
 }
 
 function toCalibrationExamplesFromFeedback(feedbackRows: VerificationFeedbackRecord[], companyId: string): TrainingExampleLite[] {
@@ -827,6 +847,36 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
           ? (externalValidation.decision === 'approved' ? 'not_found' : 'found')
           : 'not_found'
       },
+      auditReport: {
+        reportVersion: 'case-audit-2026.07-v1',
+        generatedAt: new Date().toISOString(),
+        caseType: 'single-document',
+        jobId,
+        actor: {
+          username: auth.username,
+          companyId: auth.companyId,
+          principalType: auth.principalType
+        },
+        document: {
+          originalFileName: req.file.originalname,
+          storedFileName: path.basename(req.file.path),
+          mimeType: String(req.file.mimetype || 'unknown'),
+          sizeBytes: Number(req.file.size || 0),
+          sha256: computeFileSha256(req.file.path)
+        },
+        decision: {
+          status: auditableDecision.status,
+          statusLabel: auditableDecision.statusLabel,
+          confidence: Number(auditableDecision.confidence || 0),
+          ruleVersion: auditableDecision.ruleVersion,
+          policyScope: auditableDecision.policyScope
+        },
+        rules: {
+          externalDecision: String(externalValidation.decision || 'internal_only'),
+          processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine'
+        },
+        evidence: normalizeEvidenceForAudit(auditableDecision.evidence)
+      },
       status: 'done'
     };
 
@@ -1078,6 +1128,39 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
           ? (caseExternalDecision === 'approved' ? 'not_found' : 'found')
           : 'not_found'
       },
+      auditReport: {
+        reportVersion: 'case-audit-2026.07-v1',
+        generatedAt: new Date().toISOString(),
+        caseType: 'multi-document',
+        jobId,
+        actor: {
+          username: auth.username,
+          companyId: auth.companyId,
+          principalType: auth.principalType
+        },
+        documents: successfulDocs.map((item) => {
+          const matchedUpload = files.find((file) => file.path === item.filePath);
+          return {
+            originalFileName: item.fileName,
+            storedFileName: path.basename(item.filePath),
+            mimeType: String(matchedUpload?.mimetype || 'unknown'),
+            sizeBytes: Number(matchedUpload?.size || 0),
+            sha256: computeFileSha256(item.filePath)
+          };
+        }),
+        decision: {
+          status: caseDecision.status,
+          statusLabel: caseDecision.statusLabel,
+          confidence: Number(caseDecision.confidence || 0),
+          ruleVersion: caseDecision.ruleVersion,
+          policyScope: caseDecision.policyScope
+        },
+        rules: {
+          externalDecision: String(caseExternalDecision || 'internal_only'),
+          processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine'
+        },
+        evidence: normalizeEvidenceForAudit(caseDecision.evidence)
+      },
       status: 'done'
     };
 
@@ -1323,6 +1406,19 @@ app.get('/status/:id', requireCompanyAuth, (req, res) => {
     return res.status(404).json({ error: 'not found' });
   }
   return res.json(job);
+});
+
+app.get('/status/:id/audit', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = req.params.id;
+  const job = readJob(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  const auditReport = job?.result?.auditReport;
+  if (!auditReport) return res.status(404).json({ error: 'audit-report-not-found' });
+  return res.json({ jobId: id, auditReport });
 });
 
 // Contextualization endpoint: run internet checks and attach to job

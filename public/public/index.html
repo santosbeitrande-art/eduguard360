@@ -174,13 +174,13 @@
         <h2 id="renewTitle">Renovar subscricao</h2>
         <p id="renewHint">Ao atingir a 11a consulta, selecione plano e pague para continuar.</p>
         <div class="row">
-          <select id="planSelect">
+          <select id="planSelect" title="Plano de subscricao">
             <option value="starter">Starter</option>
             <option value="business">Business</option>
             <option value="enterprise">Enterprise</option>
             <option value="annual">Annual</option>
           </select>
-          <select id="providerSelect">
+          <select id="providerSelect" title="Metodo de pagamento">
             <option value="mock">Mock</option>
             <option value="stripe">Stripe</option>
             <option value="flutterwave">Flutterwave</option>
@@ -694,14 +694,69 @@
         return lang === "pt" ? "Info" : "Info";
       }
 
+      function formatAiLabel(value) {
+        const normalized = String(value || "unknown").toLowerCase();
+        if (normalized === "likely-ai") return lang === "pt" ? "Provavel gerado por IA" : "Likely AI-generated";
+        if (normalized === "possible-ai") return lang === "pt" ? "Possivel gerado por IA" : "Possibly AI-generated";
+        if (normalized === "likely-human") return lang === "pt" ? "Sem sinal forte de IA" : "No strong AI signal";
+        return lang === "pt" ? "Nao avaliado - fonte indisponivel" : "Not evaluated - source unavailable";
+      }
+
+      function formatDateConsistencyLabel(value) {
+        const normalized = String(value || "unknown").toLowerCase();
+        if (normalized === "consistent") return lang === "pt" ? "Consistente" : "Consistent";
+        if (normalized === "inconsistent") return lang === "pt" ? "Inconsistente" : "Inconsistent";
+        return lang === "pt" ? "Dados insuficientes" : "Insufficient data";
+      }
+
+      function pickTopEvidence(indicators, reasons) {
+        const ranked = [...(Array.isArray(indicators) ? indicators : [])]
+          .map((item) => ({
+            code: String(item?.code || "signal"),
+            severity: String(item?.severity || "low").toLowerCase(),
+            reason: String(item?.reason || "")
+          }))
+          .sort((a, b) => {
+            const weight = { high: 3, medium: 2, low: 1 };
+            return (weight[b.severity] || 0) - (weight[a.severity] || 0);
+          })
+          .slice(0, 3);
+
+        if (ranked.length) return ranked;
+
+        return (Array.isArray(reasons) ? reasons : [])
+          .slice(0, 3)
+          .map((reason, index) => ({
+            code: `reason-${index + 1}`,
+            severity: "medium",
+            reason: String(reason || "")
+          }));
+      }
+
+      function buildNextAction(decisionStatus, likelyFraud) {
+        const normalized = String(decisionStatus || "").toLowerCase();
+        if (normalized === "blocked" || normalized === "bloqueado_evidencia_critica") {
+          return lang === "pt"
+            ? "Bloquear automaticamente e escalar para revisao senior com dupla validacao."
+            : "Automatically block and escalate for senior manual review with dual validation.";
+        }
+        if (normalized === "review_required" || normalized === "revisao_obrigatoria" || likelyFraud) {
+          return lang === "pt"
+            ? "Encaminhar para revisao humana antes de qualquer aprovacao operacional."
+            : "Route to human review before any operational approval.";
+        }
+        return lang === "pt"
+          ? "Prosseguir no fluxo operacional e arquivar o dossier auditavel do caso."
+          : "Continue the operational flow and archive the auditable case dossier.";
+      }
+
       function buildFallbackExperience(result) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
         const riskScore = result?.trust?.riskScore ?? result?.riskScore ?? Math.max(0, Math.min(100, 100 - Number(score || 0)));
         const confidence = result?.trust?.confidence ?? result?.confidence ?? Math.max(40, Math.min(95, 58 + (result?.trust?.indicators || []).length * 4));
-        const ai = result?.summary?.aiLikelihood || "unknown";
-        const dates = result?.summary?.dateConsistency || "unknown";
-        const processingMode = result?.processingMode || REQUIRED_PROCESSING_MODE;
+        const ai = formatAiLabel(result?.summary?.aiLikelihood || "unknown");
+        const dates = formatDateConsistencyLabel(result?.summary?.dateConsistency || "unknown");
         const decision = result?.finalDecision || (likelyFraud ? "revisao_manual" : "motor_interno");
         const hasAttention = likelyFraud || (result?.trust?.indicators || []).some((item) => item?.severity === "high");
 
@@ -716,7 +771,7 @@
             {
               title: "Understanding",
               status: "ok",
-              summary: lang === "pt" ? `O documento foi classificado no modo ${processingMode}.` : `The document was classified in ${processingMode} mode.`,
+              summary: lang === "pt" ? "A classificacao foi feita por multiplos motores de validacao." : "Classification was generated by multiple validation engines.",
               details: [`${lang === "pt" ? "Autenticidade" : "Authenticity"} ${score}%`, `${lang === "pt" ? "Risco" : "Risk"} ${riskScore}/100`]
             },
             {
@@ -818,13 +873,22 @@
         const confidence = Number(result?.trust?.confidence ?? result?.confidence ?? Math.max(40, Math.min(95, 58 + (result?.trust?.indicators || []).length * 4)));
         const reasons = result?.trust?.fraudReasons || [];
         const indicators = result?.trust?.indicators || [];
-        const ai = result?.summary?.aiLikelihood || "unknown";
-        const dates = result?.summary?.dateConsistency || "unknown";
+        const ai = formatAiLabel(result?.summary?.aiLikelihood || "unknown");
+        const dates = formatDateConsistencyLabel(result?.summary?.dateConsistency || "unknown");
         const processingMode = result?.processingMode || REQUIRED_PROCESSING_MODE;
         const experience = result?.experience || buildFallbackExperience(result);
         const decisionStatus = String(result?.decision?.status || "").trim();
         const decisionStatusLabelFromApi = String(result?.decision?.statusLabel || "").trim();
         const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_obrigatoria" : "validado"));
+        const topEvidence = pickTopEvidence(indicators, reasons);
+        const nextAction = buildNextAction(decisionStatus || finalDecision, likelyFraud);
+        const externalDecision = String(result?.externalValidation?.decision || "internal_only");
+        const externalDecisionLabel = externalDecision === "approved"
+          ? (lang === "pt" ? "Aprovado" : "Approved")
+          : externalDecision === "manual_review"
+            ? (lang === "pt" ? "Revisao manual" : "Manual review")
+            : (lang === "pt" ? "Nao aplicavel" : "Not applicable");
+        const auditReport = result?.auditReport || null;
 
         const normalizedDecision = decisionStatus || finalDecision;
         const finalDecisionLabel = decisionStatusLabelFromApi || (
@@ -845,6 +909,24 @@
           ? `<ul>${indicators.map((i) => `<li><strong>${i.code}</strong> (${i.severity}): ${i.reason}</li>`).join("")}</ul>`
           : "";
 
+        const evidenceHtml = topEvidence.length
+          ? `<ul>${topEvidence.map((item) => `<li><strong>${item.code}</strong> (${item.severity}): ${item.reason}</li>`).join("")}</ul>`
+          : `<p>${lang === "pt" ? "Sem evidencias principais disponiveis." : "No primary evidence available."}</p>`;
+
+        const technicalAuditHtml = auditReport
+          ? `
+            <div class="report-block">
+              <strong>${lang === "pt" ? "Dossier auditavel do caso" : "Auditable case dossier"}</strong>
+              <ul>
+                <li><strong>${lang === "pt" ? "Hash SHA-256" : "SHA-256 hash"}:</strong> ${auditReport?.document?.sha256 || "n/a"}</li>
+                <li><strong>${lang === "pt" ? "Utilizador" : "User"}:</strong> ${auditReport?.actor?.username || "n/a"}</li>
+                <li><strong>${lang === "pt" ? "Regra" : "Rule"}:</strong> ${auditReport?.decision?.ruleVersion || "n/a"}</li>
+                <li><strong>${lang === "pt" ? "Data" : "Date"}:</strong> ${auditReport?.generatedAt || "n/a"}</li>
+              </ul>
+            </div>
+          `
+          : "";
+
         const feedbackPanel = (!offlineMode && jobId)
           ? `
             <div class="report-block">
@@ -860,14 +942,11 @@
 
         return `
           <div class="report-block">
-            <strong>${lang === "pt" ? "Percentagem de autenticidade" : "Authenticity percentage"}:</strong> ${score}%<br>
-            <strong>${lang === "pt" ? "Decisao final" : "Final decision"}:</strong> ${finalDecisionLabel}<br>
-            <strong>${lang === "pt" ? "Risco de fraude" : "Fraud risk"}:</strong> ${likelyFraud ? (lang === "pt" ? "Elevado" : "High") : (lang === "pt" ? "Baixo" : "Low")}<br>
-            <strong>${lang === "pt" ? "Pontuacao de risco" : "Risk score"}:</strong> ${riskScore}/100<br>
+            <strong>${lang === "pt" ? "Decisao" : "Decision"}:</strong> ${finalDecisionLabel}<br>
             <strong>${lang === "pt" ? "Confianca" : "Confidence"}:</strong> ${confidence}%<br>
-            <strong>${lang === "pt" ? "Modo de processamento" : "Processing mode"}:</strong> ${processingMode}<br>
-            <strong>AI:</strong> ${ai}<br>
-            <strong>${lang === "pt" ? "Consistencia de datas" : "Date consistency"}:</strong> ${dates}
+            <strong>${lang === "pt" ? "Top 3 evidencias" : "Top 3 evidence"}:</strong>
+            ${evidenceHtml}
+            <strong>${lang === "pt" ? "Proxima acao" : "Next action"}:</strong> ${nextAction}<br>
             <div class="model-window">
               <div class="model-window-title">${lang === "pt" ? "Novo modelo de avaliacao" : "New evaluation model"}</div>
               <div class="model-grid">
@@ -884,17 +963,27 @@
                   <div class="model-chip-value">${confidence}%</div>
                 </div>
                 <div class="model-chip">
-                  <div class="model-chip-label">${lang === "pt" ? "Modo" : "Mode"}</div>
-                  <div class="model-chip-value">${processingMode}</div>
+                  <div class="model-chip-label">${lang === "pt" ? "Autenticidade" : "Authenticity"}</div>
+                  <div class="model-chip-value">${score}%</div>
                 </div>
               </div>
             </div>
             ${renderExperience(experience)}
             <div class="report-block">
+              <strong>${lang === "pt" ? "Relatorio tecnico" : "Technical report"}</strong>
+              <ul>
+                <li><strong>${lang === "pt" ? "Verificacao por multiplos motores" : "Verification by multiple engines"}:</strong> ${externalDecisionLabel}</li>
+                <li><strong>${lang === "pt" ? "Modo tecnico" : "Technical mode"}:</strong> ${processingMode}</li>
+                <li><strong>AI:</strong> ${ai}</li>
+                <li><strong>${lang === "pt" ? "Consistencia de datas" : "Date consistency"}:</strong> ${dates}</li>
+              </ul>
+            </div>
+            <div class="report-block">
               <strong>${lang === "pt" ? "Motivos e indicios" : "Reasons and indicators"}</strong>
               ${reasonsHtml}
               ${indicatorsHtml}
             </div>
+            ${technicalAuditHtml}
             ${feedbackPanel}
           </div>
         `;
