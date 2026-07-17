@@ -86,6 +86,7 @@ interface TrainingFilterOptions {
 interface ExtractedTextResult {
   text: string;
   usedMetadataFallback: boolean;
+}
 
 type ReviewerOutcome = 'fraud_confirmed' | 'authenticity_confirmed' | 'inconclusive';
 
@@ -725,7 +726,6 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         jobId,
         status: 'failed',
         error: 'unsupported-or-empty-document',
-        supportedFormats: SUPPORTED_UPLOAD_FORMATS
         supportedFormats: SUPPORTED_UPLOAD_FORMATS
       });
     }
