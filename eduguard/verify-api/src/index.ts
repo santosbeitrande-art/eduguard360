@@ -51,8 +51,14 @@ const TRAINING_DIR = path.join(FRAUD_DIR, 'training_examples');
 const TRAINING_FILES_DIR = path.join(TRAINING_DIR, 'files');
 const TRAINING_INDEX_FILE = path.join(TRAINING_DIR, 'examples.json');
 const FEEDBACK_INDEX_FILE = path.join(TRAINING_DIR, 'verification_feedback.json');
+const DOCUMENT_PROFILE_FILE = path.join(TRAINING_DIR, 'document_profiles.json');
+const OPS_DIR = path.join(__dirname, '..', '..', 'eduguard_ops');
+const BACKUP_DIR = path.join(OPS_DIR, 'backups');
+const AUTH_STORE_FILE = path.join(__dirname, '..', '..', 'eduguard_auth', 'companies.json');
 if (!fs.existsSync(TRAINING_DIR)) fs.mkdirSync(TRAINING_DIR, { recursive: true });
 if (!fs.existsSync(TRAINING_FILES_DIR)) fs.mkdirSync(TRAINING_FILES_DIR, { recursive: true });
+if (!fs.existsSync(OPS_DIR)) fs.mkdirSync(OPS_DIR, { recursive: true });
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 interface TrainingExampleRecord {
   id: string;
@@ -102,6 +108,20 @@ interface VerificationFeedbackRecord {
   authenticityScore: number | null;
   riskScore: number | null;
   decisionStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface DocumentProfileRule {
+  id: string;
+  companyId: string;
+  documentType: string;
+  country: string;
+  riskDelta: number;
+  confidenceDelta: number;
+  minConfidenceForValidated: number;
+  notes: string;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -198,6 +218,65 @@ function writeVerificationFeedback(rows: VerificationFeedbackRecord[]) {
 
 function writeTrainingExamples(examples: TrainingExampleRecord[]) {
   fs.writeFileSync(TRAINING_INDEX_FILE, JSON.stringify(examples, null, 2));
+}
+
+function readDocumentProfiles(): DocumentProfileRule[] {
+  if (!fs.existsSync(DOCUMENT_PROFILE_FILE)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(DOCUMENT_PROFILE_FILE, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDocumentProfiles(rows: DocumentProfileRule[]) {
+  fs.writeFileSync(DOCUMENT_PROFILE_FILE, JSON.stringify(rows, null, 2));
+}
+
+function normalizeDocType(value: unknown) {
+  const docType = String(value || 'unknown').trim().toLowerCase();
+  return docType || 'unknown';
+}
+
+function normalizeCountry(value: unknown) {
+  const country = String(value || 'any').trim().toUpperCase();
+  return country || 'ANY';
+}
+
+function findDocumentProfile(companyId: string, documentType: string, country: string): DocumentProfileRule | null {
+  const rows = readDocumentProfiles().filter((item) => item.companyId === companyId);
+  const normalizedType = normalizeDocType(documentType);
+  const normalizedCountry = normalizeCountry(country);
+
+  return rows.find((item) => normalizeDocType(item.documentType) === normalizedType && normalizeCountry(item.country) === normalizedCountry)
+    || rows.find((item) => normalizeDocType(item.documentType) === normalizedType && normalizeCountry(item.country) === 'ANY')
+    || null;
+}
+
+function applyDocumentProfileToTrust(
+  trust: CalibrationTrustInput,
+  profile: DocumentProfileRule | null,
+  context: { documentType: string; country: string }
+) {
+  if (!profile) return;
+  trust.riskScore = Math.max(0, Math.min(100, Number(trust.riskScore || 0) + Number(profile.riskDelta || 0)));
+  trust.confidence = Math.max(0, Math.min(99, Number(trust.confidence || 0) + Number(profile.confidenceDelta || 0)));
+  if (Number(trust.confidence || 0) < Number(profile.minConfidenceForValidated || 55)) {
+    trust.riskScore = Math.max(55, Number(trust.riskScore || 0));
+  }
+  trust.likelyFraud = trust.riskScore >= 70 ? true : Boolean(trust.likelyFraud);
+  trust.indicators = Array.isArray(trust.indicators) ? trust.indicators : [];
+  trust.fraudReasons = Array.isArray(trust.fraudReasons) ? trust.fraudReasons : [];
+  trust.indicators.push({
+    code: 'profile-adjustment',
+    severity: 'low',
+    reason: `Perfil aplicado para tipo=${context.documentType} pais=${context.country}.`
+  });
+  trust.fraudReasons = Array.from(new Set([
+    ...trust.fraudReasons,
+    `Perfil por tipo/pais aplicado (${context.documentType}/${context.country}).`
+  ]));
 }
 
 function sanitizeFileName(fileName: string) {
@@ -377,6 +456,118 @@ function normalizeEvidenceForAudit(evidence: any[] | undefined) {
     severity: String(item?.severity || 'low'),
     reason: String(item?.reason || 'no-reason')
   }));
+}
+
+function buildReviewQueue(auth: AuthContext, slaHours: number) {
+  const nowMs = Date.now();
+  const feedbackRows = readVerificationFeedback();
+  const items = listCompanyJobs(auth.companyId)
+    .filter((job) => String(job?.status || '') === 'done')
+    .filter((job) => {
+      const status = String(job?.result?.decision?.status || job?.result?.finalDecision || '').toLowerCase();
+      return status.includes('review') || status.includes('blocked') || status.includes('revisao') || status.includes('bloqueado');
+    })
+    .map((job) => {
+      const jobId = String(job?.id || '');
+      const reviewState = getReviewState(feedbackRows, auth.companyId, jobId);
+      const createdAt = String(job?.createdAt || job?.startedAt || new Date().toISOString());
+      const createdMs = new Date(createdAt).getTime();
+      const dueAtMs = Number.isFinite(createdMs) ? createdMs + (slaHours * 60 * 60 * 1000) : nowMs;
+      const dueAt = new Date(dueAtMs).toISOString();
+      const doubleValidationRequired = true;
+      const resolved = doubleValidationRequired ? reviewState.doubleValidationComplete : reviewState.feedbackCount > 0;
+      const slaBreached = !resolved && nowMs > dueAtMs;
+      const topEvidence = normalizeEvidenceForAudit(job?.result?.decision?.evidence || job?.result?.trust?.indicators);
+
+      return {
+        jobId,
+        decision: {
+          status: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
+          statusLabel: String(job?.result?.decision?.statusLabel || 'Review required'),
+          confidence: Number(job?.result?.decision?.confidence ?? job?.result?.trust?.confidence ?? 0)
+        },
+        createdAt,
+        dueAt,
+        slaBreached,
+        resolved,
+        doubleValidationRequired,
+        reviewState,
+        evidence: topEvidence.slice(0, 3)
+      };
+    })
+    .sort((a, b) => {
+      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+      if (a.slaBreached !== b.slaBreached) return a.slaBreached ? -1 : 1;
+      return String(b.createdAt).localeCompare(String(a.createdAt));
+    });
+
+  const summary = {
+    total: items.length,
+    open: items.filter((item) => !item.resolved).length,
+    resolved: items.filter((item) => item.resolved).length,
+    slaBreached: items.filter((item) => item.slaBreached).length
+  };
+
+  return {
+    queue: items,
+    policy: {
+      slaHours,
+      doubleValidationMinReviewers: 2
+    },
+    summary
+  };
+}
+
+function buildReviewQueueCsv(items: Array<any>) {
+  const header = [
+    'jobId',
+    'decisionStatus',
+    'decisionLabel',
+    'confidence',
+    'createdAt',
+    'dueAt',
+    'slaBreached',
+    'resolved',
+    'reviewerCount',
+    'consensus'
+  ];
+  const lines = items.map((item) => [
+    item.jobId,
+    item.decision?.status,
+    item.decision?.statusLabel,
+    item.decision?.confidence,
+    item.createdAt,
+    item.dueAt,
+    item.slaBreached,
+    item.resolved,
+    item.reviewState?.reviewerCount,
+    item.reviewState?.consensus
+  ].map((cell) => escapeCsvCell(cell)).join(','));
+
+  return [header.join(','), ...lines].join('\n');
+}
+
+function runOpsBackup() {
+  const timestamp = new Date().toISOString();
+  const payload = {
+    generatedAt: timestamp,
+    files: {
+      authStore: fs.existsSync(AUTH_STORE_FILE) ? JSON.parse(fs.readFileSync(AUTH_STORE_FILE, 'utf8')) : null,
+      trainingExamples: readTrainingExamples(),
+      verificationFeedback: readVerificationFeedback(),
+      documentProfiles: readDocumentProfiles()
+    }
+  };
+
+  const fileName = `backup-${timestamp.replace(/[:.]/g, '-')}.json`;
+  const filePath = path.join(BACKUP_DIR, fileName);
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  return {
+    fileName,
+    filePath,
+    sizeBytes: fs.statSync(filePath).size,
+    generatedAt: timestamp
+  };
 }
 
 function toCalibrationExamplesFromFeedback(feedbackRows: VerificationFeedbackRecord[], companyId: string): TrainingExampleLite[] {
@@ -798,6 +989,12 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       fraudReasons: fraudSignals.reasons,
       indicators: fraudSignals.indicators
     } as CalibrationTrustInput, calibrationProfile);
+    const profileContext = {
+      documentType: normalizeDocType(forensic?.summary?.documentType || forensic?.checks?.documentType || 'unknown'),
+      country: normalizeCountry(req.body?.country)
+    };
+    const documentProfile = findDocumentProfile(auth.companyId, profileContext.documentType, profileContext.country);
+    applyDocumentProfileToTrust(calibratedTrust, documentProfile, profileContext);
     const externalValidation = await runExternalValidation({
       jobId,
       companyId: auth.companyId,
@@ -871,6 +1068,12 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         mode: extraction.usedMetadataFallback ? 'metadata-fallback' : 'text',
         warning: extraction.usedMetadataFallback ? 'no-extractable-text' : null
       },
+      profile: {
+        documentType: profileContext.documentType,
+        country: profileContext.country,
+        applied: Boolean(documentProfile),
+        profileId: documentProfile?.id || null
+      },
       processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine',
       finalDecision: toLegacyFinalDecision(auditableDecision.status),
       decisionMode: 'recommendation',
@@ -909,7 +1112,10 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         },
         rules: {
           externalDecision: String(externalValidation.decision || 'internal_only'),
-          processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine'
+          processingMode: externalValidation.enabled ? 'api-external-orchestrated' : 'api-internal-engine',
+          documentType: profileContext.documentType,
+          country: profileContext.country,
+          profileId: documentProfile?.id || null
         },
         evidence: normalizeEvidenceForAudit(auditableDecision.evidence)
       },
@@ -1063,6 +1269,12 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     };
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust(baseTrust, calibrationProfile);
+    const profileContext = {
+      documentType: normalizeDocType('dossier'),
+      country: normalizeCountry(req.body?.country)
+    };
+    const documentProfile = findDocumentProfile(auth.companyId, profileContext.documentType, profileContext.country);
+    applyDocumentProfileToTrust(calibratedTrust, documentProfile, profileContext);
     if (fallbackFileNames.length) {
       applyNoExtractableTextRisk(calibratedTrust, fallbackFileNames);
     }
@@ -1152,6 +1364,12 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         decision: caseExternalDecision,
         documents: perDocumentExternal
       },
+      profile: {
+        documentType: profileContext.documentType,
+        country: profileContext.country,
+        applied: Boolean(documentProfile),
+        profileId: documentProfile?.id || null
+      },
       processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine',
       finalDecision: toLegacyFinalDecision(caseDecision.status),
       decisionMode: 'recommendation',
@@ -1193,7 +1411,10 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         },
         rules: {
           externalDecision: String(caseExternalDecision || 'internal_only'),
-          processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine'
+          processingMode: enabledExternal.length ? 'api-external-orchestrated' : 'api-internal-engine',
+          documentType: profileContext.documentType,
+          country: profileContext.country,
+          profileId: documentProfile?.id || null
         },
         evidence: normalizeEvidenceForAudit(caseDecision.evidence)
       },
@@ -1320,62 +1541,210 @@ app.get('/review/queue', requireCompanyAuth, (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const slaHoursRaw = Number(req.query?.slaHours ?? 24);
   const slaHours = Number.isFinite(slaHoursRaw) ? Math.max(1, Math.min(240, Math.round(slaHoursRaw))) : 24;
-  const nowMs = Date.now();
-  const feedbackRows = readVerificationFeedback();
+  return res.json(buildReviewQueue(auth, slaHours));
+});
 
-  const items = listCompanyJobs(auth.companyId)
-    .filter((job) => String(job?.status || '') === 'done')
-    .filter((job) => {
-      const status = String(job?.result?.decision?.status || job?.result?.finalDecision || '').toLowerCase();
-      return status.includes('review') || status.includes('blocked') || status.includes('revisao') || status.includes('bloqueado');
-    })
-    .map((job) => {
-      const jobId = String(job?.id || '');
-      const reviewState = getReviewState(feedbackRows, auth.companyId, jobId);
-      const createdAt = String(job?.createdAt || job?.startedAt || new Date().toISOString());
-      const createdMs = new Date(createdAt).getTime();
-      const dueAtMs = Number.isFinite(createdMs) ? createdMs + (slaHours * 60 * 60 * 1000) : nowMs;
-      const dueAt = new Date(dueAtMs).toISOString();
-      const doubleValidationRequired = true;
-      const resolved = doubleValidationRequired ? reviewState.doubleValidationComplete : reviewState.feedbackCount > 0;
-      const slaBreached = !resolved && nowMs > dueAtMs;
-      const topEvidence = normalizeEvidenceForAudit(job?.result?.decision?.evidence || job?.result?.trust?.indicators);
+app.get('/review/queue/export.csv', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const slaHoursRaw = Number(req.query?.slaHours ?? 24);
+  const slaHours = Number.isFinite(slaHoursRaw) ? Math.max(1, Math.min(240, Math.round(slaHoursRaw))) : 24;
+  const queue = buildReviewQueue(auth, slaHours);
+  const csv = buildReviewQueueCsv(queue.queue);
+  const fileName = `review-queue-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  return res.status(200).send(csv);
+});
 
-      return {
-        jobId,
-        decision: {
-          status: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
-          statusLabel: String(job?.result?.decision?.statusLabel || 'Review required'),
-          confidence: Number(job?.result?.decision?.confidence ?? job?.result?.trust?.confidence ?? 0)
-        },
-        createdAt,
-        dueAt,
-        slaBreached,
-        resolved,
-        doubleValidationRequired,
-        reviewState,
-        evidence: topEvidence.slice(0, 3)
+app.get('/document-profiles', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const rows = readDocumentProfiles().filter((item) => item.companyId === auth.companyId);
+  return res.json({ profiles: rows, total: rows.length });
+});
+
+app.post('/document-profiles', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const documentType = normalizeDocType(req.body?.documentType);
+  const country = normalizeCountry(req.body?.country);
+  const riskDelta = Math.max(-25, Math.min(25, Number(req.body?.riskDelta ?? 0)));
+  const confidenceDelta = Math.max(-25, Math.min(25, Number(req.body?.confidenceDelta ?? 0)));
+  const minConfidenceForValidated = Math.max(30, Math.min(99, Number(req.body?.minConfidenceForValidated ?? 55)));
+  const notes = String(req.body?.notes || '').trim().slice(0, 500);
+
+  if (!documentType) return res.status(400).json({ error: 'document-type-required' });
+
+  const all = readDocumentProfiles();
+  const now = new Date().toISOString();
+  const existingIdx = all.findIndex(
+    (item) => item.companyId === auth.companyId
+      && normalizeDocType(item.documentType) === documentType
+      && normalizeCountry(item.country) === country
+  );
+
+  const payload: DocumentProfileRule = {
+    id: existingIdx >= 0 ? all[existingIdx].id : uuidv4(),
+    companyId: auth.companyId,
+    documentType,
+    country,
+    riskDelta,
+    confidenceDelta,
+    minConfidenceForValidated,
+    notes,
+    createdBy: existingIdx >= 0 ? all[existingIdx].createdBy : auth.username,
+    createdAt: existingIdx >= 0 ? all[existingIdx].createdAt : now,
+    updatedAt: now
+  };
+
+  if (existingIdx >= 0) all[existingIdx] = payload;
+  else all.unshift(payload);
+
+  writeDocumentProfiles(all.slice(0, 5000));
+  return res.json({ ok: true, profile: payload });
+});
+
+app.delete('/document-profiles/:id', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'invalid-id' });
+
+  const all = readDocumentProfiles();
+  const idx = all.findIndex((item) => item.id === id && item.companyId === auth.companyId);
+  if (idx < 0) return res.status(404).json({ error: 'not-found' });
+
+  all.splice(idx, 1);
+  writeDocumentProfiles(all);
+  return res.json({ ok: true, removedId: id });
+});
+
+app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const jobs = listCompanyJobs(auth.companyId).filter((job) => String(job?.status || '') === 'done');
+  const feedback = readVerificationFeedback().filter((item) => item.companyId === auth.companyId);
+  const feedbackByJob = new Map<string, VerificationFeedbackRecord[]>();
+  for (const item of feedback) {
+    const key = String(item.jobId || '');
+    if (!feedbackByJob.has(key)) feedbackByJob.set(key, []);
+    feedbackByJob.get(key)?.push(item);
+  }
+
+  const byDocumentType: Record<string, any> = {};
+  for (const job of jobs) {
+    const jobId = String(job?.id || '');
+    const decisionStatus = String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown').toLowerCase();
+    const docType = normalizeDocType(job?.result?.summary?.documentType || job?.result?.profile?.documentType || 'unknown');
+    const startedAt = new Date(String(job?.startedAt || job?.createdAt || '')).getTime();
+    const finishedAt = new Date(String(job?.finishedAt || '')).getTime();
+    const processingMs = Number.isFinite(startedAt) && Number.isFinite(finishedAt) ? Math.max(0, finishedAt - startedAt) : 0;
+    const rows = feedbackByJob.get(jobId) || [];
+
+    if (!byDocumentType[docType]) {
+      byDocumentType[docType] = {
+        total: 0,
+        reviewRequired: 0,
+        blocked: 0,
+        validated: 0,
+        processingMsTotal: 0,
+        feedbackCount: 0,
+        confirmedFraud: 0,
+        confirmedAuthentic: 0,
+        falsePositiveProxy: 0,
+        falseNegativeProxy: 0
       };
-    })
-    .sort((a, b) => {
-      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
-      if (a.slaBreached !== b.slaBreached) return a.slaBreached ? -1 : 1;
-      return String(b.createdAt).localeCompare(String(a.createdAt));
-    });
+    }
+
+    const bucket = byDocumentType[docType];
+    bucket.total += 1;
+    if (decisionStatus.includes('block')) bucket.blocked += 1;
+    else if (decisionStatus.includes('review') || decisionStatus.includes('revisao')) bucket.reviewRequired += 1;
+    else bucket.validated += 1;
+    bucket.processingMsTotal += processingMs;
+    bucket.feedbackCount += rows.length;
+
+    for (const row of rows) {
+      if (row.outcome === 'fraud_confirmed') bucket.confirmedFraud += 1;
+      if (row.outcome === 'authenticity_confirmed') bucket.confirmedAuthentic += 1;
+      if (row.outcome === 'authenticity_confirmed' && (decisionStatus.includes('review') || decisionStatus.includes('block'))) {
+        bucket.falsePositiveProxy += 1;
+      }
+      if (row.outcome === 'fraud_confirmed' && decisionStatus.includes('valid')) {
+        bucket.falseNegativeProxy += 1;
+      }
+    }
+  }
+
+  const qualityByDocumentType = Object.entries(byDocumentType).map(([documentType, stats]) => ({
+    documentType,
+    total: stats.total,
+    reviewRate: stats.total ? Number((stats.reviewRequired / stats.total).toFixed(4)) : 0,
+    blockedRate: stats.total ? Number((stats.blocked / stats.total).toFixed(4)) : 0,
+    validatedRate: stats.total ? Number((stats.validated / stats.total).toFixed(4)) : 0,
+    avgProcessingSeconds: stats.total ? Number(((stats.processingMsTotal / stats.total) / 1000).toFixed(2)) : 0,
+    feedbackCount: stats.feedbackCount,
+    confirmedFraud: stats.confirmedFraud,
+    confirmedAuthentic: stats.confirmedAuthentic,
+    falsePositiveProxy: stats.falsePositiveProxy,
+    falseNegativeProxy: stats.falseNegativeProxy
+  }));
 
   return res.json({
-    queue: items,
-    policy: {
-      slaHours,
-      doubleValidationMinReviewers: 2
+    generatedAt: new Date().toISOString(),
+    totals: {
+      jobs: jobs.length,
+      feedback: feedback.length
     },
-    summary: {
-      total: items.length,
-      open: items.filter((item) => !item.resolved).length,
-      resolved: items.filter((item) => item.resolved).length,
-      slaBreached: items.filter((item) => item.slaBreached).length
+    qualityByDocumentType
+  });
+});
+
+app.get('/ops/health/deep', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+
+  return res.json({
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    memory: process.memoryUsage(),
+    storage: {
+      jobsDirExists: fs.existsSync(JOBS_DIR),
+      uploadDirExists: fs.existsSync(UPLOAD_DIR),
+      fraudDirExists: fs.existsSync(FRAUD_DIR),
+      backupDirExists: fs.existsSync(BACKUP_DIR)
+    },
+    counts: {
+      jobs: listCompanyJobs(auth.companyId).length,
+      trainingExamples: readTrainingExamples().length,
+      verificationFeedback: readVerificationFeedback().length,
+      documentProfiles: readDocumentProfiles().length
     }
   });
+});
+
+app.get('/ops/backups', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => {
+      const fullPath = path.join(BACKUP_DIR, name);
+      const stat = fs.statSync(fullPath);
+      return {
+        fileName: name,
+        sizeBytes: stat.size,
+        createdAt: stat.ctime.toISOString()
+      };
+    })
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  return res.json({ backups: files, total: files.length });
+});
+
+app.post('/ops/backup/run', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+  const backup = runOpsBackup();
+  return res.json({ ok: true, backup });
 });
 
 app.post('/training-examples', requireCompanyAuth, upload.single('file'), async (req, res) => {
