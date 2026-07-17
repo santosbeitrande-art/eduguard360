@@ -71,6 +71,7 @@
         resize: vertical;
       }
       .status { padding: 10px; border-radius: 10px; background: rgba(255,255,255,.08); }
+      .mt10 { margin-top: 10px; }
       .hidden { display: none; }
       .report-block {
         border: 1px solid rgba(255,255,255,.16);
@@ -78,6 +79,32 @@
         padding: 10px;
         margin-top: 8px;
       }
+      .decision-banner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+      }
+      .decision-banner.validated { background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); }
+      .decision-banner.review { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); }
+      .decision-banner.blocked { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.35); }
+      .decision-title { font-weight: 800; }
+      .decision-subtitle { opacity: .9; font-size: .92rem; margin-top: 2px; }
+      .decision-pill {
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: .78rem;
+        font-weight: 800;
+        border: 1px solid rgba(255,255,255,.25);
+        white-space: nowrap;
+      }
+      .evidence-list { margin: 6px 0 0 18px; }
+      .evidence-list li { margin-bottom: 4px; }
+      .meta-label { opacity: .82; font-size: .85rem; }
       .model-window {
         border: 1px solid rgba(125,211,252,.55);
         border-radius: 12px;
@@ -143,9 +170,9 @@
         <form id="uploadForm">
           <label for="file" id="lblFile">Selecionar ficheiro</label>
           <input type="file" id="file" name="file" />
-          <button class="btn" type="submit" id="btnVerify" style="margin-top:10px;">Verificar documento</button>
+          <button class="btn mt10" type="submit" id="btnVerify">Verificar documento</button>
         </form>
-        <div id="result" class="status" style="margin-top:10px;">Pronto para consulta.</div>
+        <div id="result" class="status mt10">Pronto para consulta.</div>
       </section>
 
       <section class="panel">
@@ -1202,6 +1229,20 @@
           : "Continue the operational flow and archive the auditable case dossier.";
       }
 
+      function getDecisionTone(decisionStatus) {
+        const normalized = String(decisionStatus || "").toLowerCase();
+        if (normalized.includes("blocked") || normalized.includes("bloqueado")) return "blocked";
+        if (normalized.includes("review") || normalized.includes("revisao")) return "review";
+        return "validated";
+      }
+
+      function severityLabel(severity) {
+        const normalized = String(severity || "low").toLowerCase();
+        if (normalized === "high") return lang === "pt" ? "Alto" : "High";
+        if (normalized === "medium") return lang === "pt" ? "Medio" : "Medium";
+        return lang === "pt" ? "Baixo" : "Low";
+      }
+
       function renderTrust(result, jobId) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
@@ -1218,6 +1259,7 @@
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
         const topEvidence = pickTopEvidence(indicators, reasons);
         const nextAction = buildNextAction(decisionStatus || finalDecision, likelyFraud);
+        const decisionTone = getDecisionTone(decisionStatus || finalDecision);
         const auditReport = result?.auditReport || null;
         const modeLabel = (mode === "local-heuristic-v2" || mode === "local-heuristic-v3")
           ? (lang === "pt" ? "Local Heuristico v3" : "Local Heuristic v3")
@@ -1245,24 +1287,26 @@
           : `<p>${lang === "pt" ? "Sem sinais fortes de fraude." : "No strong fraud signs found."}</p>`;
 
         const indicatorsHtml = indicators.length
-          ? `<ul>${indicators.map((i) => `<li><strong>${i.code}</strong> (${i.severity}): ${i.reason}</li>`).join("")}</ul>`
+          ? `
+            <details>
+              <summary>${lang === "pt" ? "Detalhes tecnicos das evidencias" : "Technical evidence details"}</summary>
+              <ul>${indicators.map((i) => `<li><strong>${i.code}</strong> (${i.severity}): ${i.reason}</li>`).join("")}</ul>
+            </details>
+          `
           : "";
 
         const evidenceHtml = topEvidence.length
-          ? `<ul>${topEvidence.map((item) => `<li><strong>${item.code}</strong> (${item.severity}): ${item.reason}</li>`).join("")}</ul>`
+          ? `<ol class="evidence-list">${topEvidence.map((item) => `<li><span class="meta-label">${severityLabel(item.severity)}:</span> ${item.reason}</li>`).join("")}</ol>`
           : `<p>${lang === "pt" ? "Sem evidencias principais disponiveis." : "No primary evidence available."}</p>`;
 
         const technicalAuditHtml = auditReport
           ? `
-            <div class="report-block">
-              <strong>${lang === "pt" ? "Dossier auditavel do caso" : "Auditable case dossier"}</strong>
               <ul>
                 <li><strong>${lang === "pt" ? "Hash SHA-256" : "SHA-256 hash"}:</strong> ${auditReport?.document?.sha256 || "n/a"}</li>
                 <li><strong>${lang === "pt" ? "Utilizador" : "User"}:</strong> ${auditReport?.actor?.username || "n/a"}</li>
                 <li><strong>${lang === "pt" ? "Regra" : "Rule"}:</strong> ${auditReport?.decision?.ruleVersion || "n/a"}</li>
                 <li><strong>${lang === "pt" ? "Data" : "Date"}:</strong> ${auditReport?.generatedAt || "n/a"}</li>
               </ul>
-            </div>
           `
           : "";
 
@@ -1281,8 +1325,13 @@
 
         return `
           <div class="report-block">
-            <strong>${lang === "pt" ? "Decisao" : "Decision"}:</strong> ${finalDecisionLabel}<br>
-            <strong>${lang === "pt" ? "Confianca" : "Confidence"}:</strong> ${confidence}%<br>
+            <div class="decision-banner ${decisionTone}">
+              <div>
+                <div class="decision-title">${lang === "pt" ? "Resumo executivo" : "Executive summary"}</div>
+                <div class="decision-subtitle">${finalDecisionLabel}</div>
+              </div>
+              <span class="decision-pill">${lang === "pt" ? "Confianca" : "Confidence"}: ${confidence}%</span>
+            </div>
             <strong>${lang === "pt" ? "Top 3 evidencias" : "Top 3 evidence"}:</strong>
             ${evidenceHtml}
             <strong>${lang === "pt" ? "Proxima acao" : "Next action"}:</strong> ${nextAction}<br>
@@ -1307,8 +1356,8 @@
                 </div>
               </div>
             </div>
-            <div class="report-block">
-              <strong>${lang === "pt" ? "Relatorio tecnico" : "Technical report"}</strong>
+            <details class="report-block">
+              <summary><strong>${lang === "pt" ? "Relatorio tecnico" : "Technical report"}</strong></summary>
               <ul>
                 <li><strong>${lang === "pt" ? "Verificacao por multiplos motores" : "Verification by multiple engines"}:</strong> ${externalDecisionLabel}</li>
                 <li><strong>${lang === "pt" ? "Modo tecnico" : "Technical mode"}:</strong> ${modeLabel}</li>
@@ -1316,13 +1365,13 @@
                 <li><strong>${lang === "pt" ? "Consistencia de datas" : "Date consistency"}:</strong> ${dates}</li>
                 <li><strong>${lang === "pt" ? "Score de risco" : "Risk score"}:</strong> ${riskScore}/100</li>
               </ul>
-            </div>
+            </details>
             <div class="report-block">
               <strong>${lang === "pt" ? "Motivos e indícios" : "Reasons and indicators"}</strong>
               ${reasonsHtml}
               ${indicatorsHtml}
             </div>
-            ${technicalAuditHtml}
+            ${technicalAuditHtml ? `<details class="report-block"><summary><strong>${lang === "pt" ? "Dossier auditavel do caso" : "Auditable case dossier"}</strong></summary>${technicalAuditHtml}</details>` : ""}
             ${feedbackPanel}
           </div>
         `;
