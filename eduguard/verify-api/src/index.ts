@@ -324,6 +324,42 @@ function readJob(jobId: string): any | null {
   }
 }
 
+function listCompanyJobs(companyId: string): any[] {
+  const target = String(companyId || '').trim();
+  if (!target) return [];
+  try {
+    const files = fs.readdirSync(JOBS_DIR).filter((name) => name.endsWith('.json'));
+    const jobs = files
+      .map((fileName) => {
+        try {
+          return JSON.parse(fs.readFileSync(path.join(JOBS_DIR, fileName), 'utf8'));
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .filter((job) => String(job?.companyId || '') === target);
+
+    return jobs.sort((a, b) => String(b?.createdAt || '').localeCompare(String(a?.createdAt || '')));
+  } catch {
+    return [];
+  }
+}
+
+function getReviewState(feedbackRows: VerificationFeedbackRecord[], companyId: string, jobId: string) {
+  const rows = feedbackRows.filter((item) => item.companyId === companyId && item.jobId === jobId);
+  const reviewers = Array.from(new Set(rows.map((item) => String(item.reviewer || '').toLowerCase()).filter(Boolean)));
+  const outcomes = Array.from(new Set(rows.map((item) => String(item.outcome || '').toLowerCase()).filter(Boolean)));
+  return {
+    feedbackCount: rows.length,
+    reviewerCount: reviewers.length,
+    reviewers,
+    outcomes,
+    consensus: outcomes.length === 1 ? outcomes[0] : 'mixed',
+    doubleValidationComplete: reviewers.length >= 2
+  };
+}
+
 function computeFileSha256(filePath: string): string {
   try {
     const digest = crypto.createHash('sha256');
@@ -1227,7 +1263,9 @@ app.post('/verification-feedback', requireCompanyAuth, (req, res) => {
 
   const now = new Date().toISOString();
   const all = readVerificationFeedback();
-  const existingIdx = all.findIndex((item) => item.companyId === auth.companyId && item.jobId === jobId);
+  const existingIdx = all.findIndex(
+    (item) => item.companyId === auth.companyId && item.jobId === jobId && String(item.reviewer || '').toLowerCase() === String(auth.username || '').toLowerCase()
+  );
 
   const payload: VerificationFeedbackRecord = {
     id: existingIdx >= 0 ? all[existingIdx].id : uuidv4(),
@@ -1252,7 +1290,12 @@ app.post('/verification-feedback', requireCompanyAuth, (req, res) => {
 
   writeVerificationFeedback(all.slice(0, 10000));
   const calibration = getCompanyCalibrationProfile(auth, auth.companyId);
-  return res.json({ ok: true, feedback: payload, calibration });
+  return res.json({
+    ok: true,
+    feedback: payload,
+    reviewState: getReviewState(all, auth.companyId, jobId),
+    calibration
+  });
 });
 
 app.get('/verification-feedback', requireCompanyAuth, (req, res) => {
@@ -1270,6 +1313,68 @@ app.get('/verification-feedback', requireCompanyAuth, (req, res) => {
     feedback: rows.slice(0, limit),
     total: rows.length,
     calibration: getCompanyCalibrationProfile(auth, auth.companyId)
+  });
+});
+
+app.get('/review/queue', requireCompanyAuth, (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const slaHoursRaw = Number(req.query?.slaHours ?? 24);
+  const slaHours = Number.isFinite(slaHoursRaw) ? Math.max(1, Math.min(240, Math.round(slaHoursRaw))) : 24;
+  const nowMs = Date.now();
+  const feedbackRows = readVerificationFeedback();
+
+  const items = listCompanyJobs(auth.companyId)
+    .filter((job) => String(job?.status || '') === 'done')
+    .filter((job) => {
+      const status = String(job?.result?.decision?.status || job?.result?.finalDecision || '').toLowerCase();
+      return status.includes('review') || status.includes('blocked') || status.includes('revisao') || status.includes('bloqueado');
+    })
+    .map((job) => {
+      const jobId = String(job?.id || '');
+      const reviewState = getReviewState(feedbackRows, auth.companyId, jobId);
+      const createdAt = String(job?.createdAt || job?.startedAt || new Date().toISOString());
+      const createdMs = new Date(createdAt).getTime();
+      const dueAtMs = Number.isFinite(createdMs) ? createdMs + (slaHours * 60 * 60 * 1000) : nowMs;
+      const dueAt = new Date(dueAtMs).toISOString();
+      const doubleValidationRequired = true;
+      const resolved = doubleValidationRequired ? reviewState.doubleValidationComplete : reviewState.feedbackCount > 0;
+      const slaBreached = !resolved && nowMs > dueAtMs;
+      const topEvidence = normalizeEvidenceForAudit(job?.result?.decision?.evidence || job?.result?.trust?.indicators);
+
+      return {
+        jobId,
+        decision: {
+          status: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
+          statusLabel: String(job?.result?.decision?.statusLabel || 'Review required'),
+          confidence: Number(job?.result?.decision?.confidence ?? job?.result?.trust?.confidence ?? 0)
+        },
+        createdAt,
+        dueAt,
+        slaBreached,
+        resolved,
+        doubleValidationRequired,
+        reviewState,
+        evidence: topEvidence.slice(0, 3)
+      };
+    })
+    .sort((a, b) => {
+      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+      if (a.slaBreached !== b.slaBreached) return a.slaBreached ? -1 : 1;
+      return String(b.createdAt).localeCompare(String(a.createdAt));
+    });
+
+  return res.json({
+    queue: items,
+    policy: {
+      slaHours,
+      doubleValidationMinReviewers: 2
+    },
+    summary: {
+      total: items.length,
+      open: items.filter((item) => !item.resolved).length,
+      resolved: items.filter((item) => item.resolved).length,
+      slaBreached: items.filter((item) => item.slaBreached).length
+    }
   });
 });
 
