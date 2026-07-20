@@ -1307,6 +1307,12 @@
         const evidenceEngines = Array.isArray(evidenceReport?.engines) ? evidenceReport.engines : [];
         const decisionDrivers = evidenceReport?.decisionDrivers || { positive: [], warning: [], negative: [] };
         const analyzedItems = Array.isArray(evidenceReport?.analyzed) ? evidenceReport.analyzed : [];
+        const impactfulChecks = Array.isArray(evidenceReport?.checks)
+          ? evidenceReport.checks
+            .filter((check) => String(check?.status || '') !== 'not_applicable')
+            .sort((a, b) => Math.abs(Number(b?.scoreImpact || 0)) - Math.abs(Number(a?.scoreImpact || 0)))
+            .slice(0, 8)
+          : [];
         const modeLabel = (mode === "local-heuristic-v2" || mode === "local-heuristic-v3")
           ? (lang === "pt" ? "Local Heuristico v3" : "Local Heuristic v3")
           : mode === "api-external-orchestrated"
@@ -1367,6 +1373,14 @@
                 ${decisionDrivers.positive?.length ? `<strong>${lang === "pt" ? "Fatores que favoreceram a aprovacao" : "Factors supporting approval"}:</strong><ul>${decisionDrivers.positive.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
                 ${decisionDrivers.warning?.length ? `<strong>${lang === "pt" ? "Fatores sob observacao" : "Factors under observation"}:</strong><ul>${decisionDrivers.warning.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
                 ${decisionDrivers.negative?.length ? `<strong>${lang === "pt" ? "Fatores que pesaram contra o documento" : "Factors weighing against the document"}:</strong><ul>${decisionDrivers.negative.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+                ${impactfulChecks.length ? `<strong>${lang === "pt" ? "Impacto por evidencia (top checks)" : "Evidence impact (top checks)"}:</strong><ul>${impactfulChecks.map((check) => {
+                  const impact = Number(check?.scoreImpact || 0);
+                  const sign = impact >= 0 ? '+' : '';
+                  const impactLabel = impact >= 0
+                    ? (lang === "pt" ? "favorece aprovacao" : "supports approval")
+                    : (lang === "pt" ? "eleva risco" : "raises risk");
+                  return `<li><strong>${check?.label || check?.id}</strong>: ${sign}${impact.toFixed(2)} (${impactLabel})</li>`;
+                }).join("")}</ul>` : ""}
               </details>
             `
           : "";

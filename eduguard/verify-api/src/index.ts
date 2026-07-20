@@ -106,6 +106,8 @@ interface VerificationFeedbackRecord {
   jobId: string;
   outcome: ReviewerOutcome;
   reviewer: string;
+  reviewerRole: string;
+  reviewerWeight: number;
   reviewerConfidence: number;
   notes: string;
   authenticityScore: number | null;
@@ -440,13 +442,37 @@ function getReviewState(feedbackRows: VerificationFeedbackRecord[], companyId: s
   const rows = feedbackRows.filter((item) => item.companyId === companyId && item.jobId === jobId);
   const reviewers = Array.from(new Set(rows.map((item) => String(item.reviewer || '').toLowerCase()).filter(Boolean)));
   const outcomes = Array.from(new Set(rows.map((item) => String(item.outcome || '').toLowerCase()).filter(Boolean)));
+  const averageConfidence = rows.length
+    ? Number((rows.reduce((acc, item) => acc + Number(item.reviewerConfidence || 0), 0) / rows.length).toFixed(2))
+    : 0;
+  const weightedScore = rows.reduce((acc, item) => {
+    const outcome = String(item.outcome || 'inconclusive').toLowerCase();
+    const polarity = outcome === 'authenticity_confirmed' ? 1 : outcome === 'fraud_confirmed' ? -1 : 0;
+    const confidenceFactor = Math.max(0.4, Math.min(1.0, Number(item.reviewerConfidence || 0) / 100));
+    const reviewerWeight = Math.max(0.8, Math.min(1.3, Number(item.reviewerWeight || 1)));
+    return acc + (polarity * confidenceFactor * reviewerWeight);
+  }, 0);
+  const normalizedWeightedScore = rows.length ? Number((weightedScore / rows.length).toFixed(4)) : 0;
+  let weightedConsensus: 'authenticity_confirmed' | 'fraud_confirmed' | 'inconclusive' | 'mixed' = 'inconclusive';
+  if (normalizedWeightedScore >= 0.35) weightedConsensus = 'authenticity_confirmed';
+  else if (normalizedWeightedScore <= -0.35) weightedConsensus = 'fraud_confirmed';
+  else if (outcomes.length > 1) weightedConsensus = 'mixed';
+
+  const strictConsensus = outcomes.length === 1 ? outcomes[0] : 'mixed';
+  const doubleValidationComplete = reviewers.length >= 2
+    && averageConfidence >= 60
+    && weightedConsensus !== 'mixed';
+
   return {
     feedbackCount: rows.length,
     reviewerCount: reviewers.length,
     reviewers,
     outcomes,
-    consensus: outcomes.length === 1 ? outcomes[0] : 'mixed',
-    doubleValidationComplete: reviewers.length >= 2
+    consensus: strictConsensus,
+    weightedConsensus,
+    averageConfidence,
+    weightedScore: normalizedWeightedScore,
+    doubleValidationComplete
   };
 }
 
@@ -530,7 +556,9 @@ async function buildReviewQueue(auth: AuthContext, slaHours: number) {
       const dueAtMs = Number.isFinite(createdMs) ? createdMs + (slaHours * 60 * 60 * 1000) : nowMs;
       const dueAt = new Date(dueAtMs).toISOString();
       const doubleValidationRequired = true;
-      const resolved = doubleValidationRequired ? reviewState.doubleValidationComplete : reviewState.feedbackCount > 0;
+      const resolved = doubleValidationRequired
+        ? reviewState.doubleValidationComplete
+        : (reviewState.feedbackCount > 0 && reviewState.weightedConsensus !== 'mixed');
       const slaBreached = !resolved && nowMs > dueAtMs;
       const topEvidence = normalizeEvidenceForAudit(job?.result?.decision?.evidence || job?.result?.trust?.indicators);
 
@@ -599,7 +627,9 @@ function buildReviewQueueCsv(items: Array<any>) {
     'slaBreached',
     'resolved',
     'reviewerCount',
-    'consensus'
+    'consensus',
+    'weightedConsensus',
+    'averageReviewerConfidence'
   ];
   const lines = items.map((item) => [
     item.jobId,
@@ -619,7 +649,9 @@ function buildReviewQueueCsv(items: Array<any>) {
     item.slaBreached,
     item.resolved,
     item.reviewState?.reviewerCount,
-    item.reviewState?.consensus
+    item.reviewState?.consensus,
+    item.reviewState?.weightedConsensus,
+    item.reviewState?.averageConfidence
   ].map((cell) => escapeCsvCell(cell)).join(','));
 
   return [header.join(','), ...lines].join('\n');
@@ -1781,6 +1813,14 @@ app.post('/verification-feedback', requireCompanyAuth, async (req, res) => {
   const reviewerConfidence = Number.isFinite(reviewerConfidenceRaw)
     ? Math.max(0, Math.min(100, Math.round(reviewerConfidenceRaw)))
     : 70;
+  const reviewerRole = String(auth.role || 'analyst').toLowerCase();
+  const reviewerWeight = reviewerRole === 'owner'
+    ? 1.25
+    : reviewerRole === 'manager'
+      ? 1.15
+      : reviewerRole === 'billing'
+        ? 0.95
+        : 1;
 
   if (!jobId) return res.status(400).json({ error: 'job-id-required' });
   if (!['fraud_confirmed', 'authenticity_confirmed', 'inconclusive'].includes(outcome)) {
@@ -1808,6 +1848,8 @@ app.post('/verification-feedback', requireCompanyAuth, async (req, res) => {
     jobId,
     outcome,
     reviewer: auth.username,
+    reviewerRole,
+    reviewerWeight,
     reviewerConfidence,
     notes,
     authenticityScore: Number.isFinite(authenticityScoreRaw) ? authenticityScoreRaw : null,

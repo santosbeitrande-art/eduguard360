@@ -10,6 +10,7 @@ export interface EvidenceCheck {
   severity: 'low' | 'medium' | 'high';
   message: string;
   impact: 'positive' | 'neutral' | 'negative';
+  scoreImpact: number;
 }
 
 export interface EvidenceReport {
@@ -26,6 +27,8 @@ export interface EvidenceReport {
     failed: number;
     notApplicable: number;
     criticalFailures: number;
+    weightedRiskScore: number;
+    weightedTrustScore: number;
   };
   engines: Array<{
     engine: EvidenceEngineName;
@@ -86,6 +89,24 @@ const ENGINE_ORDER: EvidenceEngineName[] = [
   'decision'
 ];
 
+const ENGINE_WEIGHTS: Record<EvidenceEngineName, number> = {
+  preprocessing: 0.9,
+  ocr: 1.0,
+  forensics: 1.5,
+  metadata: 1.2,
+  content: 1.1,
+  contextual: 0.7,
+  external: 1.4,
+  cross_document: 1.3,
+  decision: 1.2
+};
+
+const SEVERITY_WEIGHTS: Record<'low' | 'medium' | 'high', number> = {
+  low: 1,
+  medium: 2,
+  high: 4
+};
+
 function normalizeCode(value: unknown) {
   return String(value || '').trim().toLowerCase();
 }
@@ -110,6 +131,12 @@ function indicatorCounts(indicators: Array<{ severity?: unknown }> | undefined) 
 function summarizeChecks(checks: EvidenceCheck[]): EvidenceReport {
   const registrySummary = getCheckRegistrySummary();
   const performedChecks = checks.filter((item) => item.status !== 'not_applicable');
+  const riskAccumulator = performedChecks
+    .filter((item) => item.scoreImpact < 0)
+    .reduce((acc, item) => acc + Math.abs(item.scoreImpact), 0);
+  const trustAccumulator = performedChecks
+    .filter((item) => item.scoreImpact > 0)
+    .reduce((acc, item) => acc + item.scoreImpact, 0);
   const engines = ENGINE_ORDER.map((engine) => {
     const rows = performedChecks.filter((item) => item.engine === engine);
     return {
@@ -139,7 +166,9 @@ function summarizeChecks(checks: EvidenceCheck[]): EvidenceReport {
       warning: performedChecks.filter((item) => item.status === 'warning').length,
       failed: performedChecks.filter((item) => item.status === 'failed').length,
       notApplicable: checks.filter((item) => item.status === 'not_applicable').length,
-      criticalFailures: performedChecks.filter((item) => item.status === 'failed' && item.severity === 'high').length
+      criticalFailures: performedChecks.filter((item) => item.status === 'failed' && item.severity === 'high').length,
+      weightedRiskScore: Number(riskAccumulator.toFixed(2)),
+      weightedTrustScore: Number(trustAccumulator.toFixed(2))
     },
     engines,
     decisionDrivers: {
@@ -160,14 +189,24 @@ function buildCheck(
   severity?: 'low' | 'medium' | 'high'
 ): EvidenceCheck {
   const definition = getCheckDefinition(id);
+  const resolvedSeverity = severity || definition.defaultSeverity;
+  const engineWeight = ENGINE_WEIGHTS[definition.engine] || 1;
+  const severityWeight = SEVERITY_WEIGHTS[resolvedSeverity] || 1;
+  const base = engineWeight * severityWeight;
+  let scoreImpact = 0;
+  if (status === 'passed' && impact === 'positive') scoreImpact = base;
+  if (status === 'warning' || impact === 'neutral') scoreImpact = -(base * 0.45);
+  if (status === 'failed' || impact === 'negative') scoreImpact = -(base * 1.25);
+
   return {
     id,
     label: definition.label,
     engine: definition.engine,
     status,
-    severity: severity || definition.defaultSeverity,
+    severity: resolvedSeverity,
     message,
-    impact
+    impact,
+    scoreImpact: Number(scoreImpact.toFixed(2))
   };
 }
 

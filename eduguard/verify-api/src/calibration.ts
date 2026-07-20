@@ -48,7 +48,8 @@ function stdDev(values: number[]) {
   return Math.sqrt(variance);
 }
 
-const MIN_CASES_FOR_COMPANY_CALIBRATION = 12;
+const MIN_CASES_FOR_COMPANY_CALIBRATION = 8;
+const MIN_CLASS_CASES_FOR_COMPANY_CALIBRATION = 3;
 
 export function buildCalibrationProfile(trainingExamples: TrainingExampleLite[], companyId: string): CalibrationProfile {
   const companyRows = trainingExamples
@@ -64,7 +65,12 @@ export function buildCalibrationProfile(trainingExamples: TrainingExampleLite[],
   const sampleSize = companyRows.length;
 
   const baselineThreshold = 55;
-  if (sampleSize < MIN_CASES_FOR_COMPANY_CALIBRATION || (fraudScores.length + authenticScores.length) < MIN_CASES_FOR_COMPANY_CALIBRATION) {
+  if (
+    sampleSize < MIN_CASES_FOR_COMPANY_CALIBRATION
+    || (fraudScores.length + authenticScores.length) < MIN_CASES_FOR_COMPANY_CALIBRATION
+    || fraudScores.length < MIN_CLASS_CASES_FOR_COMPANY_CALIBRATION
+    || authenticScores.length < MIN_CLASS_CASES_FOR_COMPANY_CALIBRATION
+  ) {
     return {
       enabled: false,
       companyId,

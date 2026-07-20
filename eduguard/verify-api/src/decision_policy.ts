@@ -76,8 +76,12 @@ export interface DecisionPolicyInput {
 }
 
 export const DECISION_POLICY_VERSION = 'verify-policy-2026.07-v1';
-export const MIN_CASES_FOR_COMPANY_CALIBRATION = 12;
+export const MIN_CASES_FOR_COMPANY_CALIBRATION = 8;
 const BASELINE_VERIFICATION_CHECKS = 10;
+const AUTO_APPROVE_RISK_MAX = 12;
+const LIKELY_AUTHENTIC_RISK_MAX = 45;
+const BLOCK_RISK_MIN = 75;
+const FRAUD_CONFIRMED_RISK_MIN = 95;
 
 const CRITICAL_EVIDENCE_CODES = new Set([
   'signature-tampered',
@@ -203,14 +207,14 @@ function decideOutcome(params: {
   } = params;
 
   if (status === 'validated') {
-    if (riskScore <= 10 && authenticity >= 90 && confidence >= 85 && highIndicators === 0 && mediumIndicators === 0) {
+    if (riskScore <= AUTO_APPROVE_RISK_MAX && authenticity >= 88 && confidence >= 80 && highIndicators === 0 && mediumIndicators === 0) {
       return { outcome: 'document_authentic' as DecisionOutcome, approval: 'approve' as DecisionApproval };
     }
     return { outcome: 'document_likely_authentic' as DecisionOutcome, approval: 'approve' as DecisionApproval };
   }
 
   if (status === 'blocked') {
-    if (criticalByCode || (reasonCode === 'critical-evidence-detected' && riskScore >= 92 && confidence >= 75 && authenticity <= 20)) {
+    if (criticalByCode || (reasonCode === 'critical-evidence-detected' && riskScore >= FRAUD_CONFIRMED_RISK_MIN && confidence >= 72 && authenticity <= 25)) {
       return { outcome: 'fraud_confirmed' as DecisionOutcome, approval: 'reject' as DecisionApproval };
     }
     return { outcome: 'document_likely_fraudulent' as DecisionOutcome, approval: 'reject' as DecisionApproval };
@@ -267,13 +271,13 @@ export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDec
   const externalDecision = String(input.externalDecision || 'internal_only');
 
   const criticalByCode = isCriticalEvidence(evidence);
-  const criticalByStrength = highIndicators >= 2 && riskScore >= 85 && authenticity <= 25 && confidence >= 70;
+  const criticalByStrength = highIndicators >= 2 && riskScore >= 82 && authenticity <= 25 && confidence >= 65;
   const hasCriticalEvidence = criticalByCode || criticalByStrength;
   const elevatedFraudPattern = !hasCriticalEvidence
     && likelyFraud
-    && riskScore >= 88
+    && riskScore >= BLOCK_RISK_MIN
     && authenticity <= 40
-    && confidence >= 65
+    && confidence >= 60
     && (highIndicators >= 1 || mediumIndicators >= 3);
 
   let status: DecisionStatus = 'review_required';
@@ -289,13 +293,19 @@ export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDec
     status = 'review_required';
     reasonCode = 'external-manual-review';
   } else if (!likelyFraud
-    && riskScore <= 42
-    && authenticity >= 68
+    && riskScore <= LIKELY_AUTHENTIC_RISK_MAX
+    && authenticity >= 70
     && highIndicators === 0
-    && mediumIndicators <= 1
+    && mediumIndicators <= 2
     && (confidence >= 50 || (confidence >= 45 && lowIndicators <= 2))) {
     status = 'validated';
     reasonCode = 'low-risk-consistent-evidence';
+  } else if (riskScore >= BLOCK_RISK_MIN
+    && (likelyFraud || highIndicators >= 1 || mediumIndicators >= 3)
+    && authenticity <= 55
+    && confidence >= 58) {
+    status = 'blocked';
+    reasonCode = 'high-risk-fraud-pattern';
   } else if (confidence < 55) {
     status = 'review_required';
     reasonCode = 'insufficient-confidence';

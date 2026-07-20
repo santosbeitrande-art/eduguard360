@@ -18,7 +18,7 @@ export interface CheckDefinition {
   deterministic: boolean;
 }
 
-const CHECK_DEFINITIONS: CheckDefinition[] = [
+const BASE_CHECK_DEFINITIONS: CheckDefinition[] = [
   { id: 'prep.file-size', label: 'Ficheiro com dados', engine: 'preprocessing', defaultSeverity: 'high', appliesTo: ['all'], deterministic: true },
   { id: 'prep.format-supported', label: 'Formato suportado', engine: 'preprocessing', defaultSeverity: 'medium', appliesTo: ['all'], deterministic: true },
   { id: 'prep.text-extracted', label: 'Texto extraido', engine: 'preprocessing', defaultSeverity: 'high', appliesTo: ['all'], deterministic: true },
@@ -140,6 +140,236 @@ const CHECK_DEFINITIONS: CheckDefinition[] = [
   { id: 'decision.deterministic-fraud-evidence', label: 'Evidencia deterministica de fraude', engine: 'decision', defaultSeverity: 'high', appliesTo: ['single', 'case'], deterministic: true },
   { id: 'decision.cross-engine-agreement', label: 'Concordancia entre motores', engine: 'decision', defaultSeverity: 'medium', appliesTo: ['single', 'case'], deterministic: false },
   { id: 'decision.explainability-completeness', label: 'Completude explicavel da decisao', engine: 'decision', defaultSeverity: 'low', appliesTo: ['single', 'case'], deterministic: false }
+];
+
+const ADVANCED_CHECK_BLUEPRINTS: Array<{
+  engine: EvidenceEngineName;
+  prefix: string;
+  appliesTo: string[];
+  defaultSeverity: 'low' | 'medium' | 'high';
+  deterministic: boolean;
+  labels: string[];
+}> = [
+  {
+    engine: 'preprocessing',
+    prefix: 'prep',
+    appliesTo: ['all'],
+    defaultSeverity: 'medium',
+    deterministic: true,
+    labels: [
+      'assinatura MIME valida',
+      'codificacao textual consistente',
+      'ordem de paginas normalizada',
+      'orientacao de pagina consistente',
+      'densidade de pixels adequada',
+      'resolucao minima operacional',
+      'margens documentais consistentes',
+      'cabecalho e rodape detectados',
+      'segmentacao de blocos estavel',
+      'normalizacao de caracteres unicode',
+      'paragrafos estruturados',
+      'delimitadores de campo preservados'
+    ]
+  },
+  {
+    engine: 'ocr',
+    prefix: 'ocr',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'medium',
+    deterministic: false,
+    labels: [
+      'confianca por linha OCR',
+      'confianca por bloco OCR',
+      'estabilidade entre motores OCR',
+      'consistencia de nomes proprios',
+      'consistencia de datas OCR',
+      'consistencia de valores monetarios OCR',
+      'deteccao de campos truncados',
+      'deteccao de colunas desalinhadas',
+      'coerencia de pontuacao textual',
+      'concordancia OCR com layout visual',
+      'qualidade de leitura em zonas criticas',
+      'deteccao de caracteres substituidos'
+    ]
+  },
+  {
+    engine: 'forensics',
+    prefix: 'forensics',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'high',
+    deterministic: false,
+    labels: [
+      'consistencia de histogramas de compressao',
+      'assinatura de ruido de sensor',
+      'inconsistencia de bordas artificiais',
+      'padrao de interpolacao suspeito',
+      'deteccao de blending local',
+      'analise de duplicacao de regioes',
+      'coerencia de iluminacao global',
+      'coerencia de sombras e reflexos',
+      'deteccao de remocao de artefatos',
+      'detecao de reamostragem local',
+      'inconsistencia de perfil de cor',
+      'rastro de edicao por ferramenta grafica'
+    ]
+  },
+  {
+    engine: 'metadata',
+    prefix: 'metadata',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'medium',
+    deterministic: true,
+    labels: [
+      'coerencia entre timezone e emissor',
+      'coerencia entre locale e idioma',
+      'sequencia cronologica de criacao/modificacao',
+      'assinatura de produtor compativel',
+      'cadeia de ferramentas sem conflito',
+      'consistencia de versao PDF',
+      'consistencia de versao Office',
+      'ausencia de campos metadata nulos criticos',
+      'consistencia entre nome do ficheiro e metadata',
+      'coerencia de autor e entidade emissora',
+      'detecao de metadata duplicada',
+      'detecao de metadata sobrescrita'
+    ]
+  },
+  {
+    engine: 'content',
+    prefix: 'content',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'medium',
+    deterministic: false,
+    labels: [
+      'coerencia semantica global',
+      'coerencia numerica basica',
+      'consistencia de entidade emissora',
+      'coerencia de endereco institucional',
+      'coerencia entre titulos e campos',
+      'coerencia de nomenclatura oficial',
+      'coerencia de unidades monetarias',
+      'coerencia de periodo temporal',
+      'detecao de texto placeholder residual',
+      'coerencia de assinatura textual',
+      'coerencia de referencias internas',
+      'coerencia de assinatura e cargo'
+    ]
+  },
+  {
+    engine: 'contextual',
+    prefix: 'contextual',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'low',
+    deterministic: false,
+    labels: [
+      'corroboracao por dominio institucional',
+      'corroboracao por email institucional',
+      'corroboracao por padroes de nomenclatura',
+      'corroboracao por endpoint publico',
+      'corroboracao por paginas relacionadas',
+      'coerencia entre emissor e dominio publico',
+      'coerencia entre curso e instituicao',
+      'coerencia entre funcao e entidade',
+      'coerencia entre data e evento publico',
+      'coerencia entre localidade e emissor',
+      'consistencia de contexto entre documentos',
+      'forca global de corroboracao contextual'
+    ]
+  },
+  {
+    engine: 'external',
+    prefix: 'external',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'high',
+    deterministic: true,
+    labels: [
+      'validacao com registry governamental',
+      'validacao com registry academico',
+      'validacao com registry fiscal',
+      'validacao com motor antifraude A',
+      'validacao com motor antifraude B',
+      'validacao com motor antifraude C',
+      'consenso entre providers externos',
+      'latencia de provider em faixa esperada',
+      'assinatura de resposta externa valida',
+      'integridade de payload externo',
+      'coerencia de score externo',
+      'detecao de conflito entre providers'
+    ]
+  },
+  {
+    engine: 'cross_document',
+    prefix: 'cross',
+    appliesTo: ['case'],
+    defaultSeverity: 'high',
+    deterministic: false,
+    labels: [
+      'consistencia de nome principal',
+      'consistencia de numero identificador',
+      'consistencia de data de emissao',
+      'consistencia de entidade emissora',
+      'consistencia de endereco',
+      'consistencia de contatos',
+      'consistencia de periodo de rendimento',
+      'consistencia de saldo e rendimento',
+      'consistencia de assinatura entre documentos',
+      'consistencia de selo entre documentos',
+      'consistencia de QR entre documentos',
+      'consistencia de risco agregado do dossier'
+    ]
+  },
+  {
+    engine: 'decision',
+    prefix: 'decision',
+    appliesTo: ['single', 'case'],
+    defaultSeverity: 'medium',
+    deterministic: false,
+    labels: [
+      'equilibrio risco-autenticidade',
+      'forca de evidencia positiva',
+      'forca de evidencia negativa',
+      'equilibrio entre motores',
+      'robustez da justificacao final',
+      'consistencia da aprovacao pratica',
+      'aderencia a politica operacional',
+      'estabilidade sob ruido moderado',
+      'completude das evidencias citadas',
+      'confianca ajustada por historico',
+      'consistencia da decisao com feedback',
+      'nivel de auditabilidade final'
+    ]
+  }
+];
+
+function slugify(text: string) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function buildAdvancedCheckDefinitions(): CheckDefinition[] {
+  const rows: CheckDefinition[] = [];
+  for (const blueprint of ADVANCED_CHECK_BLUEPRINTS) {
+    for (const label of blueprint.labels) {
+      rows.push({
+        id: `advanced.${blueprint.prefix}.${slugify(label)}`,
+        label: `Advanced: ${label}`,
+        engine: blueprint.engine,
+        defaultSeverity: blueprint.defaultSeverity,
+        appliesTo: blueprint.appliesTo,
+        deterministic: blueprint.deterministic
+      });
+    }
+  }
+  return rows;
+}
+
+const CHECK_DEFINITIONS: CheckDefinition[] = [
+  ...BASE_CHECK_DEFINITIONS,
+  ...buildAdvancedCheckDefinitions()
 ];
 
 const CHECK_MAP = new Map(CHECK_DEFINITIONS.map((item) => [item.id, item]));
