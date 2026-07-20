@@ -86,6 +86,13 @@
       .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
       .tag.ok { background: rgba(16,185,129,.22); color: #8ef7d6; }
       .tag.off { background: rgba(239,68,68,.25); color: #fecaca; }
+      .panel-gap { margin-top: 12px; }
+      .panel-gap-bottom { margin-bottom: 12px; }
+      .block-gap { margin-top: 10px; }
+      .input-gap { margin-top: 8px; }
+      .section-title { margin: 14px 0 6px; }
+      .section-title-tight { margin: 10px 0 6px; }
+      .space-between { display: flex; justify-content: space-between; gap: 10px; }
       .training-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
       .training-card {
         border: 1px solid rgba(255,255,255,.15);
@@ -101,6 +108,7 @@
         background: rgba(255,255,255,.04);
         font-size: .9rem;
       }
+      .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
       @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .plans { grid-template-columns: 1fr; } }
       @media (max-width: 900px) { .training-grid { grid-template-columns: 1fr; } }
     </style>
@@ -115,7 +123,7 @@
         <a class="ghost" href="/">Home</a>
       </div>
 
-      <div class="panel" style="margin-bottom:12px;">
+      <div class="panel panel-gap-bottom">
         <h1 id="titleMain">EduGuard Verify AI</h1>
         <p id="subtitleMain">Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.</p>
         <div class="status" id="accountStatus">Sem sessão ativa.</div>
@@ -161,20 +169,20 @@
         </article>
       </section>
 
-      <section class="panel" style="margin-top:12px;">
+      <section class="panel panel-gap">
         <h2 id="plansTitle">Planos e pagamento</h2>
         <p class="muted" id="plansHint">Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.</p>
 
         <div class="plans" id="plans"></div>
 
-        <div style="margin-top:10px;" class="actions">
-          <select id="planSelect">
+        <div class="actions block-gap">
+          <select id="planSelect" title="Plano de subscrição">
             <option value="starter">Starter</option>
             <option value="business">Business</option>
             <option value="enterprise">Enterprise</option>
             <option value="annual">Annual</option>
           </select>
-          <select id="providerSelect">
+          <select id="providerSelect" title="Método de pagamento">
             <option value="mpesa">M-Pesa</option>
             <option value="emola">eMola</option>
             <option value="flutterwave">Flutterwave</option>
@@ -184,8 +192,8 @@
         </div>
         <div id="mobilePayBox" class="pay-box hidden">
           <div class="muted" id="mobilePayHint">Pagamento móvel seguro. Introduza o número e confirme com PIN.</div>
-          <input id="mobilePayPhone" type="tel" placeholder="84xxxxxxx" style="margin-top:8px;" />
-          <input id="mobilePayPin" class="hidden" type="password" placeholder="PIN" style="margin-top:8px;" />
+          <input id="mobilePayPhone" class="input-gap" type="tel" placeholder="84xxxxxxx" />
+          <input id="mobilePayPin" class="hidden input-gap" type="password" placeholder="PIN" />
         </div>
         <div class="actions">
           <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscrição</button>
@@ -193,14 +201,14 @@
         </div>
       </section>
 
-      <section id="adminPanel" class="panel hidden" style="margin-top:12px;">
-        <div class="row" style="justify-content:space-between;">
+      <section id="adminPanel" class="panel hidden panel-gap">
+        <div class="row space-between">
           <h2 id="adminPanelTitle">Painel administrativo (apenas admin)</h2>
           <button class="ghost" type="button" id="btnAdminRefresh">Atualizar</button>
         </div>
         <p class="muted" id="adminPanelHint">Visível apenas depois do login com credenciais de admin.</p>
 
-        <h3 id="usersTitle" style="margin:10px 0 6px;">Utilizadores</h3>
+        <h3 id="usersTitle" class="section-title-tight">Utilizadores</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -216,7 +224,7 @@
           </table>
         </div>
 
-        <h3 id="paymentsTitle" style="margin:14px 0 6px;">Pagamentos</h3>
+        <h3 id="paymentsTitle" class="section-title">Pagamentos</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -232,9 +240,45 @@
           </table>
         </div>
 
+        <h3 id="qualityTitle" class="section-title">Qualidade da decisão</h3>
+        <div id="qualitySummary" class="stats-line">Sem dados.</div>
+        <div id="qualityMetrics" class="metrics-grid"></div>
+
+        <h3 id="enginesTitle" class="section-title">Motores com mais falhas</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Engine</th>
+                <th>Checks</th>
+                <th>Pass</th>
+                <th>Alerta</th>
+                <th>Falha</th>
+              </tr>
+            </thead>
+            <tbody id="engineMetricsBody"></tbody>
+          </table>
+        </div>
+
+        <h3 id="checksTitle" class="section-title">Checks que mais falham</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Engine</th>
+                <th>Execuções</th>
+                <th>Falha</th>
+                <th>Alerta</th>
+              </tr>
+            </thead>
+            <tbody id="checkMetricsBody"></tbody>
+          </table>
+        </div>
+
       </section>
 
-      <div class="status" id="msg" style="margin-top:12px;">Pronto.</div>
+      <div class="status panel-gap" id="msg">Pronto.</div>
     </main>
 
     <script>
@@ -273,6 +317,10 @@
       const trainingPanel = document.getElementById("trainingPanel");
       const usersBody = document.getElementById("usersBody");
       const paymentsBody = document.getElementById("paymentsBody");
+      const qualitySummary = document.getElementById("qualitySummary");
+      const qualityMetrics = document.getElementById("qualityMetrics");
+      const engineMetricsBody = document.getElementById("engineMetricsBody");
+      const checkMetricsBody = document.getElementById("checkMetricsBody");
       const trainingExamplesBody = document.getElementById("trainingExamplesBody");
       const trainingStats = document.getElementById("trainingStats");
       const trainingCategoryFilter = document.getElementById("trainingCategoryFilter");
@@ -378,7 +426,56 @@
         adminPanel.classList.add("hidden");
         usersBody.innerHTML = "";
         paymentsBody.innerHTML = "";
+        qualitySummary.textContent = lang === "pt" ? "Sem dados." : "No data.";
+        qualityMetrics.innerHTML = "";
+        engineMetricsBody.innerHTML = "";
+        checkMetricsBody.innerHTML = "";
         localStorage.removeItem(ADMIN_TOKEN_KEY);
+      }
+
+      function renderMetricCard(label, value) {
+        return `<div class="training-card"><strong>${label}</strong><div style="margin-top:4px; font-size:1.1rem;">${value}</div></div>`;
+      }
+
+      function renderQualityDashboard(data) {
+        const decisions = data?.decisions || {};
+        const learning = data?.learningImpact || {};
+        qualitySummary.textContent = lang === "pt"
+          ? `Casos: ${data?.totals?.jobs || 0} | Feedbacks: ${data?.totals?.feedback || 0} | Alinhamento proxy: ${Math.round(Number(learning.alignmentRateProxy || 0) * 100)}%`
+          : `Cases: ${data?.totals?.jobs || 0} | Feedback: ${data?.totals?.feedback || 0} | Alignment proxy: ${Math.round(Number(learning.alignmentRateProxy || 0) * 100)}%`;
+
+        qualityMetrics.innerHTML = [
+          renderMetricCard(lang === "pt" ? "Documento Autentico" : "Document Authentic", decisions.documentAuthentic || 0),
+          renderMetricCard(lang === "pt" ? "Provavelmente Autentico" : "Likely Authentic", decisions.documentLikelyAuthentic || 0),
+          renderMetricCard(lang === "pt" ? "Revisao Humana" : "Human Review", decisions.humanReviewRecommended || 0),
+          renderMetricCard(lang === "pt" ? "Provavelmente Fraudulento" : "Likely Fraudulent", decisions.documentLikelyFraudulent || 0),
+          renderMetricCard(lang === "pt" ? "Fraude Confirmada" : "Fraud Confirmed", decisions.fraudConfirmed || 0),
+          renderMetricCard(lang === "pt" ? "Aprovar" : "Approve", decisions.approve || 0),
+          renderMetricCard(lang === "pt" ? "Aprovar com revisao" : "Approve with review", decisions.approveWithReview || 0),
+          renderMetricCard(lang === "pt" ? "Rejeitar" : "Reject", decisions.reject || 0)
+        ].join("");
+
+        const engineRows = Array.isArray(data?.engineMetrics) ? data.engineMetrics.slice(0, 8) : [];
+        engineMetricsBody.innerHTML = engineRows.map((engine) => `
+          <tr>
+            <td>${engine.engine}</td>
+            <td>${engine.performed}</td>
+            <td>${Math.round(Number(engine.passRate || 0) * 100)}%</td>
+            <td>${Math.round(Number(engine.warningRate || 0) * 100)}%</td>
+            <td>${Math.round(Number(engine.failureRate || 0) * 100)}%</td>
+          </tr>
+        `).join("") || `<tr><td colspan="5">${lang === "pt" ? "Sem dados" : "No data"}</td></tr>`;
+
+        const checkRows = Array.isArray(data?.checkMetrics) ? data.checkMetrics.slice(0, 10) : [];
+        checkMetricsBody.innerHTML = checkRows.map((check) => `
+          <tr>
+            <td>${check.label}</td>
+            <td>${check.engine}</td>
+            <td>${check.performed}</td>
+            <td>${Math.round(Number(check.failureRate || 0) * 100)}%</td>
+            <td>${Math.round(Number(check.warningRate || 0) * 100)}%</td>
+          </tr>
+        `).join("") || `<tr><td colspan="5">${lang === "pt" ? "Sem dados" : "No data"}</td></tr>`;
       }
 
       function getRiskLabel(value) {
@@ -1165,13 +1262,15 @@
         if (!adminToken) return;
 
         try {
-          const [usersRes, paymentsRes] = await Promise.all([
+          const [usersRes, paymentsRes, qualityRes] = await Promise.all([
             fetch(`${API_BASE}/admin/users`, { headers: { "x-admin-token": adminToken } }),
-            fetch(`${API_BASE}/admin/payments`, { headers: { "x-admin-token": adminToken } })
+            fetch(`${API_BASE}/admin/payments`, { headers: { "x-admin-token": adminToken } }),
+            api("/quality/dashboard")
           ]);
 
           const usersData = await safeJson(usersRes);
           const paymentsData = await safeJson(paymentsRes);
+          const qualityData = await safeJson(qualityRes);
 
           if (!usersRes.ok || !paymentsRes.ok) {
             hideAdminPanel();
@@ -1204,6 +1303,10 @@
               <td><span class="tag ${p.status === "succeeded" ? "ok" : "off"}">${p.status || "unknown"}</span></td>
             </tr>
           `).join("");
+
+          if (qualityRes.ok && qualityData) {
+            renderQualityDashboard(qualityData);
+          }
 
           usersBody.querySelectorAll("button[data-userid]").forEach((btn) => {
             btn.addEventListener("click", () => {

@@ -1,5 +1,5 @@
-import fetch from 'node-fetch';
 import { URL } from 'url';
+import { validatePublicSources } from './public_sources';
 
 export function extractDomainsAndEntities(text: string) {
   const domains = new Set<string>();
@@ -30,7 +30,7 @@ async function checkUrl(url: string, timeoutMs = 5000) {
   }
 }
 
-export async function contextualizeText(text: string) {
+export async function contextualizeText(text: string, options?: { country?: string }) {
   const found = extractDomainsAndEntities(text || '');
   const checks: any[] = [];
   for (const d of found.domains) {
@@ -43,7 +43,14 @@ export async function contextualizeText(text: string) {
       checks.push({ domain: d, url, error: String(e) });
     }
   }
-  return { found, checks };
+
+  const publicSources = await validatePublicSources({
+    country: options?.country,
+    domains: found.domains,
+    emails: found.emails
+  });
+
+  return { found, checks, publicSources };
 }
 
 export default { extractDomainsAndEntities, contextualizeText };

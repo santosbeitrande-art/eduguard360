@@ -2,6 +2,13 @@ import type { CalibrationProfile } from './calibration';
 
 export type DecisionStatus = 'validated' | 'review_required' | 'blocked';
 export type PolicyMode = 'recommendation' | 'enforced';
+export type DecisionOutcome =
+  | 'document_authentic'
+  | 'document_likely_authentic'
+  | 'human_review_recommended'
+  | 'document_likely_fraudulent'
+  | 'fraud_confirmed';
+export type DecisionApproval = 'approve' | 'approve_with_review' | 'reject';
 
 export interface DecisionEvidence {
   code: string;
@@ -12,14 +19,25 @@ export interface DecisionEvidence {
 export interface AuditableDecision {
   status: DecisionStatus;
   statusLabel: string;
+  outcome: DecisionOutcome;
+  approval: DecisionApproval;
+  approvalLabel: string;
   reasonCode: string;
   reason: string;
+  justification: string;
   confidence: number;
+  riskScore: number;
   mode: PolicyMode;
   autoEnforced: boolean;
   ruleVersion: string;
   policyScope: 'global-safe' | 'company-calibrated';
   evidence: DecisionEvidence[];
+  verificationSummary: {
+    performed: number;
+    passed: number;
+    warning: number;
+    failed: number;
+  };
   audit: {
     generatedAt: string;
     input: {
@@ -49,10 +67,17 @@ export interface DecisionPolicyInput {
   externalDecision?: string;
   calibration?: CalibrationProfile | null;
   mode?: PolicyMode;
+  verificationSummary?: {
+    performed: number;
+    passed: number;
+    warning: number;
+    failed: number;
+  } | null;
 }
 
 export const DECISION_POLICY_VERSION = 'verify-policy-2026.07-v1';
 export const MIN_CASES_FOR_COMPANY_CALIBRATION = 12;
+const BASELINE_VERIFICATION_CHECKS = 10;
 
 const CRITICAL_EVIDENCE_CODES = new Set([
   'signature-tampered',
@@ -86,9 +111,26 @@ function statusLabel(status: DecisionStatus) {
   return 'Revisao obrigatoria';
 }
 
+function outcomeLabel(outcome: DecisionOutcome) {
+  if (outcome === 'document_authentic') return 'Documento Autentico';
+  if (outcome === 'document_likely_authentic') return 'Documento Provavelmente Autentico';
+  if (outcome === 'document_likely_fraudulent') return 'Documento Provavelmente Fraudulento';
+  if (outcome === 'fraud_confirmed') return 'Fraude Confirmada';
+  return 'Revisao Humana Recomendada';
+}
+
+function approvalLabel(approval: DecisionApproval) {
+  if (approval === 'approve') return 'Sim.';
+  if (approval === 'approve_with_review') return 'Sim, mas recomenda-se revisao.';
+  return 'Nao. Existe forte probabilidade de fraude.';
+}
+
 function reasonText(reasonCode: string) {
   if (reasonCode === 'critical-evidence-detected') {
     return 'Bloqueado por evidencias criticas e deterministicas de fraude/adulteracao.';
+  }
+  if (reasonCode === 'high-risk-fraud-pattern') {
+    return 'Padrao de alto risco com multiplos sinais de fraude e baixa autenticidade.';
   }
   if (reasonCode === 'external-manual-review') {
     return 'Validacao externa indicou revisao manual obrigatoria.';
@@ -108,6 +150,98 @@ function isCriticalEvidence(evidence: DecisionEvidence[]) {
     if (CRITICAL_EVIDENCE_CODES.has(code)) return true;
     return code.includes('critical') || code.includes('tamper') || code.includes('forged') || code.includes('invalid-signature');
   });
+}
+
+function summarizeEvidence(evidence: DecisionEvidence[]) {
+  return evidence
+    .slice(0, 3)
+    .map((item) => item.reason)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function buildVerificationSummary(params: {
+  evidenceCount: number;
+  highIndicators: number;
+  mediumIndicators: number;
+  lowIndicators: number;
+  riskScore: number;
+  externalDecision: string;
+}) {
+  const externalChecks = params.externalDecision !== 'internal_only' ? 1 : 0;
+  const performed = BASELINE_VERIFICATION_CHECKS + params.evidenceCount + externalChecks;
+  let failed = params.highIndicators;
+  if (params.riskScore >= 90) failed += 1;
+  let warning = params.mediumIndicators + params.lowIndicators;
+  if (params.externalDecision === 'manual_review') warning += 1;
+  if (failed + warning > performed) {
+    warning = Math.max(0, performed - failed);
+  }
+  const passed = Math.max(0, performed - failed - warning);
+  return { performed, passed, warning, failed };
+}
+
+function decideOutcome(params: {
+  status: DecisionStatus;
+  reasonCode: string;
+  authenticity: number;
+  riskScore: number;
+  confidence: number;
+  highIndicators: number;
+  mediumIndicators: number;
+  criticalByCode: boolean;
+}) {
+  const {
+    status,
+    reasonCode,
+    authenticity,
+    riskScore,
+    confidence,
+    highIndicators,
+    mediumIndicators,
+    criticalByCode
+  } = params;
+
+  if (status === 'validated') {
+    if (riskScore <= 10 && authenticity >= 90 && confidence >= 85 && highIndicators === 0 && mediumIndicators === 0) {
+      return { outcome: 'document_authentic' as DecisionOutcome, approval: 'approve' as DecisionApproval };
+    }
+    return { outcome: 'document_likely_authentic' as DecisionOutcome, approval: 'approve' as DecisionApproval };
+  }
+
+  if (status === 'blocked') {
+    if (criticalByCode || (reasonCode === 'critical-evidence-detected' && riskScore >= 92 && confidence >= 75 && authenticity <= 20)) {
+      return { outcome: 'fraud_confirmed' as DecisionOutcome, approval: 'reject' as DecisionApproval };
+    }
+    return { outcome: 'document_likely_fraudulent' as DecisionOutcome, approval: 'reject' as DecisionApproval };
+  }
+
+  return { outcome: 'human_review_recommended' as DecisionOutcome, approval: 'approve_with_review' as DecisionApproval };
+}
+
+function buildJustification(params: {
+  outcome: DecisionOutcome;
+  verificationSummary: { performed: number; passed: number; warning: number; failed: number };
+  authenticity: number;
+  riskScore: number;
+  confidence: number;
+  evidence: DecisionEvidence[];
+  fallbackReason: string;
+}) {
+  const evidenceSummary = summarizeEvidence(params.evidence);
+  if (params.outcome === 'document_authentic') {
+    return `O documento foi considerado autentico porque o risco calculado e baixo (${params.riskScore}%), a autenticidade estimada e ${params.authenticity}% e ${params.verificationSummary.passed} de ${params.verificationSummary.performed} verificacoes ficaram consistentes sem sinais criticos.`;
+  }
+  if (params.outcome === 'document_likely_authentic') {
+    return `O documento foi considerado provavelmente autentico porque a maioria das verificacoes passou (${params.verificationSummary.passed}/${params.verificationSummary.performed}), a autenticidade estimada e ${params.authenticity}% e nao existem evidencias criticas. ${evidenceSummary || params.fallbackReason}`.trim();
+  }
+  if (params.outcome === 'human_review_recommended') {
+    return `A analise encontrou sinais ambiguos ou validacoes pendentes. ${params.verificationSummary.warning} verificacoes requerem atencao adicional, o risco calculado e ${params.riskScore}% e a confianca da IA e ${params.confidence}%. ${evidenceSummary || params.fallbackReason}`.trim();
+  }
+  if (params.outcome === 'document_likely_fraudulent') {
+    return `Foram encontrados indicios relevantes de adulteracao ou incoerencia. ${params.verificationSummary.failed} verificacoes falharam, o risco calculado e ${params.riskScore}% e a autenticidade estimada caiu para ${params.authenticity}%. ${evidenceSummary || params.fallbackReason}`.trim();
+  }
+  return `A fraude foi considerada confirmada porque existem evidencias criticas e deterministicas, ${params.verificationSummary.failed} verificacoes falharam e o risco calculado atingiu ${params.riskScore}%. ${evidenceSummary || params.fallbackReason}`.trim();
 }
 
 export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDecision {
@@ -135,6 +269,12 @@ export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDec
   const criticalByCode = isCriticalEvidence(evidence);
   const criticalByStrength = highIndicators >= 2 && riskScore >= 85 && authenticity <= 25 && confidence >= 70;
   const hasCriticalEvidence = criticalByCode || criticalByStrength;
+  const elevatedFraudPattern = !hasCriticalEvidence
+    && likelyFraud
+    && riskScore >= 88
+    && authenticity <= 40
+    && confidence >= 65
+    && (highIndicators >= 1 || mediumIndicators >= 3);
 
   let status: DecisionStatus = 'review_required';
   let reasonCode = 'ambiguous-or-conflicting-signals';
@@ -142,6 +282,9 @@ export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDec
   if (hasCriticalEvidence) {
     status = 'blocked';
     reasonCode = 'critical-evidence-detected';
+  } else if (elevatedFraudPattern) {
+    status = 'blocked';
+    reasonCode = 'high-risk-fraud-pattern';
   } else if (externalDecision === 'manual_review') {
     status = 'review_required';
     reasonCode = 'external-manual-review';
@@ -161,18 +304,52 @@ export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDec
   const calibrationSampleSize = Number(input.calibration?.sampleSize || 0);
   const calibrationEnabled = Boolean(input.calibration?.enabled);
   const calibrationQualified = calibrationEnabled && calibrationSampleSize >= MIN_CASES_FOR_COMPANY_CALIBRATION;
+  const verificationSummary = input.verificationSummary || buildVerificationSummary({
+    evidenceCount: evidence.length,
+    highIndicators,
+    mediumIndicators,
+    lowIndicators,
+    riskScore,
+    externalDecision
+  });
+  const routed = decideOutcome({
+    status,
+    reasonCode,
+    authenticity,
+    riskScore,
+    confidence,
+    highIndicators,
+    mediumIndicators,
+    criticalByCode
+  });
+  const reason = reasonText(reasonCode);
+  const justification = buildJustification({
+    outcome: routed.outcome,
+    verificationSummary,
+    authenticity,
+    riskScore,
+    confidence,
+    evidence,
+    fallbackReason: reason
+  });
 
   return {
     status,
-    statusLabel: statusLabel(status),
+    statusLabel: outcomeLabel(routed.outcome),
+    outcome: routed.outcome,
+    approval: routed.approval,
+    approvalLabel: approvalLabel(routed.approval),
     reasonCode,
-    reason: reasonText(reasonCode),
+    reason,
+    justification,
     confidence,
+    riskScore,
     mode,
     autoEnforced: mode === 'enforced',
     ruleVersion: DECISION_POLICY_VERSION,
     policyScope: calibrationQualified ? 'company-calibrated' : 'global-safe',
     evidence,
+    verificationSummary,
     audit: {
       generatedAt: new Date().toISOString(),
       input: {

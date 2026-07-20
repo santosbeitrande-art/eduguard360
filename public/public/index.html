@@ -806,13 +806,14 @@
       function renderTrust(result, jobId) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
-        const riskScore = Number(result?.trust?.riskScore ?? result?.riskScore ?? Math.max(0, Math.min(100, 100 - Number(score || 0))));
+        const riskScore = Number(result?.decision?.riskScore ?? result?.trust?.riskScore ?? result?.riskScore ?? Math.max(0, Math.min(100, 100 - Number(score || 0))));
         const confidence = Number(result?.trust?.confidence ?? result?.confidence ?? Math.max(40, Math.min(95, 58 + (result?.trust?.indicators || []).length * 4)));
         const reasons = result?.trust?.fraudReasons || [];
         const indicators = result?.trust?.indicators || [];
         const ai = formatAiLabel(result?.summary?.aiLikelihood || "unknown");
         const dates = formatDateConsistencyLabel(result?.summary?.dateConsistency || "unknown");
         const processingMode = result?.processingMode || REQUIRED_PROCESSING_MODE;
+        const decision = result?.decision || {};
         const decisionStatus = String(result?.decision?.status || "").trim();
         const decisionStatusLabelFromApi = String(result?.decision?.statusLabel || "").trim();
         const finalDecision = String(result?.finalDecision || (likelyFraud ? "revisao_obrigatoria" : "validado"));
@@ -820,12 +821,36 @@
         const nextAction = buildNextAction(decisionStatus || finalDecision, likelyFraud);
         const decisionTone = getDecisionTone(decisionStatus || finalDecision);
         const externalDecision = String(result?.externalValidation?.decision || "internal_only");
+        const approvalLabel = String(decision?.approvalLabel || (decisionTone === "validated"
+          ? (lang === "pt" ? "Sim." : "Yes.")
+          : decisionTone === "review"
+            ? (lang === "pt" ? "Sim, mas recomenda-se revisao." : "Yes, but review is recommended.")
+            : (lang === "pt" ? "Nao. Existe forte probabilidade de fraude." : "No. There is a strong probability of fraud.")));
+        const justification = String(decision?.justification || decision?.reason || (reasons[0] || (lang === "pt"
+          ? "A decisao foi tomada com base na avaliacao conjunta do risco, autenticidade e evidencias recolhidas."
+          : "The decision was based on the combined evaluation of risk, authenticity, and collected evidence.")));
         const externalDecisionLabel = externalDecision === "approved"
           ? (lang === "pt" ? "Aprovado" : "Approved")
           : externalDecision === "manual_review"
             ? (lang === "pt" ? "Revisao manual" : "Manual review")
             : (lang === "pt" ? "Nao aplicavel" : "Not applicable");
         const auditReport = result?.auditReport || null;
+        const evidenceReport = result?.evidenceReport || null;
+        const verificationSummary = decision?.verificationSummary || (() => {
+          const performed = 10 + indicators.length + (externalDecision !== "internal_only" ? 1 : 0);
+          const failed = indicators.filter((item) => String(item?.severity || "").toLowerCase() === "high").length + (riskScore >= 90 ? 1 : 0);
+          let warning = indicators.filter((item) => String(item?.severity || "").toLowerCase() !== "high").length + (decisionStatus === "review_required" ? 1 : 0);
+          if (failed + warning > performed) warning = Math.max(0, performed - failed);
+          return {
+            performed,
+            passed: Math.max(0, performed - failed - warning),
+            warning,
+            failed
+          };
+        })();
+        const evidenceEngines = Array.isArray(evidenceReport?.engines) ? evidenceReport.engines : [];
+        const decisionDrivers = evidenceReport?.decisionDrivers || { positive: [], warning: [], negative: [] };
+        const analyzedItems = Array.isArray(evidenceReport?.analyzed) ? evidenceReport.analyzed : [];
 
         const normalizedDecision = decisionStatus || finalDecision;
         const finalDecisionLabel = decisionStatusLabelFromApi || (
@@ -865,6 +890,21 @@
               </ul>
           `
           : "";
+        const evidenceArchitectureHtml = evidenceReport
+          ? `
+              <details class="report-block">
+                <summary><strong>${lang === "pt" ? "Arquitetura multimotor e motor de evidencias" : "Multiengine architecture and evidence engine"}</strong></summary>
+                <p>${lang === "pt"
+                  ? "A decisao foi produzida pela combinacao ponderada de OCR, analise forense, metadados, validacao de conteudo, contexto, regras e validacao externa quando disponivel."
+                  : "The decision was produced by the weighted combination of OCR, forensic analysis, metadata, content validation, context, rules, and external validation when available."}</p>
+                ${analyzedItems.length ? `<strong>${lang === "pt" ? "Foi analisado" : "Analyzed"}:</strong><ul>${analyzedItems.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+                ${evidenceEngines.length ? `<div class="model-grid" style="margin-top:8px;">${evidenceEngines.map((engine) => `<div class="model-chip"><div class="model-chip-label">${engine.engine}</div><div class="model-chip-value">${engine.passed}/${engine.performed} ${lang === "pt" ? "passaram" : "passed"}</div><div class="meta-label">${lang === "pt" ? "Alertas" : "Warnings"}: ${engine.warning} | ${lang === "pt" ? "Falhas" : "Fails"}: ${engine.failed}</div></div>`).join("")}</div>` : ""}
+                ${decisionDrivers.positive?.length ? `<strong>${lang === "pt" ? "Fatores que favoreceram a aprovacao" : "Factors supporting approval"}:</strong><ul>${decisionDrivers.positive.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+                ${decisionDrivers.warning?.length ? `<strong>${lang === "pt" ? "Fatores sob observacao" : "Factors under observation"}:</strong><ul>${decisionDrivers.warning.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+                ${decisionDrivers.negative?.length ? `<strong>${lang === "pt" ? "Fatores que pesaram contra o documento" : "Factors weighing against the document"}:</strong><ul>${decisionDrivers.negative.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+              </details>
+            `
+          : "";
 
         const feedbackPanel = (!offlineMode && jobId)
           ? `
@@ -886,7 +926,12 @@
                 <div class="decision-title">${lang === "pt" ? "Resumo executivo" : "Executive summary"}</div>
                 <div class="decision-subtitle">${finalDecisionLabel}</div>
               </div>
-              <span class="decision-pill">${lang === "pt" ? "Confianca" : "Confidence"}: ${confidence}%</span>
+              <span class="decision-pill">${lang === "pt" ? "Confianca da IA" : "AI confidence"}: ${confidence}%</span>
+            </div>
+            <div class="report-block">
+              <strong>${lang === "pt" ? "Posso aprovar este documento?" : "Can I approve this document?"}</strong>
+              <p><strong>${approvalLabel}</strong></p>
+              <p>${justification}</p>
             </div>
             <strong>${lang === "pt" ? "Top 3 evidencias" : "Top 3 evidence"}:</strong>
             ${evidenceHtml}
@@ -899,8 +944,12 @@
                   <div class="model-chip-value">${finalDecisionLabel}</div>
                 </div>
                 <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Resposta pratica" : "Practical answer"}</div>
+                  <div class="model-chip-value">${approvalLabel}</div>
+                </div>
+                <div class="model-chip">
                   <div class="model-chip-label">${lang === "pt" ? "Risco" : "Risk"}</div>
-                  <div class="model-chip-value">${riskScore}/100</div>
+                  <div class="model-chip-value">${riskScore}%</div>
                 </div>
                 <div class="model-chip">
                   <div class="model-chip-label">${lang === "pt" ? "Confianca" : "Confidence"}</div>
@@ -909,6 +958,24 @@
                 <div class="model-chip">
                   <div class="model-chip-label">${lang === "pt" ? "Autenticidade" : "Authenticity"}</div>
                   <div class="model-chip-value">${score}%</div>
+                </div>
+              </div>
+              <div class="model-grid" style="margin-top:8px;">
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Verificacoes realizadas" : "Checks performed"}</div>
+                  <div class="model-chip-value">${verificationSummary.performed}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Aprovadas" : "Passed"}</div>
+                  <div class="model-chip-value">${verificationSummary.passed}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Necessitam validacao" : "Need validation"}</div>
+                  <div class="model-chip-value">${verificationSummary.warning}</div>
+                </div>
+                <div class="model-chip">
+                  <div class="model-chip-label">${lang === "pt" ? "Falharam" : "Failed"}</div>
+                  <div class="model-chip-value">${verificationSummary.failed}</div>
                 </div>
               </div>
             </div>
@@ -926,6 +993,7 @@
               ${reasonsHtml}
               ${indicatorsHtml}
             </div>
+            ${evidenceArchitectureHtml}
             ${technicalAuditHtml ? `<details class="report-block"><summary><strong>${lang === "pt" ? "Dossier auditavel do caso" : "Auditable case dossier"}</strong></summary>${technicalAuditHtml}</details>` : ""}
             ${feedbackPanel}
           </div>

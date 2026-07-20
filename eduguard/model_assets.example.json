@@ -1,0 +1,56 @@
+{
+  "vision": {
+    "yolo": {
+      "enabled": false,
+      "modelPath": "./models/vision/yolo/document-detector.pt",
+      "notes": "Provide a YOLO model trained for logos, stamps, signatures, QR regions, and edited regions."
+    },
+    "detectron2": {
+      "enabled": false,
+      "configPath": "./models/vision/detectron2/config.yaml",
+      "weightsPath": "./models/vision/detectron2/model_final.pth",
+      "notes": "Recommended for layout parsing and instance segmentation of document objects."
+    },
+    "segmentAnything": {
+      "enabled": false,
+      "weightsPath": "./models/vision/sam/sam_vit_h_4b8939.pth",
+      "notes": "Use to isolate suspicious edited regions and overlays."
+    },
+    "clip": {
+      "enabled": false,
+      "modelName": "ViT-B-32",
+      "notes": "Use for issuer/logo semantic matching and layout similarity."
+    }
+  },
+  "ocr": {
+    "paddleocr": {
+      "enabled": false,
+      "language": "en",
+      "notes": "Install PaddleOCR runtime and models for multilingual OCR."
+    },
+    "easyocr": {
+      "enabled": false,
+      "languages": ["pt", "en"],
+      "notes": "Use as a secondary OCR engine to measure agreement."
+    },
+    "tesseract": {
+      "enabled": true,
+      "language": "por",
+      "notes": "Requires local Tesseract binary on PATH."
+    }
+  },
+  "datasets": {
+    "documentFraud": [
+      "Internal labeled fraud cases",
+      "Internal authentic references by issuer",
+      "Per-document-type benchmark sets"
+    ],
+    "recommendedPublicCorpora": [
+      "RVL-CDIP",
+      "CORD",
+      "SROIE",
+      "DocTamper-style datasets",
+      "MIDV-500 for identity documents"
+    ]
+  }
+}

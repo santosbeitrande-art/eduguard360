@@ -323,11 +323,11 @@ async function callMpesaCheckout(company: Company, amount: number, currency: str
   }
 
   const accepted = String(data?.status || data?.state || '').toLowerCase();
-  const isSucceeded = accepted === 'success' || accepted === 'succeeded' || accepted === 'successful';
   const externalReference = String(data?.transactionReference || data?.output_TransactionID || data?.id || txReference);
 
   return {
-    status: isSucceeded ? 'succeeded' : 'pending',
+    // M-Pesa initiation should be treated as pending until webhook/reconciliation confirms settlement.
+    status: 'pending',
     externalReference,
     checkoutUrl: null,
     raw: data
@@ -2205,12 +2205,22 @@ export function registerAuthRoutes(app: any) {
       });
     }
 
+    if (payment.status === 'failed') {
+      saveStore(store);
+      return res.status(502).json({
+        ok: false,
+        error: checkout.error || 'checkout-init-failed',
+        payment,
+        checkoutUrl: payment.checkoutUrl || null
+      });
+    }
+
     saveStore(store);
-    return res.json({
-      ok: payment.status !== 'failed',
+    return res.status(202).json({
+      ok: true,
       payment,
       checkoutUrl: payment.checkoutUrl || null,
-      message: payment.status === 'failed' ? 'checkout-init-failed' : 'checkout-created'
+      message: 'checkout-created'
     });
   });
 
@@ -2301,6 +2311,22 @@ export function registerAuthRoutes(app: any) {
       return res.json({ ok: true, payment, balance: company.creditBalance, autoCredited: true });
     }
 
+    if (payment.status === 'failed') {
+      appendAuditEvent(store, auth.principalType === 'api-key' ? 'api-key' : 'user', auth.username, 'payment.checkout.failed', company.id, {
+        paymentId: payment.id,
+        provider,
+        amount,
+        error: checkout.error || 'checkout-init-failed'
+      });
+      saveStore(store);
+      return res.status(502).json({
+        ok: false,
+        error: checkout.error || 'checkout-init-failed',
+        payment,
+        checkoutUrl: payment.checkoutUrl || null
+      });
+    }
+
     appendAuditEvent(store, auth.principalType === 'api-key' ? 'api-key' : 'user', auth.username, 'payment.checkout.created', company.id, {
       paymentId: payment.id,
       provider,
@@ -2309,11 +2335,11 @@ export function registerAuthRoutes(app: any) {
     });
     saveStore(store);
 
-    return res.json({
-      ok: payment.status !== 'failed',
+    return res.status(202).json({
+      ok: true,
       payment,
       checkoutUrl: payment.checkoutUrl || null,
-      message: payment.status === 'failed' ? 'checkout-init-failed' : 'checkout-created'
+      message: 'checkout-created'
     });
   });
 

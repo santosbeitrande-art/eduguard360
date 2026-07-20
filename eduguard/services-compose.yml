@@ -1,0 +1,68 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: eduguard_verify
+      POSTGRES_USER: eduguard
+      POSTGRES_PASSWORD: eduguard_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - eduguard_postgres_data:/var/lib/postgresql/data
+      - ./verify-api/sql/002_verify_ai_postgres_schema.sql:/docker-entrypoint-initdb.d/002_verify_ai_postgres_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eduguard -d eduguard_verify"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  vision-service:
+    build: ./vision-service
+    ports:
+      - "8011:8011"
+
+  ocr-service:
+    build: ./ocr-service
+    ports:
+      - "8012:8012"
+
+  forensics-service:
+    build: ./forensics-service
+    ports:
+      - "8013:8013"
+
+  verify-api:
+    build: ./verify-api
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      INTERNAL_ADMIN_PASSWORD: ${INTERNAL_ADMIN_PASSWORD:-LocalStrongPass_123!}
+      VERIFY_ADMIN_TOKEN: ${VERIFY_ADMIN_TOKEN:-LOCAL_ADMIN_TOKEN_123}
+      VERIFY_PG_URL: postgresql://eduguard:eduguard_dev_password@postgres:5432/eduguard_verify
+      REDIS_URL: redis://redis:6379
+      OCR_SERVICE_URL: http://ocr-service:8012
+      VISION_SERVICE_URL: http://vision-service:8011
+      FORENSICS_SERVICE_URL: http://forensics-service:8013
+      PUBLIC_SOURCES_JSON: '[{"id":"mz-gov","countryCode":"MZ","issuerType":"government-domain","issuerName":"Mozambique Government","endpointUrl":"https://www.gov.mz","cacheTtlSeconds":3600,"isActive":true},{"id":"mz-education","countryCode":"MZ","issuerType":"education-domain","issuerName":"Universidade Eduardo Mondlane","endpointUrl":"https://www.uem.mz","cacheTtlSeconds":3600,"isActive":true}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      ocr-service:
+        condition: service_started
+      vision-service:
+        condition: service_started
+      forensics-service:
+        condition: service_started
+
+volumes:
+  eduguard_postgres_data:

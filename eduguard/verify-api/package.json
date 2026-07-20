@@ -4,9 +4,11 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start": "node dist/index.js",
     "worker": "ts-node-dev --respawn --transpile-only src/worker.ts",
     "dev:online": "node scripts/dev-online.mjs",
     "db:migrate": "node scripts/migrate-sqlserver.mjs",
+    "db:migrate:pg": "node scripts/migrate-postgres.mjs",
     "bootstrap:online": "node scripts/bootstrap-online.mjs",
     "security:housekeeping": "node scripts/security-housekeeping.mjs",
     "build": "tsc",
@@ -26,6 +28,8 @@
     "multer": "^1.4.4",
     "node-fetch": "^3.3.1",
     "pdf-parse": "^1.1.1",
+    "pg": "^8.22.0",
+    "redis": "^6.1.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

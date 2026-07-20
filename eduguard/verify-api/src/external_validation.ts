@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import fetch from 'node-fetch';
 
 type ExternalDecision = 'approved' | 'manual_review' | 'internal_only';
 type ProviderName = 'energent' | 'checkfile';

@@ -237,8 +237,11 @@ test('auditable decision policy routes validated/review/blocked with explanation
     calibration: null
   });
   assert.equal(validated.status, 'validated');
+  assert.equal(validated.outcome, 'document_likely_authentic');
+  assert.equal(validated.approval, 'approve');
   assert.equal(validated.mode, 'recommendation');
   assert.equal(validated.ruleVersion.length > 0, true);
+  assert.equal(validated.verificationSummary.performed > 0, true);
 
   const review = buildAuditableDecision({
     trust: {
@@ -254,6 +257,8 @@ test('auditable decision policy routes validated/review/blocked with explanation
     calibration: null
   });
   assert.equal(review.status, 'review_required');
+  assert.equal(review.outcome, 'human_review_recommended');
+  assert.equal(review.approval, 'approve_with_review');
   assert.equal(review.reasonCode, 'external-manual-review');
 
   const blocked = buildAuditableDecision({
@@ -270,7 +275,9 @@ test('auditable decision policy routes validated/review/blocked with explanation
     calibration: null
   });
   assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.statusLabel, 'Bloqueado por evidencia critica');
+  assert.equal(blocked.outcome, 'fraud_confirmed');
+  assert.equal(blocked.approval, 'reject');
+  assert.equal(blocked.statusLabel, 'Fraude Confirmada');
 });
 
 test('internal benchmark reports precision/recall and review rates by document type', () => {

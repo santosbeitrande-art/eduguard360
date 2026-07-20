@@ -31,6 +31,9 @@ import { runExternalValidation } from './external_validation';
 import { EXTERNAL_PROCESSING_MODE, isExternalProcessingModeRequired } from './processing_mode';
 import { runInternalBenchmark } from './internal_benchmark';
 import { buildAuditableDecision, toLegacyFinalDecision } from './decision_policy';
+import { buildCaseEvidenceReport, buildSingleDocumentEvidenceReport } from './evidence_engine';
+import { callForensicsService, callOcrExtractService, callVisionService } from './service_clients';
+import { listCompanyJobRecords, readJobRecord, writeJobRecord } from './job_store';
 
 const app = express();
 app.use(cors());
@@ -425,6 +428,14 @@ function listCompanyJobs(companyId: string): any[] {
   }
 }
 
+async function readJobSafe(jobId: string) {
+  return readJobRecord(JOBS_DIR, String(jobId || '').trim());
+}
+
+async function listCompanyJobsSafe(companyId: string) {
+  return listCompanyJobRecords(JOBS_DIR, String(companyId || '').trim());
+}
+
 function getReviewState(feedbackRows: VerificationFeedbackRecord[], companyId: string, jobId: string) {
   const rows = feedbackRows.filter((item) => item.companyId === companyId && item.jobId === jobId);
   const reviewers = Array.from(new Set(rows.map((item) => String(item.reviewer || '').toLowerCase()).filter(Boolean)));
@@ -458,17 +469,61 @@ function normalizeEvidenceForAudit(evidence: any[] | undefined) {
   }));
 }
 
-function buildReviewQueue(auth: AuthContext, slaHours: number) {
+function getDecisionView(result: any) {
+  const decision = result?.decision || {};
+  const status = String(decision?.status || result?.finalDecision || 'unknown').trim().toLowerCase();
+  const outcome = String(decision?.outcome || '').trim().toLowerCase();
+  const approval = String(decision?.approval || '').trim().toLowerCase();
+  const statusLabel = String(decision?.statusLabel || 'Review required');
+  const approvalLabel = String(decision?.approvalLabel || 'Review required');
+  const confidence = Number(decision?.confidence ?? result?.trust?.confidence ?? 0);
+  const riskScore = Number(decision?.riskScore ?? result?.trust?.riskScore ?? 0);
+  const verificationSummary = decision?.verificationSummary || null;
+
+  const requiresReview = outcome === 'human_review_recommended'
+    || approval === 'approve_with_review'
+    || status.includes('review')
+    || status.includes('revisao');
+  const rejected = outcome === 'document_likely_fraudulent'
+    || outcome === 'fraud_confirmed'
+    || approval === 'reject'
+    || status.includes('block')
+    || status.includes('bloqueado');
+  const approved = outcome === 'document_authentic'
+    || outcome === 'document_likely_authentic'
+    || approval === 'approve'
+    || status.includes('valid');
+
+  return {
+    status,
+    statusLabel,
+    outcome,
+    outcomeLabel: statusLabel,
+    approval,
+    approvalLabel,
+    confidence,
+    riskScore,
+    justification: String(decision?.justification || decision?.reason || ''),
+    verificationSummary,
+    requiresReview,
+    rejected,
+    approved
+  };
+}
+
+async function buildReviewQueue(auth: AuthContext, slaHours: number) {
   const nowMs = Date.now();
   const feedbackRows = readVerificationFeedback();
-  const items = listCompanyJobs(auth.companyId)
-    .filter((job) => String(job?.status || '') === 'done')
-    .filter((job) => {
-      const status = String(job?.result?.decision?.status || job?.result?.finalDecision || '').toLowerCase();
-      return status.includes('review') || status.includes('blocked') || status.includes('revisao') || status.includes('bloqueado');
+  const jobs = await listCompanyJobsSafe(auth.companyId);
+  const items = jobs
+    .filter((job: any) => String(job?.status || '') === 'done')
+    .filter((job: any) => {
+      const decision = getDecisionView(job?.result);
+      return decision.requiresReview || decision.rejected;
     })
-    .map((job) => {
+    .map((job: any) => {
       const jobId = String(job?.id || '');
+      const decisionView = getDecisionView(job?.result);
       const reviewState = getReviewState(feedbackRows, auth.companyId, jobId);
       const createdAt = String(job?.createdAt || job?.startedAt || new Date().toISOString());
       const createdMs = new Date(createdAt).getTime();
@@ -482,9 +537,16 @@ function buildReviewQueue(auth: AuthContext, slaHours: number) {
       return {
         jobId,
         decision: {
-          status: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
-          statusLabel: String(job?.result?.decision?.statusLabel || 'Review required'),
-          confidence: Number(job?.result?.decision?.confidence ?? job?.result?.trust?.confidence ?? 0)
+          status: decisionView.status,
+          statusLabel: decisionView.statusLabel,
+          outcome: decisionView.outcome,
+          outcomeLabel: decisionView.outcomeLabel,
+          approval: decisionView.approval,
+          approvalLabel: decisionView.approvalLabel,
+          confidence: decisionView.confidence,
+          riskScore: decisionView.riskScore,
+          justification: decisionView.justification,
+          verificationSummary: decisionView.verificationSummary
         },
         createdAt,
         dueAt,
@@ -495,7 +557,7 @@ function buildReviewQueue(auth: AuthContext, slaHours: number) {
         evidence: topEvidence.slice(0, 3)
       };
     })
-    .sort((a, b) => {
+    .sort((a: any, b: any) => {
       if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
       if (a.slaBreached !== b.slaBreached) return a.slaBreached ? -1 : 1;
       return String(b.createdAt).localeCompare(String(a.createdAt));
@@ -503,9 +565,9 @@ function buildReviewQueue(auth: AuthContext, slaHours: number) {
 
   const summary = {
     total: items.length,
-    open: items.filter((item) => !item.resolved).length,
-    resolved: items.filter((item) => item.resolved).length,
-    slaBreached: items.filter((item) => item.slaBreached).length
+    open: items.filter((item: any) => !item.resolved).length,
+    resolved: items.filter((item: any) => item.resolved).length,
+    slaBreached: items.filter((item: any) => item.slaBreached).length
   };
 
   return {
@@ -523,7 +585,15 @@ function buildReviewQueueCsv(items: Array<any>) {
     'jobId',
     'decisionStatus',
     'decisionLabel',
+    'decisionOutcome',
+    'approval',
+    'approvalLabel',
     'confidence',
+    'riskScore',
+    'checksPerformed',
+    'checksPassed',
+    'checksNeedValidation',
+    'checksFailed',
     'createdAt',
     'dueAt',
     'slaBreached',
@@ -535,7 +605,15 @@ function buildReviewQueueCsv(items: Array<any>) {
     item.jobId,
     item.decision?.status,
     item.decision?.statusLabel,
+    item.decision?.outcome,
+    item.decision?.approval,
+    item.decision?.approvalLabel,
     item.decision?.confidence,
+    item.decision?.riskScore,
+    item.decision?.verificationSummary?.performed,
+    item.decision?.verificationSummary?.passed,
+    item.decision?.verificationSummary?.warning,
+    item.decision?.verificationSummary?.failed,
     item.createdAt,
     item.dueAt,
     item.slaBreached,
@@ -545,6 +623,168 @@ function buildReviewQueueCsv(items: Array<any>) {
   ].map((cell) => escapeCsvCell(cell)).join(','));
 
   return [header.join(','), ...lines].join('\n');
+}
+
+function getEvidenceReport(job: any) {
+  return job?.result?.evidenceReport || null;
+}
+
+function buildEvidenceReportCsv(jobId: string, evidenceReport: any) {
+  const header = [
+    'jobId',
+    'engine',
+    'checkId',
+    'label',
+    'status',
+    'severity',
+    'impact',
+    'message'
+  ];
+
+  const rows = Array.isArray(evidenceReport?.checks)
+    ? evidenceReport.checks.map((check: any) => [
+      jobId,
+      check?.engine,
+      check?.id,
+      check?.label,
+      check?.status,
+      check?.severity,
+      check?.impact,
+      check?.message
+    ].map((cell) => escapeCsvCell(cell)).join(','))
+    : [];
+
+  return [header.join(','), ...rows].join('\n');
+}
+
+function aggregateEngineMetrics(jobs: any[]) {
+  const byEngine = new Map<string, { engine: string; performed: number; passed: number; warning: number; failed: number; documents: number }>();
+
+  for (const job of jobs) {
+    const evidenceReport = getEvidenceReport(job);
+    const engines = Array.isArray(evidenceReport?.engines) ? evidenceReport.engines : [];
+    for (const engine of engines) {
+      const key = String(engine?.engine || 'unknown');
+      if (!byEngine.has(key)) {
+        byEngine.set(key, { engine: key, performed: 0, passed: 0, warning: 0, failed: 0, documents: 0 });
+      }
+      const bucket = byEngine.get(key)!;
+      bucket.performed += Number(engine?.performed || 0);
+      bucket.passed += Number(engine?.passed || 0);
+      bucket.warning += Number(engine?.warning || 0);
+      bucket.failed += Number(engine?.failed || 0);
+      bucket.documents += 1;
+    }
+  }
+
+  return Array.from(byEngine.values())
+    .map((item) => ({
+      ...item,
+      passRate: item.performed ? Number((item.passed / item.performed).toFixed(4)) : 0,
+      warningRate: item.performed ? Number((item.warning / item.performed).toFixed(4)) : 0,
+      failureRate: item.performed ? Number((item.failed / item.performed).toFixed(4)) : 0
+    }))
+    .sort((a, b) => b.failed - a.failed || a.engine.localeCompare(b.engine));
+}
+
+function aggregateCheckMetrics(jobs: any[]) {
+  const byCheck = new Map<string, {
+    checkId: string;
+    label: string;
+    engine: string;
+    performed: number;
+    passed: number;
+    warning: number;
+    failed: number;
+    highSeverityCount: number;
+  }>();
+
+  for (const job of jobs) {
+    const evidenceReport = getEvidenceReport(job);
+    const checks = Array.isArray(evidenceReport?.checks) ? evidenceReport.checks : [];
+    for (const check of checks) {
+      if (String(check?.status || '') === 'not_applicable') continue;
+      const key = String(check?.id || 'unknown-check');
+      if (!byCheck.has(key)) {
+        byCheck.set(key, {
+          checkId: key,
+          label: String(check?.label || key),
+          engine: String(check?.engine || 'unknown'),
+          performed: 0,
+          passed: 0,
+          warning: 0,
+          failed: 0,
+          highSeverityCount: 0
+        });
+      }
+      const bucket = byCheck.get(key)!;
+      bucket.performed += 1;
+      if (check?.status === 'passed') bucket.passed += 1;
+      if (check?.status === 'warning') bucket.warning += 1;
+      if (check?.status === 'failed') bucket.failed += 1;
+      if (String(check?.severity || '') === 'high') bucket.highSeverityCount += 1;
+    }
+  }
+
+  return Array.from(byCheck.values())
+    .map((item) => ({
+      ...item,
+      passRate: item.performed ? Number((item.passed / item.performed).toFixed(4)) : 0,
+      warningRate: item.performed ? Number((item.warning / item.performed).toFixed(4)) : 0,
+      failureRate: item.performed ? Number((item.failed / item.performed).toFixed(4)) : 0
+    }))
+    .sort((a, b) => b.failed - a.failed || b.warning - a.warning || a.checkId.localeCompare(b.checkId))
+    .slice(0, 50);
+}
+
+function buildLearningImpactMetrics(jobs: any[], feedback: VerificationFeedbackRecord[]) {
+  const jobById = new Map<string, any>();
+  for (const job of jobs) {
+    const jobId = String(job?.id || '');
+    if (jobId) jobById.set(jobId, job);
+  }
+
+  let aligned = 0;
+  let contradicted = 0;
+  let inconclusive = 0;
+  let approvedConfirmedAuthentic = 0;
+  let rejectedConfirmedFraud = 0;
+  let reviewedConfirmedAuthentic = 0;
+  let reviewedConfirmedFraud = 0;
+
+  for (const row of feedback) {
+    const job = jobById.get(String(row.jobId || ''));
+    if (!job) continue;
+    const decisionView = getDecisionView(job?.result);
+    const outcome = String(row.outcome || 'inconclusive');
+    if (outcome === 'inconclusive') {
+      inconclusive += 1;
+      continue;
+    }
+
+    const alignedDecision = (outcome === 'authenticity_confirmed' && decisionView.approved)
+      || (outcome === 'fraud_confirmed' && decisionView.rejected);
+
+    if (alignedDecision) aligned += 1;
+    else contradicted += 1;
+
+    if (outcome === 'authenticity_confirmed' && decisionView.approved) approvedConfirmedAuthentic += 1;
+    if (outcome === 'fraud_confirmed' && decisionView.rejected) rejectedConfirmedFraud += 1;
+    if (outcome === 'authenticity_confirmed' && decisionView.requiresReview) reviewedConfirmedAuthentic += 1;
+    if (outcome === 'fraud_confirmed' && decisionView.requiresReview) reviewedConfirmedFraud += 1;
+  }
+
+  const decisiveFeedback = aligned + contradicted;
+  return {
+    labeledCases: feedback.filter((item) => item.outcome !== 'inconclusive').length,
+    inconclusiveCases: inconclusive,
+    alignmentRateProxy: decisiveFeedback ? Number((aligned / decisiveFeedback).toFixed(4)) : 0,
+    contradictionRateProxy: decisiveFeedback ? Number((contradicted / decisiveFeedback).toFixed(4)) : 0,
+    approvedConfirmedAuthentic,
+    rejectedConfirmedFraud,
+    reviewedConfirmedAuthentic,
+    reviewedConfirmedFraud
+  };
 }
 
 function runOpsBackup() {
@@ -606,7 +846,7 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
   const extraction = await extractTextForAnalysis(file);
   const text = extraction.text;
   const forensic = analyzeDocument(file.path, text || '');
-  const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
+  const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [], publicSources: { checks: [] } };
   const risk = evaluateFraudRisk(forensic, contextual);
 
   const storedFileName = `${Date.now()}-${uuidv4()}-${sanitizeFileName(file.originalname)}`;
@@ -643,7 +883,15 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
   return record;
 }
 
-async function extractTextImmediately(filePath: string) {
+async function extractTextImmediately(filePath: string, jobId?: string) {
+  if (jobId) {
+    const serviceResult = await callOcrExtractService({ jobId, filePath });
+    const serviceText = String(serviceResult?.payload?.text || serviceResult?.payload?.result?.text || '').trim();
+    if (serviceResult.ok && serviceText) {
+      return normalizeExtractedText(serviceText);
+    }
+  }
+
   const ext = path.extname(filePath).toLowerCase();
 
   if (ext === '.pdf') {
@@ -722,10 +970,10 @@ function buildMetadataFallbackText(file: Express.Multer.File) {
   ].join('\n');
 }
 
-async function extractTextForAnalysis(file: Express.Multer.File): Promise<ExtractedTextResult> {
+async function extractTextForAnalysis(file: Express.Multer.File, jobId?: string): Promise<ExtractedTextResult> {
   let extracted = '';
   try {
-    extracted = await extractTextImmediately(file.path);
+    extracted = await extractTextImmediately(file.path, jobId);
   } catch (error: any) {
     const reason = String(error?.message || error);
     if (reason !== 'unsupported-file-format') {
@@ -955,10 +1203,10 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
     createdAt: new Date().toISOString(),
     startedAt: new Date().toISOString()
   };
-  fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(job, null, 2));
+  await writeJobRecord(JOBS_DIR, job);
 
   try {
-    const extraction = await extractTextForAnalysis(req.file);
+    const extraction = await extractTextForAnalysis(req.file, jobId);
     const text = extraction.text;
     if (!text || !String(text).trim()) {
       refundVerificationCredits(auth.companyId, jobId, 'empty-text-extraction');
@@ -968,7 +1216,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         finishedAt: new Date().toISOString(),
         error: 'unsupported-or-empty-document'
       };
-      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      await writeJobRecord(JOBS_DIR, failedJob);
       return res.status(415).json({
         jobId,
         status: 'failed',
@@ -977,7 +1225,15 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       });
     }
     const forensic = analyzeDocument(req.file.path, text);
-    const contextual = text ? await contextualizeText(text) : { found: { domains: [], emails: [] }, checks: [] };
+    const serviceForensics = await callForensicsService({ jobId, filePath: req.file.path, fileName: req.file.originalname });
+    const contextual = text ? await contextualizeText(text, { country: normalizeCountry(req.body?.country) }) : { found: { domains: [], emails: [] }, checks: [], publicSources: { checks: [] } };
+    const serviceVision = await callVisionService({
+      jobId,
+      filePath: req.file.path,
+      fileName: req.file.originalname,
+      documentType: String(forensic?.checks?.documentType || forensic?.summary?.documentType || 'unknown'),
+      text
+    });
     const fraudSignals = evaluateFraudRisk(forensic, contextual);
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust({
@@ -1012,7 +1268,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
         error: 'external-validation-required',
         details: buildExternalModeRequirementDetails(externalValidation)
       };
-      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      await writeJobRecord(JOBS_DIR, failedJob);
       return res.status(503).json({
         jobId,
         status: 'failed',
@@ -1042,6 +1298,20 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
     const aiSignals = forensic.checks?.aiLikelihood === 'likely-ai' || forensic.checks?.aiLikelihood === 'possible-ai';
     const contextualSignals = (contextual.checks || []).length > 0 || ((contextual.found?.domains || []).length > 0) || ((contextual.found?.emails || []).length > 0);
     const passiveIssuesFound = forensic.checks?.dateConsistency === 'inconsistent' || forensic.checks?.aiLikelihood === 'likely-ai' || forensic.score < 45;
+    const evidenceReport = buildSingleDocumentEvidenceReport({
+      fileName: req.file.originalname,
+      extractionMode: extraction.usedMetadataFallback ? 'metadata-fallback' : 'text',
+      text,
+      forensic,
+      contextual,
+      externalValidation,
+      trust: calibratedTrust,
+      serviceReports: {
+        ocr: null,
+        forensics: serviceForensics,
+        vision: serviceVision
+      }
+    });
     const auditableDecision = buildAuditableDecision({
       trust: {
         authenticityPercentage: Number(calibratedTrust.authenticityPercentage || 0),
@@ -1053,11 +1323,18 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       },
       externalDecision: externalValidation.decision,
       calibration: calibratedTrust.calibration || null,
-      mode: 'recommendation'
+      mode: 'recommendation',
+      verificationSummary: evidenceReport.summary
     });
 
     const result = {
       decision: auditableDecision,
+      evidenceReport,
+      serviceReports: {
+        ocr: null,
+        forensics: serviceForensics,
+        vision: serviceVision
+      },
       text,
       forensic,
       contextual,
@@ -1108,7 +1385,11 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
           statusLabel: auditableDecision.statusLabel,
           confidence: Number(auditableDecision.confidence || 0),
           ruleVersion: auditableDecision.ruleVersion,
-          policyScope: auditableDecision.policyScope
+          policyScope: auditableDecision.policyScope,
+          outcome: auditableDecision.outcome,
+          approval: auditableDecision.approval,
+          riskScore: auditableDecision.riskScore,
+          verificationSummary: auditableDecision.verificationSummary
         },
         rules: {
           externalDecision: String(externalValidation.decision || 'internal_only'),
@@ -1117,7 +1398,9 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
           country: profileContext.country,
           profileId: documentProfile?.id || null
         },
-        evidence: normalizeEvidenceForAudit(auditableDecision.evidence)
+        evidence: normalizeEvidenceForAudit(auditableDecision.evidence),
+        engines: evidenceReport.engines,
+        checks: evidenceReport.summary
       },
       status: 'done'
     };
@@ -1129,7 +1412,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       result
     };
 
-    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(completedJob, null, 2));
+    await writeJobRecord(JOBS_DIR, completedJob);
     return res.json({ jobId, status: 'done', result });
   } catch (error: any) {
     refundVerificationCredits(auth.companyId, jobId, 'upload-failed');
@@ -1140,7 +1423,7 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       error: String(error?.message || error)
     };
 
-    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+    await writeJobRecord(JOBS_DIR, failedJob);
     return res.status(500).json({ jobId, status: 'failed', error: failedJob.error });
   }
 });
@@ -1174,7 +1457,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     createdAt: new Date().toISOString(),
     startedAt: new Date().toISOString()
   };
-  fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(job, null, 2));
+  await writeJobRecord(JOBS_DIR, job);
 
   try {
     const documentResults: Array<{
@@ -1191,7 +1474,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     const fallbackFileNames: string[] = [];
 
     for (const file of files) {
-      const extraction = await extractTextForAnalysis(file);
+      const extraction = await extractTextForAnalysis(file, jobId);
       const text = extraction.text;
       if (!text || !String(text).trim()) {
         documentResults.push({
@@ -1238,7 +1521,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         error: 'unsupported-or-empty-document',
         documents: documentResults
       };
-      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      await writeJobRecord(JOBS_DIR, failedJob);
       return res.status(415).json({
         jobId,
         status: 'failed',
@@ -1248,7 +1531,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
     }
 
     const caseAnalysis = analyzeCaseDocuments(caseInputs);
-    const contextual = await contextualizeText(textChunks.join('\n'));
+    const contextual = await contextualizeText(textChunks.join('\n'), { country: normalizeCountry(req.body?.country) });
     const metadataIndicatorsFromDocs = successfulDocs
       .flatMap((item) => Array.isArray(item.forensic?.checks?.metadataIndicators) ? item.forensic.checks.metadataIndicators : [])
       .slice(0, 20);
@@ -1313,7 +1596,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
         error: 'external-validation-required',
         details: buildExternalModeRequirementDetails(emptyExternal)
       };
-      fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+      await writeJobRecord(JOBS_DIR, failedJob);
       return res.status(503).json({
         jobId,
         status: 'failed',
@@ -1339,6 +1622,24 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       );
     }
 
+    const caseEvidenceReport = buildCaseEvidenceReport({
+      fileNames: files.map((item) => item.originalname),
+      documentResults,
+      caseAnalysis,
+      contextual,
+      externalValidation: {
+        enabled: enabledExternal.length > 0,
+        decision: caseExternalDecision,
+        documents: perDocumentExternal
+      },
+      trust: calibratedTrust,
+      serviceReports: {
+        ocr: null,
+        forensics: null,
+        vision: null
+      }
+    });
+
     const caseDecision = buildAuditableDecision({
       trust: {
         authenticityPercentage: Number(calibratedTrust.authenticityPercentage || 0),
@@ -1350,11 +1651,18 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       },
       externalDecision: caseExternalDecision,
       calibration: calibratedTrust.calibration || null,
-      mode: 'recommendation'
+      mode: 'recommendation',
+      verificationSummary: caseEvidenceReport.summary
     });
 
     const result = {
       decision: caseDecision,
+      evidenceReport: caseEvidenceReport,
+      serviceReports: {
+        ocr: null,
+        forensics: null,
+        vision: null
+      },
       documents: documentResults,
       case: caseAnalysis,
       contextual,
@@ -1407,7 +1715,11 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
           statusLabel: caseDecision.statusLabel,
           confidence: Number(caseDecision.confidence || 0),
           ruleVersion: caseDecision.ruleVersion,
-          policyScope: caseDecision.policyScope
+          policyScope: caseDecision.policyScope,
+          outcome: caseDecision.outcome,
+          approval: caseDecision.approval,
+          riskScore: caseDecision.riskScore,
+          verificationSummary: caseDecision.verificationSummary
         },
         rules: {
           externalDecision: String(caseExternalDecision || 'internal_only'),
@@ -1416,7 +1728,9 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
           country: profileContext.country,
           profileId: documentProfile?.id || null
         },
-        evidence: normalizeEvidenceForAudit(caseDecision.evidence)
+        evidence: normalizeEvidenceForAudit(caseDecision.evidence),
+        engines: caseEvidenceReport.engines,
+        checks: caseEvidenceReport.summary
       },
       status: 'done'
     };
@@ -1428,7 +1742,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       result
     };
 
-    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(completedJob, null, 2));
+    await writeJobRecord(JOBS_DIR, completedJob);
     return res.json({ jobId, status: 'done', result });
   } catch (error: any) {
     refundVerificationCredits(auth.companyId, jobId, 'upload-case-failed');
@@ -1439,7 +1753,7 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       error: String(error?.message || error)
     };
 
-    fs.writeFileSync(path.join(JOBS_DIR, `${jobId}.json`), JSON.stringify(failedJob, null, 2));
+    await writeJobRecord(JOBS_DIR, failedJob);
     return res.status(500).json({ jobId, status: 'failed', error: failedJob.error });
   }
 });
@@ -1458,7 +1772,7 @@ app.get('/benchmark/internal', requireCompanyAuth, (req, res) => {
   }
 });
 
-app.post('/verification-feedback', requireCompanyAuth, (req, res) => {
+app.post('/verification-feedback', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const jobId = String(req.body?.jobId || '').trim();
   const outcome = String(req.body?.outcome || '').trim().toLowerCase() as ReviewerOutcome;
@@ -1473,7 +1787,7 @@ app.post('/verification-feedback', requireCompanyAuth, (req, res) => {
     return res.status(400).json({ error: 'invalid-outcome' });
   }
 
-  const job = readJob(jobId);
+  const job = await readJobSafe(jobId);
   if (!job) return res.status(404).json({ error: 'job-not-found' });
   if (String(job.companyId || '') !== String(auth.companyId || '')) {
     return res.status(403).json({ error: 'job-access-denied' });
@@ -1537,18 +1851,18 @@ app.get('/verification-feedback', requireCompanyAuth, (req, res) => {
   });
 });
 
-app.get('/review/queue', requireCompanyAuth, (req, res) => {
+app.get('/review/queue', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const slaHoursRaw = Number(req.query?.slaHours ?? 24);
   const slaHours = Number.isFinite(slaHoursRaw) ? Math.max(1, Math.min(240, Math.round(slaHoursRaw))) : 24;
-  return res.json(buildReviewQueue(auth, slaHours));
+  return res.json(await buildReviewQueue(auth, slaHours));
 });
 
-app.get('/review/queue/export.csv', requireCompanyAuth, (req, res) => {
+app.get('/review/queue/export.csv', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const slaHoursRaw = Number(req.query?.slaHours ?? 24);
   const slaHours = Number.isFinite(slaHoursRaw) ? Math.max(1, Math.min(240, Math.round(slaHoursRaw))) : 24;
-  const queue = buildReviewQueue(auth, slaHours);
+  const queue = await buildReviewQueue(auth, slaHours);
   const csv = buildReviewQueueCsv(queue.queue);
   const fileName = `review-queue-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1616,9 +1930,9 @@ app.delete('/document-profiles/:id', requireCompanyAuth, (req, res) => {
   return res.json({ ok: true, removedId: id });
 });
 
-app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
+app.get('/quality/dashboard', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
-  const jobs = listCompanyJobs(auth.companyId).filter((job) => String(job?.status || '') === 'done');
+  const jobs = (await listCompanyJobsSafe(auth.companyId)).filter((job: any) => String(job?.status || '') === 'done');
   const feedback = readVerificationFeedback().filter((item) => item.companyId === auth.companyId);
   const feedbackByJob = new Map<string, VerificationFeedbackRecord[]>();
   for (const item of feedback) {
@@ -1630,7 +1944,7 @@ app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
   const byDocumentType: Record<string, any> = {};
   for (const job of jobs) {
     const jobId = String(job?.id || '');
-    const decisionStatus = String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown').toLowerCase();
+    const decisionView = getDecisionView(job?.result);
     const docType = normalizeDocType(job?.result?.summary?.documentType || job?.result?.profile?.documentType || 'unknown');
     const startedAt = new Date(String(job?.startedAt || job?.createdAt || '')).getTime();
     const finishedAt = new Date(String(job?.finishedAt || '')).getTime();
@@ -1643,6 +1957,15 @@ app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
         reviewRequired: 0,
         blocked: 0,
         validated: 0,
+        authentic: 0,
+        likelyAuthentic: 0,
+        likelyFraudulent: 0,
+        fraudConfirmed: 0,
+        approved: 0,
+        approvedWithReview: 0,
+        rejected: 0,
+        riskScoreTotal: 0,
+        confidenceTotal: 0,
         processingMsTotal: 0,
         feedbackCount: 0,
         confirmedFraud: 0,
@@ -1654,19 +1977,32 @@ app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
 
     const bucket = byDocumentType[docType];
     bucket.total += 1;
-    if (decisionStatus.includes('block')) bucket.blocked += 1;
-    else if (decisionStatus.includes('review') || decisionStatus.includes('revisao')) bucket.reviewRequired += 1;
-    else bucket.validated += 1;
+    if (decisionView.rejected) bucket.blocked += 1;
+    else if (decisionView.requiresReview) bucket.reviewRequired += 1;
+    else if (decisionView.approved) bucket.validated += 1;
+
+    if (decisionView.outcome === 'document_authentic') bucket.authentic += 1;
+    else if (decisionView.outcome === 'document_likely_authentic') bucket.likelyAuthentic += 1;
+    else if (decisionView.outcome === 'human_review_recommended') bucket.reviewRequired += 0;
+    else if (decisionView.outcome === 'document_likely_fraudulent') bucket.likelyFraudulent += 1;
+    else if (decisionView.outcome === 'fraud_confirmed') bucket.fraudConfirmed += 1;
+
+    if (decisionView.approval === 'approve') bucket.approved += 1;
+    else if (decisionView.approval === 'approve_with_review') bucket.approvedWithReview += 1;
+    else if (decisionView.approval === 'reject') bucket.rejected += 1;
+
+    bucket.riskScoreTotal += Number.isFinite(decisionView.riskScore) ? decisionView.riskScore : 0;
+    bucket.confidenceTotal += Number.isFinite(decisionView.confidence) ? decisionView.confidence : 0;
     bucket.processingMsTotal += processingMs;
     bucket.feedbackCount += rows.length;
 
     for (const row of rows) {
       if (row.outcome === 'fraud_confirmed') bucket.confirmedFraud += 1;
       if (row.outcome === 'authenticity_confirmed') bucket.confirmedAuthentic += 1;
-      if (row.outcome === 'authenticity_confirmed' && (decisionStatus.includes('review') || decisionStatus.includes('block'))) {
+      if (row.outcome === 'authenticity_confirmed' && !decisionView.approved) {
         bucket.falsePositiveProxy += 1;
       }
-      if (row.outcome === 'fraud_confirmed' && decisionStatus.includes('valid')) {
+      if (row.outcome === 'fraud_confirmed' && decisionView.approved) {
         bucket.falseNegativeProxy += 1;
       }
     }
@@ -1678,6 +2014,20 @@ app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
     reviewRate: stats.total ? Number((stats.reviewRequired / stats.total).toFixed(4)) : 0,
     blockedRate: stats.total ? Number((stats.blocked / stats.total).toFixed(4)) : 0,
     validatedRate: stats.total ? Number((stats.validated / stats.total).toFixed(4)) : 0,
+    outcomes: {
+      documentAuthentic: stats.authentic,
+      documentLikelyAuthentic: stats.likelyAuthentic,
+      humanReviewRecommended: stats.reviewRequired,
+      documentLikelyFraudulent: stats.likelyFraudulent,
+      fraudConfirmed: stats.fraudConfirmed
+    },
+    approvals: {
+      approve: stats.approved,
+      approveWithReview: stats.approvedWithReview,
+      reject: stats.rejected
+    },
+    avgRiskScore: stats.total ? Number((stats.riskScoreTotal / stats.total).toFixed(2)) : 0,
+    avgConfidence: stats.total ? Number((stats.confidenceTotal / stats.total).toFixed(2)) : 0,
     avgProcessingSeconds: stats.total ? Number(((stats.processingMsTotal / stats.total) / 1000).toFixed(2)) : 0,
     feedbackCount: stats.feedbackCount,
     confirmedFraud: stats.confirmedFraud,
@@ -1686,17 +2036,87 @@ app.get('/quality/dashboard', requireCompanyAuth, (req, res) => {
     falseNegativeProxy: stats.falseNegativeProxy
   }));
 
+  const decisionTotals = jobs.reduce((acc: any, job: any) => {
+    const decisionView = getDecisionView(job?.result);
+    acc.total += 1;
+    if (decisionView.outcome === 'document_authentic') acc.documentAuthentic += 1;
+    else if (decisionView.outcome === 'document_likely_authentic') acc.documentLikelyAuthentic += 1;
+    else if (decisionView.outcome === 'human_review_recommended') acc.humanReviewRecommended += 1;
+    else if (decisionView.outcome === 'document_likely_fraudulent') acc.documentLikelyFraudulent += 1;
+    else if (decisionView.outcome === 'fraud_confirmed') acc.fraudConfirmed += 1;
+
+    if (decisionView.approval === 'approve') acc.approve += 1;
+    else if (decisionView.approval === 'approve_with_review') acc.approveWithReview += 1;
+    else if (decisionView.approval === 'reject') acc.reject += 1;
+    return acc;
+  }, {
+    total: 0,
+    documentAuthentic: 0,
+    documentLikelyAuthentic: 0,
+    humanReviewRecommended: 0,
+    documentLikelyFraudulent: 0,
+    fraudConfirmed: 0,
+    approve: 0,
+    approveWithReview: 0,
+    reject: 0
+  });
+
+  const engineMetrics = aggregateEngineMetrics(jobs);
+  const checkMetrics = aggregateCheckMetrics(jobs);
+  const learningImpact = buildLearningImpactMetrics(jobs, feedback);
+
   return res.json({
     generatedAt: new Date().toISOString(),
     totals: {
       jobs: jobs.length,
       feedback: feedback.length
     },
-    qualityByDocumentType
+    decisions: decisionTotals,
+    qualityByDocumentType,
+    engineMetrics,
+    checkMetrics,
+    learningImpact
   });
 });
 
-app.get('/ops/health/deep', requireCompanyAuth, (req, res) => {
+app.get('/status/:id/evidence', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = req.params.id;
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'not found' });
+  }
+
+  const evidenceReport = getEvidenceReport(job);
+  if (!evidenceReport) return res.status(404).json({ error: 'evidence-report-not-found' });
+  return res.json({
+    jobId: id,
+    decision: getDecisionView(job?.result),
+    evidenceReport
+  });
+});
+
+app.get('/status/:id/evidence/export.csv', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = req.params.id;
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'not found' });
+  }
+
+  const evidenceReport = getEvidenceReport(job);
+  if (!evidenceReport) return res.status(404).json({ error: 'evidence-report-not-found' });
+
+  const csv = buildEvidenceReportCsv(id, evidenceReport);
+  const fileName = `evidence-report-${id}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  return res.status(200).send(csv);
+});
+
+app.get('/ops/health/deep', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
 
@@ -1712,7 +2132,7 @@ app.get('/ops/health/deep', requireCompanyAuth, (req, res) => {
       backupDirExists: fs.existsSync(BACKUP_DIR)
     },
     counts: {
-      jobs: listCompanyJobs(auth.companyId).length,
+      jobs: (await listCompanyJobsSafe(auth.companyId)).length,
       trainingExamples: readTrainingExamples().length,
       verificationFeedback: readVerificationFeedback().length,
       documentProfiles: readDocumentProfiles().length
@@ -1870,22 +2290,21 @@ app.get('/admin/training-examples', requireCompanyAuth, (req, res) => {
   });
 });
 
-app.get('/status/:id', requireCompanyAuth, (req, res) => {
+app.get('/status/:id', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const id = req.params.id;
-  const jobFile = path.join(JOBS_DIR, `${id}.json`);
-  if (!fs.existsSync(jobFile)) return res.status(404).json({ error: 'not found' });
-  const job = JSON.parse(fs.readFileSync(jobFile, 'utf8'));
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
   if (job.companyId && job.companyId !== auth.companyId) {
     return res.status(404).json({ error: 'not found' });
   }
   return res.json(job);
 });
 
-app.get('/status/:id/audit', requireCompanyAuth, (req, res) => {
+app.get('/status/:id/audit', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const id = req.params.id;
-  const job = readJob(id);
+  const job = await readJobSafe(id);
   if (!job) return res.status(404).json({ error: 'not found' });
   if (job.companyId && job.companyId !== auth.companyId) {
     return res.status(404).json({ error: 'not found' });
@@ -1899,17 +2318,16 @@ app.get('/status/:id/audit', requireCompanyAuth, (req, res) => {
 app.post('/context/:id', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const id = req.params.id;
-  const jobFile = path.join(JOBS_DIR, `${id}.json`);
-  if (!fs.existsSync(jobFile)) return res.status(404).json({ error: 'not found' });
-  const job = JSON.parse(fs.readFileSync(jobFile, 'utf8'));
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
   if (job.companyId && job.companyId !== auth.companyId) {
     return res.status(404).json({ error: 'not found' });
   }
   if (!job.result || !job.result.text) return res.status(400).json({ error: 'no-ocr-text' });
   try {
-    const ctx = await contextualizeText(job.result.text);
+    const ctx = await contextualizeText(job.result.text, { country: String(job?.result?.profile?.country || '') });
     job.result.context = ctx;
-    fs.writeFileSync(jobFile, JSON.stringify(job, null, 2));
+    await writeJobRecord(JOBS_DIR, job);
     return res.json({ ok: true, context: ctx });
   } catch (e: any) {
     return res.status(500).json({ error: String(e.message || e) });

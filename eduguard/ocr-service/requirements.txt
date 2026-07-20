@@ -1,0 +1,8 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+pytesseract==0.3.13
+Pillow==10.4.0
+# install when environment is provisioned:
+# paddleocr
+# easyocr

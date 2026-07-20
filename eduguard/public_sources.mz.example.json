@@ -1,0 +1,29 @@
+[
+  {
+    "id": "mz-education",
+    "countryCode": "MZ",
+    "issuerType": "education-domain",
+    "issuerName": "Universidade Eduardo Mondlane",
+    "endpointUrl": "https://www.uem.mz",
+    "cacheTtlSeconds": 3600,
+    "isActive": true
+  },
+  {
+    "id": "mz-education-admissions",
+    "countryCode": "MZ",
+    "issuerType": "education-admissions",
+    "issuerName": "Universidade Eduardo Mondlane Admissão",
+    "endpointUrl": "https://admissao.uem.mz",
+    "cacheTtlSeconds": 3600,
+    "isActive": true
+  },
+  {
+    "id": "mz-education-webmail",
+    "countryCode": "MZ",
+    "issuerType": "education-mail",
+    "issuerName": "Universidade Eduardo Mondlane Webmail",
+    "endpointUrl": "https://webmail.uem.mz",
+    "cacheTtlSeconds": 3600,
+    "isActive": true
+  }
+]

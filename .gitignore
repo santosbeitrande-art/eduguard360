@@ -24,3 +24,11 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# EduGuard local runtime artifacts
+eduguard/**/.venv/
+eduguard/**/__pycache__/
+eduguard/eduguard_auth/
+eduguard/eduguard_jobs/
+eduguard/eduguard_uploads/
+eduguard/verify-api/devcookies.txt
