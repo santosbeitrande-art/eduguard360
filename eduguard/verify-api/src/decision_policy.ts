@@ -234,18 +234,18 @@ function buildJustification(params: {
 }) {
   const evidenceSummary = summarizeEvidence(params.evidence);
   if (params.outcome === 'document_authentic') {
-    return `O documento foi considerado autentico porque o risco calculado e baixo (${params.riskScore}%), a autenticidade estimada e ${params.authenticity}% e ${params.verificationSummary.passed} de ${params.verificationSummary.performed} verificacoes ficaram consistentes sem sinais criticos.`;
+    return `O documento foi considerado autêntico porque o risco calculado é baixo (${params.riskScore}%), a autenticidade estimada é ${params.authenticity}% e ${params.verificationSummary.passed} de ${params.verificationSummary.performed} verificações ficaram consistentes sem sinais críticos.`;
   }
   if (params.outcome === 'document_likely_authentic') {
-    return `O documento foi considerado provavelmente autentico porque a maioria das verificacoes passou (${params.verificationSummary.passed}/${params.verificationSummary.performed}), a autenticidade estimada e ${params.authenticity}% e nao existem evidencias criticas. ${evidenceSummary || params.fallbackReason}`.trim();
+    return `O documento foi considerado provavelmente autêntico porque a maioria das verificações passou (${params.verificationSummary.passed}/${params.verificationSummary.performed}), a autenticidade estimada é ${params.authenticity}% e não existem evidências críticas. ${evidenceSummary || params.fallbackReason}`.trim();
   }
   if (params.outcome === 'human_review_recommended') {
-    return `A analise encontrou sinais ambiguos ou validacoes pendentes. ${params.verificationSummary.warning} verificacoes requerem atencao adicional, o risco calculado e ${params.riskScore}% e a confianca da IA e ${params.confidence}%. ${evidenceSummary || params.fallbackReason}`.trim();
+    return `A análise encontrou sinais ambíguos ou validações pendentes. ${params.verificationSummary.warning} verificações requerem atenção adicional, o risco calculado é ${params.riskScore}% e a confiança da IA é ${params.confidence}%. ${evidenceSummary || params.fallbackReason}`.trim();
   }
   if (params.outcome === 'document_likely_fraudulent') {
-    return `Foram encontrados indicios relevantes de adulteracao ou incoerencia. ${params.verificationSummary.failed} verificacoes falharam, o risco calculado e ${params.riskScore}% e a autenticidade estimada caiu para ${params.authenticity}%. ${evidenceSummary || params.fallbackReason}`.trim();
+    return `Foram encontrados indícios relevantes de adulteração ou incoerência. ${params.verificationSummary.failed} verificações falharam, o risco calculado é ${params.riskScore}% e a autenticidade estimada caiu para ${params.authenticity}%. ${evidenceSummary || params.fallbackReason}`.trim();
   }
-  return `A fraude foi considerada confirmada porque existem evidencias criticas e deterministicas, ${params.verificationSummary.failed} verificacoes falharam e o risco calculado atingiu ${params.riskScore}%. ${evidenceSummary || params.fallbackReason}`.trim();
+  return `A fraude foi considerada confirmada porque existem evidências críticas e determinísticas, ${params.verificationSummary.failed} verificações falharam e o risco calculado atingiu ${params.riskScore}%. ${evidenceSummary || params.fallbackReason}`.trim();
 }
 
 export function buildAuditableDecision(input: DecisionPolicyInput): AuditableDecision {

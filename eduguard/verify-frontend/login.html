@@ -1346,6 +1346,18 @@
           if (data?.recoveryToken) {
             recoveryToken.value = data.recoveryToken;
           }
+          if (data?.delivery === "not-configured") {
+            setMessage(lang === "pt"
+              ? "Recuperação iniciada, mas o envio por email ainda não está configurado no servidor. Contacte o suporte/admin para ativar SMTP."
+              : "Recovery started, but email delivery is not configured on the server yet. Contact support/admin to enable SMTP.");
+            return;
+          }
+          if (data?.delivery === "failed") {
+            setMessage(lang === "pt"
+              ? "Falha no envio do email de recuperação. Tente novamente ou contacte o suporte."
+              : "Failed to send recovery email. Please try again or contact support.");
+            return;
+          }
           setMessage(lang === "pt"
             ? "Se a conta existir, o token de recuperação foi emitido. Introduza o token e a nova palavra-passe."
             : "If the account exists, a recovery token has been issued. Enter the token and the new password.");

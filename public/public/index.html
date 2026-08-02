@@ -155,8 +155,8 @@
 
       <section class="panel">
         <h1 id="titleMain">EduGuard Verify AI</h1>
-        <p id="subtitleMain">Portal de consultas com autenticacao por email/password, fidelidade analitica e controlo de subscricao.</p>
-        <div id="quotaStatus" class="status">A carregar estado da subscricao...</div>
+        <p id="subtitleMain">Portal de consultas com autenticação por email/password, fidelidade analítica e controlo de subscrição.</p>
+        <div id="quotaStatus" class="status">A carregar estado da subscrição...</div>
       </section>
 
       <section class="panel">
@@ -169,16 +169,16 @@
       </section>
 
       <section class="panel">
-        <h2 id="renewTitle">Renovar subscricao</h2>
-        <p id="renewHint">Ao atingir a 11a consulta, selecione plano e pague para continuar.</p>
+        <h2 id="renewTitle">Renovar subscrição</h2>
+        <p id="renewHint">Ao atingir a 11.ª consulta, selecione um plano e pague para continuar.</p>
         <div class="row">
-          <select id="planSelect" title="Plano de subscricao">
+          <select id="planSelect" title="Plano de subscrição">
             <option value="starter">Starter</option>
             <option value="business">Business</option>
             <option value="enterprise">Enterprise</option>
             <option value="annual">Annual</option>
           </select>
-          <select id="providerSelect" title="Metodo de pagamento">
+          <select id="providerSelect" title="Método de pagamento">
             <option value="mock">Mock</option>
             <option value="stripe">Stripe</option>
             <option value="flutterwave">Flutterwave</option>
@@ -234,11 +234,11 @@
       const copy = {
         pt: {
           titleMain: "EduGuard Verify AI",
-          subtitleMain: "Portal de consultas com autenticacao por email/password, fidelidade analitica e controlo de subscricao.",
+          subtitleMain: "Portal de consultas com autenticação por email/password, fidelidade analítica e controlo de subscrição.",
           lblFile: "Selecionar ficheiro",
           btnVerify: "Verificar documento",
-          renewTitle: "Renovar subscricao",
-          renewHint: "Ao atingir a 11a consulta, selecione plano e pague para continuar.",
+          renewTitle: "Renovar subscrição",
+          renewHint: "Ao atingir a 11.ª consulta, selecione um plano e pague para continuar.",
           toLogin: "Conta e Pagamento"
         },
         en: {
@@ -385,7 +385,7 @@
       function renderExternalModeRequiredMessage() {
         const apiHint = `<br><small>${lang === "pt" ? "Modo obrigatorio: API Externa Orquestrada." : "Required mode: External Orchestrated API."}</small>`;
         return lang === "pt"
-          ? `Verificacao indisponivel sem API externa. Restabeleca ligacao ao backend para usar ${REQUIRED_PROCESSING_MODE}.${apiHint}`
+          ? `Verificação indisponível sem API externa. Restabeleça a ligação ao backend para usar ${REQUIRED_PROCESSING_MODE}.${apiHint}`
           : `Verification unavailable without external API. Restore backend connectivity to use ${REQUIRED_PROCESSING_MODE}.${apiHint}`;
       }
 
@@ -460,7 +460,7 @@
 
         if (Number(localAccount.remainingQueries || 0) <= 0) {
           setResult(lang === "pt"
-            ? "Limite de 10 consultas locais atingido. Quando a API voltar, renove a subscricao."
+            ? "Limite de 10 consultas locais atingido. Quando a API voltar, renove a subscrição."
             : "10 local checks limit reached. Renew subscription when API is back online.");
           return;
         }
@@ -517,17 +517,17 @@
 
         if (unsupportedExt) {
           score -= 20;
-          indicators.push({ code: "unsupported-format", severity: "high", reason: "Formato pouco confiavel para verificacao local." });
+          indicators.push({ code: "unsupported-format", severity: "high", reason: "Formato pouco confiável para verificação local." });
           reasons.push(lang === "pt" ? "Formato de ficheiro com baixa confianca no modo local." : "Unsupported file format for reliable local verification.");
         }
 
         if (file.size < 8 * 1024) {
           score -= 10;
           indicators.push({ code: "very-small-file", severity: "medium", reason: "Ficheiro muito pequeno para um documento robusto." });
-          reasons.push(lang === "pt" ? "Ficheiro demasiado pequeno para uma validacao robusta." : "File is too small for robust document validation.");
+          reasons.push(lang === "pt" ? "Ficheiro demasiado pequeno para uma validação robusta." : "File is too small for robust document validation.");
         } else if (file.size > 18 * 1024 * 1024) {
           score -= 6;
-          indicators.push({ code: "very-large-file", severity: "low", reason: "Ficheiro muito grande pode indicar agregado nao padronizado." });
+          indicators.push({ code: "very-large-file", severity: "low", reason: "Ficheiro muito grande pode indicar agregado não padronizado." });
           reasons.push(lang === "pt" ? "Tamanho de ficheiro fora do padrao habitual." : "File size outside the common range.");
         } else {
           score += 4;
@@ -599,8 +599,8 @@
 
         if (repeatedCharPattern) {
           score -= 8;
-          indicators.push({ code: "character-repetition", severity: "medium", reason: "Repeticao anormal de caracteres no texto." });
-          reasons.push(lang === "pt" ? "Repeticao anormal de caracteres no documento." : "Abnormal character repetition detected.");
+          indicators.push({ code: "character-repetition", severity: "medium", reason: "Repetição anormal de caracteres no texto." });
+          reasons.push(lang === "pt" ? "Repetição anormal de caracteres no documento." : "Abnormal character repetition detected.");
         }
 
         const currentYear = new Date().getFullYear();
@@ -688,10 +688,10 @@
 
       function formatAiLabel(value) {
         const normalized = String(value || "unknown").toLowerCase();
-        if (normalized === "likely-ai") return lang === "pt" ? "Provavel gerado por IA" : "Likely AI-generated";
-        if (normalized === "possible-ai") return lang === "pt" ? "Possivel gerado por IA" : "Possibly AI-generated";
+        if (normalized === "likely-ai") return lang === "pt" ? "Provável gerado por IA" : "Likely AI-generated";
+        if (normalized === "possible-ai") return lang === "pt" ? "Possível gerado por IA" : "Possibly AI-generated";
         if (normalized === "likely-human") return lang === "pt" ? "Sem sinal forte de IA" : "No strong AI signal";
-        return lang === "pt" ? "Nao avaliado - fonte indisponivel" : "Not evaluated - source unavailable";
+        return lang === "pt" ? "Não avaliado - fonte indisponível" : "Not evaluated - source unavailable";
       }
 
       function formatDateConsistencyLabel(value) {
@@ -729,16 +729,16 @@
         const normalized = String(decisionStatus || "").toLowerCase();
         if (normalized === "blocked" || normalized === "bloqueado_evidencia_critica") {
           return lang === "pt"
-            ? "Bloquear automaticamente e escalar para revisao senior com dupla validacao."
+            ? "Bloquear automaticamente e escalar para revisão sénior com dupla validação."
             : "Automatically block and escalate for senior manual review with dual validation.";
         }
         if (normalized === "review_required" || normalized === "revisao_obrigatoria" || likelyFraud) {
           return lang === "pt"
-            ? "Encaminhar para revisao humana antes de qualquer aprovacao operacional."
+            ? "Encaminhar para revisão humana antes de qualquer aprovação operacional."
             : "Route to human review before any operational approval.";
         }
         return lang === "pt"
-          ? "Prosseguir no fluxo operacional e arquivar o dossier auditavel do caso."
+          ? "Prosseguir no fluxo operacional e arquivar o dossiê auditável do caso."
           : "Continue the operational flow and archive the auditable case dossier.";
       }
 
@@ -752,7 +752,7 @@
       function severityLabel(severity) {
         const normalized = String(severity || "low").toLowerCase();
         if (normalized === "high") return lang === "pt" ? "Alto" : "High";
-        if (normalized === "medium") return lang === "pt" ? "Medio" : "Medium";
+        if (normalized === "medium") return lang === "pt" ? "Médio" : "Medium";
         return lang === "pt" ? "Baixo" : "Low";
       }
 
