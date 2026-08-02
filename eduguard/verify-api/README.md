@@ -50,9 +50,12 @@ New architecture assets:
 - DELETE /company/api-keys/:keyId -> revoke API key
 - POST /auth/login/jwt -> JWT login (access + refresh)
 - POST /auth/token/refresh -> rotate refresh token
+- POST /public/password-recovery/request -> issue recovery token with anti-enumeration response
+- POST /public/password-recovery/confirm -> validate token and update password
 - POST /auth/mfa/setup -> generate TOTP secret and OTPAuth URL
 - POST /auth/mfa/setup/confirm -> enable MFA on account
 - POST /auth/mfa/verify -> complete MFA challenge on JWT login
+- PATCH /admin/users/:id/password -> admin-assisted password reset and forced session revocation
 - POST /admin/security/housekeeping -> cleanup expired refresh/MFA and stale API keys
 - GET /admin/audit -> immutable-style audit timeline
 

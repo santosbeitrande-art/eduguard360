@@ -125,8 +125,8 @@
 
       <div class="panel panel-gap-bottom">
         <h1 id="titleMain">EduGuard Verify AI</h1>
-        <p id="subtitleMain">Crie conta com email e password. Receba 10 consultas gratis e ative um plano pago para continuar apos a 11a consulta.</p>
-        <div class="status" id="accountStatus">Sem sessao ativa.</div>
+        <p id="subtitleMain">Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.</p>
+        <div class="status" id="accountStatus">Sem sessão ativa.</div>
       </div>
 
       <section class="grid">
@@ -144,6 +144,27 @@
               <button class="ghost" type="button" id="btnLogout">Sair</button>
             </div>
           </form>
+
+          <div class="panel-gap">
+            <h3 id="passwordRecoveryTitle" class="section-title-tight">Recuperar palavra-passe</h3>
+            <p class="muted" id="passwordRecoveryHint">Peça um token de recuperação e defina uma nova palavra-passe.</p>
+
+            <form id="passwordRecoveryRequestForm">
+              <label for="recoveryEmail" id="lblRecoveryEmail">Email da conta</label>
+              <input id="recoveryEmail" type="email" required />
+              <button class="ghost" type="submit" id="btnRecoveryRequest">Pedir token de recuperação</button>
+            </form>
+
+            <form id="passwordRecoveryConfirmForm" class="panel-gap-top">
+              <label for="recoveryToken" id="lblRecoveryToken">Token de recuperação</label>
+              <input id="recoveryToken" required minlength="20" />
+
+              <label for="recoveryPassword" id="lblRecoveryPassword">Nova palavra-passe (mín. 8)</label>
+              <input id="recoveryPassword" type="password" required minlength="8" />
+
+              <button class="btn" type="submit" id="btnRecoveryConfirm">Redefinir palavra-passe</button>
+            </form>
+          </div>
         </article>
 
         <article class="panel">
@@ -171,7 +192,7 @@
 
       <section class="panel panel-gap">
         <h2 id="plansTitle">Planos e pagamento</h2>
-        <p class="muted" id="plansHint">Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.</p>
+        <p class="muted" id="plansHint">Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.</p>
 
         <div class="plans" id="plans"></div>
 
@@ -196,7 +217,7 @@
           <input id="mobilePayPin" class="hidden input-gap" type="password" placeholder="PIN" />
         </div>
         <div class="actions">
-          <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscricao</button>
+          <button class="btn" id="btnCheckout" type="button">Pagar e renovar subscrição</button>
           <a class="ghost" href="/public" id="btnPortal">Abrir portal de consulta</a>
         </div>
       </section>
@@ -328,6 +349,9 @@
       const mobilePayBox = document.getElementById("mobilePayBox");
       const mobilePayPhone = document.getElementById("mobilePayPhone");
       const mobilePayPin = document.getElementById("mobilePayPin");
+      const recoveryEmail = document.getElementById("recoveryEmail");
+      const recoveryToken = document.getElementById("recoveryToken");
+      const recoveryPassword = document.getElementById("recoveryPassword");
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
@@ -340,14 +364,19 @@
       const copy = {
         pt: {
           titleMain: "EduGuard Verify AI",
-          subtitleMain: "Crie conta com email e password. Receba 10 consultas gratis e ative um plano pago para continuar apos a 11a consulta.",
+          subtitleMain: "Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.",
           loginTitle: "Entrar",
           signupTitle: "Cadastrar nova conta",
+          passwordRecoveryTitle: "Recuperar palavra-passe",
+          passwordRecoveryHint: "Peça um token de recuperação e defina uma nova palavra-passe.",
           plansTitle: "Planos e pagamento",
-          plansHint: "Ao esgotar as 10 consultas gratis, escolha um plano e pague para renovar acesso.",
+          plansHint: "Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.",
           mobilePayHint: "Pagamento móvel seguro. Introduza o número e confirme com PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
+          lblRecoveryEmail: "Email da conta",
+          lblRecoveryToken: "Token de recuperação",
+          lblRecoveryPassword: "Nova palavra-passe (mín. 8)",
           lblSignupName: "Nome completo",
           lblSignupCompany: "Nome da empresa (opcional)",
           lblSignupWebsite: "Website da empresa (opcional)",
@@ -355,8 +384,10 @@
           lblSignupPassword: "Password (min 8)",
           btnLogin: "Entrar",
           btnLogout: "Sair",
+          btnRecoveryRequest: "Pedir token de recuperação",
+          btnRecoveryConfirm: "Redefinir palavra-passe",
           btnSignup: "Criar conta",
-          btnCheckout: "Pagar e renovar subscricao",
+          btnCheckout: "Pagar e renovar subscrição",
           btnPortal: "Abrir portal de consulta",
           adminPanelTitle: "Painel administrativo (somente admin)",
           adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
@@ -384,11 +415,16 @@
           subtitleMain: "Create an account with email and password. Get 10 free checks and subscribe to continue after the 11th check.",
           loginTitle: "Sign in",
           signupTitle: "Create account",
+          passwordRecoveryTitle: "Recover password",
+          passwordRecoveryHint: "Request a recovery token and set a new password.",
           plansTitle: "Plans and payment",
           plansHint: "After the 10 free checks are used, select a paid plan to renew access.",
           mobilePayHint: "Secure mobile payment. Enter your phone and confirm with PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
+          lblRecoveryEmail: "Account email",
+          lblRecoveryToken: "Recovery token",
+          lblRecoveryPassword: "New password (min 8)",
           lblSignupName: "Full name",
           lblSignupCompany: "Company name (optional)",
           lblSignupWebsite: "Company website (optional)",
@@ -396,6 +432,8 @@
           lblSignupPassword: "Password (min 8)",
           btnLogin: "Sign in",
           btnLogout: "Logout",
+          btnRecoveryRequest: "Request recovery token",
+          btnRecoveryConfirm: "Reset password",
           btnSignup: "Create account",
           btnCheckout: "Pay and renew subscription",
           btnPortal: "Open verification portal",
@@ -886,12 +924,18 @@
 
       function describeAuthError(code) {
         const value = String(code || "").trim().toLowerCase();
-        if (!value || value === "unknown") return lang === "pt" ? "servico indisponivel" : "service unavailable";
-        if (value === "invalid-credentials") return lang === "pt" ? "credenciais invalidas" : "invalid credentials";
-        if (value === "email-already-registered") return lang === "pt" ? "email ja registado" : "email already registered";
+        if (!value || value === "unknown") return lang === "pt" ? "serviço indisponível" : "service unavailable";
+        if (value === "invalid-credentials") return lang === "pt" ? "credenciais inválidas" : "invalid credentials";
+        if (value === "email-already-registered") return lang === "pt" ? "email já registado" : "email already registered";
         if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para admin interno" : "email reserved for internal admin";
-        if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligacao com API" : "API unreachable";
-        if (value === "external-api-required") return lang === "pt" ? "API externa obrigatoria" : "external API required";
+        if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligação com a API" : "API unreachable";
+        if (value === "external-api-required") return lang === "pt" ? "API externa obrigatória" : "external API required";
+        if (value === "invalid-email") return lang === "pt" ? "email inválido" : "invalid email";
+        if (value === "weak-password") return lang === "pt" ? "palavra-passe fraca" : "weak password";
+        if (value === "invalid-recovery-token" || value === "invalid-or-expired-recovery-token") {
+          return lang === "pt" ? "token de recuperação inválido ou expirado" : "invalid or expired recovery token";
+        }
+        if (value === "credential-not-found") return lang === "pt" ? "conta não encontrada" : "account not found";
         return value;
       }
 
@@ -1185,8 +1229,8 @@
         localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
         clearLocalOfflineArtifacts();
         hideAdminPanel();
-        accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
-        setMessage(lang === "pt" ? "Sessao terminada." : "Signed out.");
+        accountStatus.textContent = lang === "pt" ? "Sem sessão ativa." : "No active session.";
+        setMessage(lang === "pt" ? "Sessão terminada." : "Signed out.");
       });
 
       document.getElementById("signupForm").addEventListener("submit", async (event) => {
@@ -1205,7 +1249,7 @@
           document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
           document.getElementById("loginPassword").focus();
           setMessage(lang === "pt"
-            ? "Este email e reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e palavra-passe do admin."
+            ? "Este email é reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e a palavra-passe do admin."
             : "This email is reserved for admin. Use the Sign in panel with admin@eduguard360.co.mz and admin password.");
           return;
         }
@@ -1221,7 +1265,7 @@
           if (!res.ok) {
             if (data?.error === "email-already-registered") {
               setMessage(lang === "pt"
-                ? "Este email ja existe. Entre no painel com as mesmas credenciais."
+                ? "Este email já existe. Entre no painel com as mesmas credenciais."
                 : "This email is already registered. Sign in with existing credentials.");
               document.getElementById("loginEmail").value = payload.email;
               document.getElementById("loginPassword").focus();
@@ -1233,12 +1277,84 @@
           }
 
           setMessage(lang === "pt"
-            ? `Conta criada com sucesso. Tem ${data.trial.remaining} consultas gratis.`
+            ? `Conta criada com sucesso. Tem ${data.trial.remaining} consultas grátis.`
             : `Account created successfully. You have ${data.trial.remaining} free checks.`);
           document.getElementById("loginEmail").value = payload.email;
           document.getElementById("loginPassword").value = payload.password;
         } catch {
           clearLocalOfflineArtifacts();
+          setMessage(externalApiUnavailableMessage());
+        }
+      });
+
+      document.getElementById("passwordRecoveryRequestForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const email = String(recoveryEmail?.value || document.getElementById("loginEmail").value || "").trim();
+        if (!email) {
+          setMessage(lang === "pt" ? "Informe o email da conta." : "Enter the account email.");
+          return;
+        }
+
+        setMessage(lang === "pt" ? "A solicitar token de recuperação..." : "Requesting recovery token...");
+        try {
+          const res = await api("/public/password-recovery/request", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha na recuperação: " : "Recovery request failed: ") + describeAuthError(data?.error || "unknown"));
+            return;
+          }
+
+          document.getElementById("loginEmail").value = email;
+          recoveryEmail.value = email;
+          if (data?.recoveryToken) {
+            recoveryToken.value = data.recoveryToken;
+          }
+          setMessage(lang === "pt"
+            ? "Se a conta existir, o token de recuperação foi emitido. Introduza o token e a nova palavra-passe."
+            : "If the account exists, a recovery token has been issued. Enter the token and the new password.");
+        } catch {
+          setMessage(externalApiUnavailableMessage());
+        }
+      });
+
+      document.getElementById("passwordRecoveryConfirmForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const token = String(recoveryToken?.value || "").trim();
+        const newPassword = String(recoveryPassword?.value || "").trim();
+        if (!token || token.length < 20) {
+          setMessage(lang === "pt" ? "Token de recuperação inválido." : "Invalid recovery token.");
+          return;
+        }
+        if (!newPassword || newPassword.length < 8) {
+          setMessage(lang === "pt" ? "A nova palavra-passe deve ter pelo menos 8 caracteres." : "New password must have at least 8 characters.");
+          return;
+        }
+
+        setMessage(lang === "pt" ? "A redefinir palavra-passe..." : "Resetting password...");
+        try {
+          const res = await api("/public/password-recovery/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, newPassword })
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao redefinir palavra-passe: " : "Password reset failed: ") + describeAuthError(data?.error || "unknown"));
+            return;
+          }
+
+          document.getElementById("loginPassword").value = newPassword;
+          recoveryPassword.value = "";
+          recoveryToken.value = "";
+          setMessage(lang === "pt"
+            ? "Palavra-passe atualizada com sucesso. Já pode iniciar sessão."
+            : "Password updated successfully. You can now sign in.");
+          document.getElementById("loginPassword").focus();
+        } catch {
           setMessage(externalApiUnavailableMessage());
         }
       });
@@ -1329,7 +1445,7 @@
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (offlineMode) {
           setMessage(lang === "pt"
-            ? "Pagamento indisponivel sem API externa. Restabeleca a ligacao com o backend."
+            ? "Pagamento indisponível sem API externa. Restabeleça a ligação com o backend."
             : "Payment unavailable without external API. Restore backend connectivity.");
           return;
         }
@@ -1343,17 +1459,17 @@
         if (isMobileProvider) {
           const phone = String(mobilePayPhone.value || "").replace(/\s+/g, "").trim();
           if (!phone || phone.length < 9) {
-            setMessage(lang === "pt" ? "Informe numero de telefone valido para pagamento movel." : "Enter a valid phone number for mobile payment.");
+            setMessage(lang === "pt" ? "Informe um número de telefone válido para pagamento móvel." : "Enter a valid phone number for mobile payment.");
             return;
           }
           if (!awaitingMobilePin) {
             awaitingMobilePin = true;
             mobilePayPin.classList.remove("hidden");
-            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza PIN para confirmar cobranca." : ". Enter PIN to confirm the charge."));
+            setMessage((lang === "pt" ? "Pedido enviado para " : "Payment request sent to ") + phone + (lang === "pt" ? ". Introduza o PIN para confirmar a cobrança." : ". Enter PIN to confirm the charge."));
             return;
           }
           if (String(mobilePayPin.value || "").trim().length < 4) {
-            setMessage(lang === "pt" ? "PIN invalido." : "Invalid PIN.");
+            setMessage(lang === "pt" ? "PIN inválido." : "Invalid PIN.");
             return;
           }
         }
@@ -1382,13 +1498,13 @@
             return;
           }
 
-          setMessage(lang === "pt" ? "Subscricao renovada com sucesso." : "Subscription renewed successfully.");
+          setMessage(lang === "pt" ? "Subscrição renovada com sucesso." : "Subscription renewed successfully.");
           awaitingMobilePin = false;
           mobilePayPin.classList.add("hidden");
           mobilePayPin.value = "";
           await loadSubscriptionStatus();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligacao no checkout." : "Checkout connection error.");
+          setMessage(lang === "pt" ? "Erro de ligação no checkout." : "Checkout connection error.");
         }
       });
 

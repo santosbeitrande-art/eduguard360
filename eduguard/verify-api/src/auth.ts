@@ -57,6 +57,16 @@ interface MfaChallenge {
   createdAt: string;
 }
 
+interface PasswordResetTokenRecord {
+  id: string;
+  credentialId: string;
+  companyId: string;
+  tokenHash: string;
+  expiresAt: number;
+  createdAt: string;
+  usedAt?: string;
+}
+
 interface ApiKey {
   id: string;
   companyId: string;
@@ -146,6 +156,7 @@ interface Store {
   auditLogs: AuditEvent[];
   refreshTokens: RefreshTokenRecord[];
   mfaChallenges: MfaChallenge[];
+  passwordResetTokens: PasswordResetTokenRecord[];
   payments: PaymentRecord[];
 }
 
@@ -172,6 +183,7 @@ const sessions = new Map<string, Session>();
 const ACCESS_TOKEN_TTL = 60 * 15;
 const REFRESH_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const MFA_CHALLENGE_TTL_MS = 1000 * 60 * 10;
+const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
 
 const DEFAULT_PRICE_PER_VERIFICATION = 1;
 const DEFAULT_MONTHLY_QUOTA = 150;
@@ -492,6 +504,7 @@ function ensureStore(): Store {
       auditLogs: [],
       refreshTokens: [],
       mfaChallenges: [],
+      passwordResetTokens: [],
       payments: []
     };
 
@@ -520,6 +533,7 @@ function ensureStore(): Store {
       auditLogs: parsed.auditLogs || [],
       refreshTokens: parsed.refreshTokens || [],
       mfaChallenges: parsed.mfaChallenges || [],
+      passwordResetTokens: parsed.passwordResetTokens || [],
       payments: parsed.payments || []
     };
 
@@ -592,6 +606,7 @@ function ensureStore(): Store {
       auditLogs: [],
       refreshTokens: [],
       mfaChallenges: [],
+      passwordResetTokens: [],
       payments: []
     };
   }
@@ -751,6 +766,53 @@ function revokeRefreshToken(store: Store, plainToken: string) {
   if (!record) return false;
   record.revokedAt = new Date().toISOString();
   return true;
+}
+
+function revokeAllRefreshTokensForCredential(store: Store, credentialId: string) {
+  const now = new Date().toISOString();
+  for (const record of store.refreshTokens) {
+    if (record.credentialId === credentialId && !record.revokedAt) {
+      record.revokedAt = now;
+    }
+  }
+}
+
+function revokeAllSessionsForCredential(credentialId: string) {
+  for (const [token, session] of sessions.entries()) {
+    if (session.credentialId === credentialId) {
+      sessions.delete(token);
+    }
+  }
+}
+
+function cleanupExpiredPasswordResetTokens(store: Store) {
+  const now = Date.now();
+  store.passwordResetTokens = (store.passwordResetTokens || []).filter((item) => item.expiresAt > now);
+}
+
+function issuePasswordResetToken(store: Store, credential: Credential) {
+  cleanupExpiredPasswordResetTokens(store);
+  const plain = `egv_reset_${crypto.randomBytes(24).toString('hex')}`;
+  const record: PasswordResetTokenRecord = {
+    id: crypto.randomUUID(),
+    credentialId: credential.id,
+    companyId: credential.companyId,
+    tokenHash: sha256(plain),
+    expiresAt: Date.now() + PASSWORD_RESET_TOKEN_TTL_MS,
+    createdAt: new Date().toISOString()
+  };
+  store.passwordResetTokens.push(record);
+  return plain;
+}
+
+function consumePasswordResetToken(store: Store, plain: string) {
+  cleanupExpiredPasswordResetTokens(store);
+  const targetHash = sha256(plain);
+  const record = store.passwordResetTokens.find((item) => item.tokenHash === targetHash && !item.usedAt);
+  if (!record) return null;
+  if (record.expiresAt < Date.now()) return null;
+  record.usedAt = new Date().toISOString();
+  return record;
 }
 
 function parseAuthorizationBearer(req: Request) {
@@ -958,6 +1020,12 @@ function runSecurityHousekeeping(store: Store, staleApiKeyDays: number, revokeSt
   ));
   const removedMfaChallenges = beforeChallenges - store.mfaChallenges.length;
 
+  const beforePasswordResetTokens = store.passwordResetTokens.length;
+  store.passwordResetTokens = store.passwordResetTokens.filter((record) => (
+    !record.usedAt && record.expiresAt > nowMs
+  ));
+  const removedPasswordResetTokens = beforePasswordResetTokens - store.passwordResetTokens.length;
+
   let revokedApiKeys = 0;
   if (revokeStaleApiKeys) {
     for (const apiKey of store.apiKeys) {
@@ -974,6 +1042,7 @@ function runSecurityHousekeeping(store: Store, staleApiKeyDays: number, revokeSt
   return {
     removedRefreshTokens,
     removedMfaChallenges,
+    removedPasswordResetTokens,
     revokedApiKeys
   };
 }
@@ -1584,6 +1653,73 @@ export function registerAuthRoutes(app: any) {
     });
   });
 
+  app.post('/public/password-recovery/request', (req: Request, res: Response) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'invalid-email' });
+    }
+
+    const store = ensureStore();
+    const credential = store.credentials.find((c) => c.username.toLowerCase() === email && c.isActive);
+
+    // Always generic to avoid account enumeration.
+    if (!credential) {
+      return res.json({
+        ok: true,
+        message: 'If the account exists, a recovery token will be issued.'
+      });
+    }
+
+    const resetToken = issuePasswordResetToken(store, credential);
+    appendAuditEvent(store, 'public', email, 'auth.password_recovery.requested', credential.companyId, {
+      credentialId: credential.id
+    });
+    saveStore(store);
+
+    const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+    const allowTokenEcho = String(process.env.PASSWORD_RESET_RETURN_TOKEN || '').toLowerCase() === 'true';
+
+    return res.json({
+      ok: true,
+      message: 'If the account exists, a recovery token will be issued.',
+      recoveryToken: (!isProduction || allowTokenEcho) ? resetToken : undefined,
+      expiresInMinutes: Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000)
+    });
+  });
+
+  app.post('/public/password-recovery/confirm', (req: Request, res: Response) => {
+    const token = String(req.body?.token || '').trim();
+    const newPassword = String(req.body?.newPassword || '').trim();
+
+    if (!token || token.length < 20) {
+      return res.status(400).json({ error: 'invalid-recovery-token' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'weak-password' });
+    }
+
+    const store = ensureStore();
+    const record = consumePasswordResetToken(store, token);
+    if (!record) {
+      return res.status(401).json({ error: 'invalid-or-expired-recovery-token' });
+    }
+
+    const credential = store.credentials.find((item) => item.id === record.credentialId && item.isActive);
+    if (!credential) {
+      return res.status(404).json({ error: 'credential-not-found' });
+    }
+
+    credential.passwordHash = hashPassword(newPassword);
+    revokeAllRefreshTokensForCredential(store, credential.id);
+    revokeAllSessionsForCredential(credential.id);
+    appendAuditEvent(store, 'public', credential.username, 'auth.password_recovery.completed', credential.companyId, {
+      credentialId: credential.id
+    });
+    saveStore(store);
+
+    return res.json({ ok: true, message: 'password-updated' });
+  });
+
   app.post('/public/entity-requests', (req: Request, res: Response) => {
     const companyName = String(req.body?.companyName || '').trim();
     const institutionType = String(req.body?.institutionType || '').trim();
@@ -1785,6 +1921,29 @@ export function registerAuthRoutes(app: any) {
     });
     saveStore(store);
     return res.json({ ok: true, user: { id: credential.id, username: credential.username, isActive: credential.isActive } });
+  });
+
+  app.patch('/admin/users/:id/password', requireAdminToken, (req: Request, res: Response) => {
+    const userId = String(req.params.id || '').trim();
+    const newPassword = String(req.body?.newPassword || '').trim();
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'weak-password' });
+    }
+
+    const store = ensureStore();
+    const credential = store.credentials.find((c) => c.id === userId && c.isActive);
+    if (!credential) return res.status(404).json({ error: 'user-not-found' });
+
+    credential.passwordHash = hashPassword(newPassword);
+    revokeAllRefreshTokensForCredential(store, credential.id);
+    revokeAllSessionsForCredential(credential.id);
+    appendAuditEvent(store, 'admin', 'admin-token', 'admin.user.password.reset', credential.companyId, {
+      userId: credential.id,
+      username: credential.username
+    });
+    saveStore(store);
+
+    return res.json({ ok: true, user: { id: credential.id, username: credential.username } });
   });
 
   app.get('/admin/payments', requireAdminToken, (_req: Request, res: Response) => {
@@ -2553,6 +2712,7 @@ export function registerAuthRoutes(app: any) {
         candidates: {
           expiredOrRevokedRefreshTokens: store.refreshTokens.filter((token) => token.revokedAt || token.expiresAt <= nowMs).length,
           expiredOrUsedMfaChallenges: store.mfaChallenges.filter((challenge) => challenge.usedAt || challenge.expiresAt <= nowMs).length,
+          expiredOrUsedPasswordResetTokens: store.passwordResetTokens.filter((token) => token.usedAt || token.expiresAt <= nowMs).length,
           staleActiveApiKeys
         }
       });
