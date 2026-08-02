@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
+import nodemailer from 'nodemailer';
 
 export type BillingCycle = 'monthly' | 'quarterly' | 'annual';
 export type CompanyStatus = 'pending' | 'active' | 'suspended' | 'expired';
@@ -31,6 +32,8 @@ interface Credential {
   companyId: string;
   username: string;
   passwordHash: string;
+  passwordHistoryHashes?: string[];
+  mustChangePassword?: boolean;
   role: UserRole;
   mfaEnabled?: boolean;
   mfaSecret?: string;
@@ -184,6 +187,7 @@ const ACCESS_TOKEN_TTL = 60 * 15;
 const REFRESH_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const MFA_CHALLENGE_TTL_MS = 1000 * 60 * 10;
 const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
+const PASSWORD_HISTORY_LIMIT = 5;
 
 const DEFAULT_PRICE_PER_VERIFICATION = 1;
 const DEFAULT_MONTHLY_QUOTA = 150;
@@ -476,6 +480,8 @@ function ensureStore(): Store {
       companyId,
       username: INTERNAL_ADMIN_EMAIL,
       passwordHash: hashPassword(configuredInternalAdminPassword),
+      passwordHistoryHashes: [passwordHistoryFingerprint(configuredInternalAdminPassword)],
+      mustChangePassword: false,
       role: 'owner',
       isActive: true,
       createdAt: now.toISOString()
@@ -526,7 +532,13 @@ function ensureStore(): Store {
         creditBalance: typeof company.creditBalance === 'number' ? company.creditBalance : 0,
         consumedThisPeriod: typeof company.consumedThisPeriod === 'number' ? company.consumedThisPeriod : 0
       })),
-      credentials: parsed.credentials || [],
+      credentials: (parsed.credentials || []).map((credential) => ({
+        ...credential,
+        passwordHistoryHashes: Array.isArray(credential.passwordHistoryHashes)
+          ? credential.passwordHistoryHashes.filter((item) => typeof item === 'string').slice(0, PASSWORD_HISTORY_LIMIT)
+          : [],
+        mustChangePassword: Boolean(credential.mustChangePassword)
+      })),
       apiKeys: parsed.apiKeys || [],
       entityRequests: parsed.entityRequests || [],
       ledger: parsed.ledger || [],
@@ -576,6 +588,8 @@ function ensureStore(): Store {
         companyId: internalCompany.id,
         username: INTERNAL_ADMIN_EMAIL,
         passwordHash: hashPassword(configuredInternalAdminPassword),
+        passwordHistoryHashes: [passwordHistoryFingerprint(configuredInternalAdminPassword)],
+        mustChangePassword: false,
         role: 'owner',
         isActive: true,
         createdAt: new Date().toISOString()
@@ -585,6 +599,11 @@ function ensureStore(): Store {
       internalAdmin.companyId = internalCompany.id;
       if (configuredInternalAdminPassword) {
         internalAdmin.passwordHash = hashPassword(configuredInternalAdminPassword);
+        internalAdmin.passwordHistoryHashes = [passwordHistoryFingerprint(configuredInternalAdminPassword)];
+      }
+      internalAdmin.mustChangePassword = false;
+      if (!Array.isArray(internalAdmin.passwordHistoryHashes)) {
+        internalAdmin.passwordHistoryHashes = [];
       }
       internalAdmin.role = 'owner';
       internalAdmin.isActive = true;
@@ -1147,6 +1166,77 @@ function hashPassword(password: string) {
   return `${salt}:${hash}`;
 }
 
+function passwordHistoryFingerprint(password: string) {
+  const secret = process.env.PASSWORD_HISTORY_SECRET || getJwtSecret();
+  return crypto.createHmac('sha256', secret).update(password).digest('hex');
+}
+
+function isPasswordStrongEnough(password: string) {
+  if (password.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  return hasUpper && hasLower && hasNumber;
+}
+
+function hasPasswordReuse(credential: Credential, nextPassword: string) {
+  const nextFingerprint = passwordHistoryFingerprint(nextPassword);
+  const history = Array.isArray(credential.passwordHistoryHashes) ? credential.passwordHistoryHashes : [];
+  return history.includes(nextFingerprint);
+}
+
+function setCredentialPassword(
+  credential: Credential,
+  nextPassword: string,
+  options: { forcePasswordChange?: boolean } = {}
+) {
+  const history = Array.isArray(credential.passwordHistoryHashes) ? credential.passwordHistoryHashes : [];
+  const nextFingerprint = passwordHistoryFingerprint(nextPassword);
+
+  credential.passwordHash = hashPassword(nextPassword);
+  credential.passwordHistoryHashes = [nextFingerprint, ...history.filter((item) => item !== nextFingerprint)].slice(0, PASSWORD_HISTORY_LIMIT);
+  credential.mustChangePassword = Boolean(options.forcePasswordChange);
+}
+
+function buildRecoveryEmailBody(token: string, expiresInMinutes: number) {
+  return [
+    'Recuperacao de conta - EduGuard Verify AI',
+    '',
+    `Token de recuperacao: ${token}`,
+    `Validade: ${expiresInMinutes} minutos`,
+    '',
+    'Se nao solicitou esta recuperacao, ignore este email.'
+  ].join('\n');
+}
+
+async function sendPasswordRecoveryEmail(email: string, token: string, expiresInMinutes: number) {
+  const host = String(process.env.SMTP_HOST || '').trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = String(process.env.SMTP_USER || '').trim();
+  const pass = String(process.env.SMTP_PASS || '').trim();
+  const from = String(process.env.SMTP_FROM || '').trim() || user;
+
+  if (!host || !from) {
+    return { delivered: false as const, reason: 'smtp-not-configured' as const };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: user && pass ? { user, pass } : undefined
+  });
+
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: 'EduGuard Verify AI - Recuperacao de palavra-passe',
+    text: buildRecoveryEmailBody(token, expiresInMinutes)
+  });
+
+  return { delivered: true as const };
+}
+
 function verifyPassword(password: string, encoded: string) {
   const [salt, hash] = encoded.split(':');
   if (!salt || !hash) return false;
@@ -1369,6 +1459,7 @@ export function registerAuthRoutes(app: any) {
         role: credential.role,
         companyId: company.id,
         companyName: company.name,
+        mustChangePassword: Boolean(credential.mustChangePassword),
         billingCycle: company.billingCycle,
         validUntil: company.validUntil,
         plan: company.plan,
@@ -1421,11 +1512,13 @@ export function registerAuthRoutes(app: any) {
       refreshToken,
       tokenType: 'Bearer',
       expiresIn: ACCESS_TOKEN_TTL,
+      requiresPasswordChange: Boolean(credential.mustChangePassword),
       user: {
         username: credential.username,
         role: credential.role,
         companyId: company.id,
-        companyName: company.name
+        companyName: company.name,
+        mustChangePassword: Boolean(credential.mustChangePassword)
       }
     });
   });
@@ -1457,7 +1550,8 @@ export function registerAuthRoutes(app: any) {
       accessToken,
       refreshToken,
       tokenType: 'Bearer',
-      expiresIn: ACCESS_TOKEN_TTL
+      expiresIn: ACCESS_TOKEN_TTL,
+      requiresPasswordChange: Boolean(credential.mustChangePassword)
     });
   });
 
@@ -1486,6 +1580,50 @@ export function registerAuthRoutes(app: any) {
       refreshToken: nextRefreshToken,
       tokenType: 'Bearer',
       expiresIn: ACCESS_TOKEN_TTL
+    });
+  });
+
+  app.post('/auth/password/change', requireCompanyAuth, (req: Request, res: Response) => {
+    const auth = (req as any).auth as AuthContext;
+    const currentPassword = String(req.body?.currentPassword || '').trim();
+    const newPassword = String(req.body?.newPassword || '').trim();
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'missing-password-fields' });
+    }
+    if (!isPasswordStrongEnough(newPassword)) {
+      return res.status(400).json({ error: 'weak-password' });
+    }
+
+    const store = ensureStore();
+    const credential = store.credentials.find((item) => (
+      item.companyId === auth.companyId
+      && item.username.toLowerCase() === auth.username.toLowerCase()
+      && item.isActive
+    ));
+    if (!credential) return res.status(404).json({ error: 'credential-not-found' });
+    if (!verifyPassword(currentPassword, credential.passwordHash)) {
+      return res.status(401).json({ error: 'invalid-current-password' });
+    }
+    if (hasPasswordReuse(credential, newPassword)) {
+      return res.status(409).json({ error: 'password-reuse-not-allowed' });
+    }
+
+    setCredentialPassword(credential, newPassword, { forcePasswordChange: false });
+    revokeAllRefreshTokensForCredential(store, credential.id);
+    revokeAllSessionsForCredential(credential.id);
+
+    const accessToken = issueAccessToken(credential);
+    const refreshToken = issueRefreshToken(store, credential);
+    appendAuditEvent(store, 'user', credential.id, 'auth.password.changed', credential.companyId, {});
+    saveStore(store);
+
+    return res.json({
+      ok: true,
+      accessToken,
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: ACCESS_TOKEN_TTL,
+      requiresPasswordChange: false
     });
   });
 
@@ -1581,7 +1719,7 @@ export function registerAuthRoutes(app: any) {
     if (!email.includes('@')) {
       return res.status(400).json({ error: 'invalid-email' });
     }
-    if (password.length < 8) {
+    if (!isPasswordStrongEnough(password)) {
       return res.status(400).json({ error: 'weak-password' });
     }
 
@@ -1615,11 +1753,14 @@ export function registerAuthRoutes(app: any) {
       id: crypto.randomUUID(),
       companyId: company.id,
       username: email,
-      passwordHash: hashPassword(password),
+      passwordHash: '',
+      passwordHistoryHashes: [],
+      mustChangePassword: false,
       role: 'owner',
       isActive: true,
       createdAt: nowIso
     };
+    setCredentialPassword(credential, password, { forcePasswordChange: false });
 
     store.companies.push(company);
     store.credentials.push(credential);
@@ -1653,7 +1794,7 @@ export function registerAuthRoutes(app: any) {
     });
   });
 
-  app.post('/public/password-recovery/request', (req: Request, res: Response) => {
+  app.post('/public/password-recovery/request', async (req: Request, res: Response) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: 'invalid-email' });
@@ -1671,8 +1812,23 @@ export function registerAuthRoutes(app: any) {
     }
 
     const resetToken = issuePasswordResetToken(store, credential);
+    const expiresInMinutes = Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000);
+    let delivery: 'sent' | 'not-configured' | 'failed' = 'not-configured';
+
+    try {
+      const deliveryResult = await sendPasswordRecoveryEmail(email, resetToken, expiresInMinutes);
+      delivery = deliveryResult.delivered ? 'sent' : 'not-configured';
+    } catch (error: any) {
+      delivery = 'failed';
+      appendAuditEvent(store, 'system', 'smtp', 'auth.password_recovery.email_failed', credential.companyId, {
+        credentialId: credential.id,
+        error: String(error?.message || error)
+      });
+    }
+
     appendAuditEvent(store, 'public', email, 'auth.password_recovery.requested', credential.companyId, {
-      credentialId: credential.id
+      credentialId: credential.id,
+      delivery
     });
     saveStore(store);
 
@@ -1683,7 +1839,8 @@ export function registerAuthRoutes(app: any) {
       ok: true,
       message: 'If the account exists, a recovery token will be issued.',
       recoveryToken: (!isProduction || allowTokenEcho) ? resetToken : undefined,
-      expiresInMinutes: Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000)
+      expiresInMinutes,
+      delivery
     });
   });
 
@@ -1694,7 +1851,7 @@ export function registerAuthRoutes(app: any) {
     if (!token || token.length < 20) {
       return res.status(400).json({ error: 'invalid-recovery-token' });
     }
-    if (newPassword.length < 8) {
+    if (!isPasswordStrongEnough(newPassword)) {
       return res.status(400).json({ error: 'weak-password' });
     }
 
@@ -1709,7 +1866,11 @@ export function registerAuthRoutes(app: any) {
       return res.status(404).json({ error: 'credential-not-found' });
     }
 
-    credential.passwordHash = hashPassword(newPassword);
+    if (hasPasswordReuse(credential, newPassword)) {
+      return res.status(409).json({ error: 'password-reuse-not-allowed' });
+    }
+
+    setCredentialPassword(credential, newPassword, { forcePasswordChange: false });
     revokeAllRefreshTokensForCredential(store, credential.id);
     revokeAllSessionsForCredential(credential.id);
     appendAuditEvent(store, 'public', credential.username, 'auth.password_recovery.completed', credential.companyId, {
@@ -1814,6 +1975,9 @@ export function registerAuthRoutes(app: any) {
     if (!ownerEmail || !ownerPassword) {
       return res.status(400).json({ error: 'missing-owner-credentials' });
     }
+    if (!isPasswordStrongEnough(ownerPassword)) {
+      return res.status(400).json({ error: 'weak-password' });
+    }
 
     const store = ensureStore();
     const requestEntry = store.entityRequests.find((request) => request.id === requestId);
@@ -1843,11 +2007,14 @@ export function registerAuthRoutes(app: any) {
       id: crypto.randomUUID(),
       companyId: company.id,
       username: ownerEmail,
-      passwordHash: hashPassword(ownerPassword),
+      passwordHash: '',
+      passwordHistoryHashes: [],
+      mustChangePassword: false,
       role: 'owner',
       isActive: true,
       createdAt: now
     };
+    setCredentialPassword(owner, ownerPassword, { forcePasswordChange: false });
 
     store.companies.push(company);
     store.credentials.push(owner);
@@ -1926,7 +2093,7 @@ export function registerAuthRoutes(app: any) {
   app.patch('/admin/users/:id/password', requireAdminToken, (req: Request, res: Response) => {
     const userId = String(req.params.id || '').trim();
     const newPassword = String(req.body?.newPassword || '').trim();
-    if (!newPassword || newPassword.length < 8) {
+    if (!newPassword || !isPasswordStrongEnough(newPassword)) {
       return res.status(400).json({ error: 'weak-password' });
     }
 
@@ -1934,7 +2101,11 @@ export function registerAuthRoutes(app: any) {
     const credential = store.credentials.find((c) => c.id === userId && c.isActive);
     if (!credential) return res.status(404).json({ error: 'user-not-found' });
 
-    credential.passwordHash = hashPassword(newPassword);
+    if (hasPasswordReuse(credential, newPassword)) {
+      return res.status(409).json({ error: 'password-reuse-not-allowed' });
+    }
+
+    setCredentialPassword(credential, newPassword, { forcePasswordChange: true });
     revokeAllRefreshTokensForCredential(store, credential.id);
     revokeAllSessionsForCredential(credential.id);
     appendAuditEvent(store, 'admin', 'admin-token', 'admin.user.password.reset', credential.companyId, {
@@ -1967,6 +2138,7 @@ export function registerAuthRoutes(app: any) {
     const role = (['owner', 'manager', 'analyst', 'billing', 'admin', 'user'].includes(roleRaw) ? roleRaw : 'analyst') as UserRole;
 
     if (!username || !password) return res.status(400).json({ error: 'missing-credential-fields' });
+    if (!isPasswordStrongEnough(password)) return res.status(400).json({ error: 'weak-password' });
 
     const store = ensureStore();
     if (!store.companies.some((c) => c.id === companyId)) {
@@ -1981,11 +2153,14 @@ export function registerAuthRoutes(app: any) {
       id: crypto.randomUUID(),
       companyId,
       username,
-      passwordHash: hashPassword(password),
+      passwordHash: '',
+      passwordHistoryHashes: [],
+      mustChangePassword: false,
       role: roleForLegacyUser(role),
       isActive: true,
       createdAt: new Date().toISOString()
     };
+    setCredentialPassword(credential, password, { forcePasswordChange: false });
 
     store.credentials.push(credential);
     appendAuditEvent(store, 'admin', 'admin-token', 'admin.credential.created', companyId, {

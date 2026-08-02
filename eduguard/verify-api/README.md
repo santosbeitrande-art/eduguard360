@@ -52,6 +52,7 @@ New architecture assets:
 - POST /auth/token/refresh -> rotate refresh token
 - POST /public/password-recovery/request -> issue recovery token with anti-enumeration response
 - POST /public/password-recovery/confirm -> validate token and update password
+- POST /auth/password/change -> authenticated password change (required after admin temporary reset)
 - POST /auth/mfa/setup -> generate TOTP secret and OTPAuth URL
 - POST /auth/mfa/setup/confirm -> enable MFA on account
 - POST /auth/mfa/verify -> complete MFA challenge on JWT login
@@ -65,6 +66,8 @@ Authentication:
 - JWT bearer access token via Authorization: Bearer <token>
 - Admin operations via x-admin-token
 - Required env vars for admin bootstrap/access: `VERIFY_ADMIN_TOKEN` and `INTERNAL_ADMIN_PASSWORD`
+- SMTP vars for real recovery email delivery: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+- Optional password policy vars: `PASSWORD_HISTORY_SECRET` (recommended), plus strong password enforcement (uppercase/lowercase/number, min 8) and password history anti-reuse.
 
 Access enforcement:
 - `/public/login` is public (plans + registration + login)

@@ -932,6 +932,8 @@
         if (value === "external-api-required") return lang === "pt" ? "API externa obrigatória" : "external API required";
         if (value === "invalid-email") return lang === "pt" ? "email inválido" : "invalid email";
         if (value === "weak-password") return lang === "pt" ? "palavra-passe fraca" : "weak password";
+        if (value === "password-reuse-not-allowed") return lang === "pt" ? "não pode reutilizar uma palavra-passe recente" : "password reuse is not allowed";
+        if (value === "invalid-current-password") return lang === "pt" ? "palavra-passe atual inválida" : "invalid current password";
         if (value === "invalid-recovery-token" || value === "invalid-or-expired-recovery-token") {
           return lang === "pt" ? "token de recuperação inválido ou expirado" : "invalid or expired recovery token";
         }
@@ -1186,6 +1188,30 @@
         }
       }
 
+      async function completeMandatoryPasswordChange(currentPassword) {
+        const nextPassword = window.prompt(
+          lang === "pt"
+            ? "Defina agora uma nova palavra-passe forte (mín. 8, com maiúscula, minúscula e número):"
+            : "Set a new strong password now (min 8, with uppercase, lowercase, and number):"
+        );
+        if (nextPassword === null) return false;
+
+        const res = await api("/auth/password/change", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentPassword, newPassword: String(nextPassword) })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+          setMessage((lang === "pt" ? "Falha ao atualizar palavra-passe: " : "Password update failed: ") + describeAuthError(data?.error || "unknown"));
+          return false;
+        }
+
+        setTokens(data.accessToken, data.refreshToken);
+        setMessage(lang === "pt" ? "Palavra-passe atualizada. Sessão reativada." : "Password updated. Session reactivated.");
+        return true;
+      }
+
       document.getElementById("loginForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         setMessage(lang === "pt" ? "A autenticar..." : "Signing in...");
@@ -1212,6 +1238,13 @@
           updateInternalAdminSession(payload.username, true);
           setTokens(data.accessToken, data.refreshToken);
           clearLocalSession();
+
+          if (data?.requiresPasswordChange === true || data?.user?.mustChangePassword === true) {
+            setMessage(lang === "pt" ? "É obrigatória a troca da palavra-passe antes de continuar." : "Password change is required before continuing.");
+            const changed = await completeMandatoryPasswordChange(payload.password);
+            if (!changed) return;
+          }
+
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
