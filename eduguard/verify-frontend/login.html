@@ -1374,6 +1374,42 @@
       }
 
       async function loadAdminOverview() {
+
+      async function adminResetUserPassword(userId, username) {
+        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+        if (!adminToken) return;
+
+        const temporaryPassword = window.prompt(
+          lang === "pt"
+            ? `Defina uma password temporária para ${username} (mín. 8 caracteres):`
+            : `Set a temporary password for ${username} (min 8 characters):`
+        );
+
+        if (temporaryPassword === null) return;
+        if (String(temporaryPassword).trim().length < 8) {
+          setMessage(lang === "pt" ? "Password temporária inválida (mín. 8)." : "Invalid temporary password (min 8).");
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/password`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-admin-token": adminToken
+            },
+            body: JSON.stringify({ newPassword: temporaryPassword })
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao redefinir password: " : "Failed to reset password: ") + (data?.error || "unknown"));
+            return;
+          }
+          setMessage(lang === "pt" ? "Password redefinida com sucesso." : "Password reset successfully.");
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligação ao redefinir password." : "Connection error while resetting password.");
+        }
+      }
         const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
         if (!adminToken) return;
 
@@ -1405,7 +1441,7 @@
               <td>
                 ${u.username === "admin@eduguard360.co.mz"
                   ? "-"
-                  : `<button class="ghost" data-userid="${u.id}" data-next="${u.isActive ? "false" : "true"}">${u.isActive ? (lang === "pt" ? "Desativar" : "Disable") : (lang === "pt" ? "Ativar" : "Enable")}</button>`}
+                  : `<button class="ghost" data-userid="${u.id}" data-next="${u.isActive ? "false" : "true"}">${u.isActive ? (lang === "pt" ? "Desativar" : "Disable") : (lang === "pt" ? "Ativar" : "Enable")}</button> <button class="ghost" data-user-password-reset="${u.id}" data-username="${u.username || ""}">${lang === "pt" ? "Redefinir password" : "Reset password"}</button>`}
               </td>
             </tr>
           `).join("");
@@ -1429,6 +1465,14 @@
               const userId = btn.getAttribute("data-userid");
               const next = btn.getAttribute("data-next") === "true";
               updateUserStatus(userId, next);
+            });
+          });
+
+          usersBody.querySelectorAll("button[data-user-password-reset]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const userId = btn.getAttribute("data-user-password-reset");
+              const username = btn.getAttribute("data-username") || "user";
+              adminResetUserPassword(userId, username);
             });
           });
 
