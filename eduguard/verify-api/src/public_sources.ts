@@ -32,6 +32,66 @@ function builtinSources(): PublicSourceRecord[] {
       authMode: 'none',
       cacheTtlSeconds: 3600,
       isActive: true
+    },
+    {
+      id: 'builtin-br-gov-domain',
+      countryCode: 'BR',
+      issuerType: 'government-domain',
+      issuerName: 'Brazil Government Domains',
+      endpointUrl: 'https://www.gov.br',
+      authMode: 'none',
+      cacheTtlSeconds: 3600,
+      isActive: true
+    },
+    {
+      id: 'builtin-br-education-domain',
+      countryCode: 'BR',
+      issuerType: 'education-domain',
+      issuerName: 'Brazil Public Universities Domains',
+      endpointUrl: 'https://www.ufrj.br',
+      authMode: 'none',
+      cacheTtlSeconds: 3600,
+      isActive: true
+    },
+    {
+      id: 'builtin-pt-gov-domain',
+      countryCode: 'PT',
+      issuerType: 'government-domain',
+      issuerName: 'Portugal Government Domains',
+      endpointUrl: 'https://www.portugal.gov.pt',
+      authMode: 'none',
+      cacheTtlSeconds: 3600,
+      isActive: true
+    },
+    {
+      id: 'builtin-pt-education-domain',
+      countryCode: 'PT',
+      issuerType: 'education-domain',
+      issuerName: 'Portugal Universities Domains',
+      endpointUrl: 'https://www.ulisboa.pt',
+      authMode: 'none',
+      cacheTtlSeconds: 3600,
+      isActive: true
+    },
+    {
+      id: 'builtin-ao-gov-domain',
+      countryCode: 'AO',
+      issuerType: 'government-domain',
+      issuerName: 'Angola Government Domains',
+      endpointUrl: 'https://www.gov.ao',
+      authMode: 'none',
+      cacheTtlSeconds: 3600,
+      isActive: true
+    },
+    {
+      id: 'builtin-global-education-directory',
+      countryCode: 'ANY',
+      issuerType: 'education-directory',
+      issuerName: 'Global Academic Directory Baseline',
+      endpointUrl: 'https://www.unesco.org',
+      authMode: 'none',
+      cacheTtlSeconds: 7200,
+      isActive: true
     }
   ];
 }
@@ -91,4 +151,11 @@ export async function validatePublicSources(input: { country?: string; domains?:
     matchedSources: checks.filter((item) => item.domainMatch).length,
     checks
   };
+}
+
+export async function listPublicSources(country?: string) {
+  const targetCountry = String(country || '').trim().toUpperCase();
+  const rows = await configuredSources();
+  if (!targetCountry) return rows;
+  return rows.filter((item) => item.countryCode === 'ANY' || item.countryCode === targetCountry);
 }

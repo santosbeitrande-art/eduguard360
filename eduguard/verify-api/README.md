@@ -5,6 +5,7 @@ Endpoints:
 - POST /upload-case (form field `files`, up to 10 files) -> unified case analysis with cross-document consistency
 - GET /status/:id -> job JSON
  - GET /status/:id/evidence -> evidence report with multiengine checks, drivers, and real verification counts
+ - GET /status/:id/report.pdf -> intelligent PDF report with decision, metrics, suspicious points, and visual evidence map
  - GET /status/:id/evidence/export.csv -> CSV export of all evidence checks by engine for one job
  - GET /status/:id/audit -> auditable case dossier snapshot
  - POST /fraud-signature -> submit anonymized fraud signature (body must include `id`)

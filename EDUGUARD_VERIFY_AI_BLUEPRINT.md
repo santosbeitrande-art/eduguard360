@@ -1,273 +1,337 @@
 # EduGuard Verify AI Blueprint
 
-## Objective
+## Objetivo
 
-Transform EduGuard Verify AI from a document analyzer into a decision engine that answers:
+Transformar a EduGuard Verify AI em uma plataforma internacional de verificacao inteligente de documentos, com foco em:
 
-**Can I trust this document or not?**
+- Alta precisao na deteccao de fraude documental
+- Resposta rapida para operacoes em escala
+- Explicabilidade auditavel ponta a ponta
+- Governanca de modelos e melhoria continua
 
-The platform must produce:
+Cada analise deve responder de forma objetiva:
 
-- A decision
-- A risk level
-- A confidence level
-- A practical approval answer
-- An explainable evidence trail
+- O documento e confiavel?
+- Existe probabilidade relevante de falsificacao?
+- Quais evidencias sustentam a decisao?
 
-## Current foundations already implemented
+## Principios tecnicos
 
-- Decision policy with 5 business outcomes in `eduguard/verify-api/src/decision_policy.ts`
-- Multiengine evidence report in `eduguard/verify-api/src/evidence_engine.ts`
-- Single-document and dossier orchestration in `eduguard/verify-api/src/index.ts`
-- Human reviewer feedback loop in `POST /verification-feedback`
-- Review queue, CSV export, and quality dashboard with decision metrics
-- Evidence report endpoint and CSV export in:
-  - `GET /status/:id/evidence`
-  - `GET /status/:id/evidence/export.csv`
+- Arquitetura modular com contratos claros entre servicos
+- Benchmark apenas com projetos Open Source e literatura publica
+- Sem copia de codigo que viole licencas
+- Evidencias tecnicas rastreaveis por verificacao, documento e decisao
+- Decisao final sempre acompanhada de justificativa operacional
 
-## Target architecture
+## Estado atual do repositorio
+
+Ja existem bases importantes no codigo:
+
+- Politica de decisao com 5 desfechos de negocio em eduguard/verify-api/src/decision_policy.ts
+- Relatorio multiengine de evidencias em eduguard/verify-api/src/evidence_engine.ts
+- Registro central de verificacoes em eduguard/verify-api/src/check_registry.ts
+- Camada de pesos para decisao em eduguard/verify-api/src/decision_weights.ts
+- Orquestracao de analise de documento unico e dossier em eduguard/verify-api/src/index.ts
+- Servicos dedicados de OCR, visao e forense em:
+  - eduguard/ocr-service/main.py
+  - eduguard/vision-service/main.py
+  - eduguard/forensics-service/main.py
+- Conectores de fontes publicas em eduguard/verify-api/src/public_sources.ts
+
+## Benchmarking tecnologico (Open Source)
+
+Adotar avaliacao continua de tecnologias por modulo:
+
+- OCR: PaddleOCR, Tesseract, EasyOCR, DocTR
+- Layout e estrutura: LayoutParser, Detectron2, MMDetection
+- Visao documental: YOLO, OpenCV, Segment Anything
+- NLP e raciocinio: Hugging Face Transformers, LLMs com guardrails
+- Treino e inferencia: PyTorch, TensorFlow, ONNX Runtime
+- Data augmentation: Albumentations
+
+Politica de benchmark:
+
+- Revisao trimestral de desempenho por categoria de documento
+- Prova A/B por datasets internos anonimizados
+- Substituicao de motor somente com ganho estatisticamente relevante
+
+## Arquitetura alvo
 
 ```text
-Upload
-  -> Preprocessing
-  -> OCR Engine
-  -> PDF / Image Forensics
-  -> Computer Vision Engine
-  -> Generative AI Detection
-  -> Content Validation Engine
-  -> Business Rules Engine
-  -> Learning / Calibration Engine
-  -> Decision Engine
-  -> Explainable Report
+Entrada de Documento
+  -> Preprocessamento e Normalizacao
+  -> OCR Multimotor
+  -> Analise de Estrutura/Layout
+  -> Forense Visual e Metadados
+  -> Validacoes de Consistencia Semantica
+  -> Validacoes Externas/Publicas
+  -> Motor de Evidencias e Pesos
+  -> Politica de Decisao
+  -> Mapa Visual + Relatorio PDF
+  -> Feedback Humano e Aprendizagem
 ```
 
-## Core code modules needed
+## Modulos obrigatorios
 
-### 1. Verification registry
+### 1. Modulo OCR
 
-Create a central registry to define all checks explicitly.
+Objetivo:
 
-Suggested file:
+- Extrair texto com alta precisao e cobertura por regiao
 
-- `eduguard/verify-api/src/check_registry.ts`
+Capacidades:
 
-Suggested responsibilities:
+- Extracao por multiplos motores
+- Concordancia entre motores por bloco/pagina
+- Confianca por campo critico (nome, numero, data, assinatura textual)
+- Deteccao de divergencia OCR versus estrutura visual
 
-- Stable check IDs
-- Human labels
-- Engine ownership
-- Severity weight
-- Document-type applicability
-- Whether the check is deterministic or heuristic
+### 2. Modulo de Estrutura
 
-Example shape:
+Objetivo:
 
-```ts
-export interface CheckDefinition {
-  id: string;
-  label: string;
-  engine: 'ocr' | 'forensics' | 'vision' | 'metadata' | 'rules' | 'external';
-  severityWeight: number;
-  appliesTo: string[];
-  deterministic: boolean;
-}
-```
+- Identificar e segmentar componentes do documento
 
-### 2. Decision weighting layer
+Elementos minimos:
 
-Create a weighted evidence scorer so the final verdict depends on accumulated evidence instead of one threshold.
+- Cabecalho e rodape
+- Logos, selos e carimbos
+- Assinaturas e fotografias
+- QR codes e codigos de barras
+- Tabelas, campos preenchidos e zonas em branco
 
-Suggested file:
+### 3. Modulo de Verificacao Visual
 
-- `eduguard/verify-api/src/decision_weights.ts`
+Objetivo:
 
-Responsibilities:
+- Detectar manipulacao grafica e adulteracao digital
 
-- Convert check results into weighted signals
-- Apply stronger penalties to deterministic fraud evidence
-- Learn calibration deltas by document type and issuer
-- Produce:
-  - authenticity score
-  - fraud pressure score
-  - uncertainty score
+Sinais:
 
-### 3. Vision engine service
+- Colagem/sobreposicao
+- Diferencas locais de compressao
+- Inconsistencia de iluminacao e sombras
+- Objetos adicionados/removidos
+- Fontes renderizadas de forma incompativel
+- Rastros de geracao por IA e deepfake documental
 
-This should become a separate Python service.
+### 4. Modulo de Consistencia
 
-Suggested service folder:
+Objetivo:
 
-- `eduguard/vision-service/`
+- Validar coerencia interna e entre documentos do dossier
 
-Suggested stack:
+Verificacoes:
 
-- FastAPI
-- OpenCV
-- Pillow
-- scikit-image
-- YOLO
-- Detectron2
-- Segment Anything
-- CLIP
+- Datas incompativeis
+- Sequencias e numeracoes invalidas
+- Campos ausentes
+- Ortografia e formato fora do padrao esperado
+- Assinaturas, selos e logos incompativeis com contexto
 
-Suggested endpoints:
+### 5. Modulo de Seguranca
 
-- `POST /vision/layout`
-- `POST /vision/tampering`
-- `POST /vision/logo-detection`
-- `POST /vision/stamp-detection`
-- `POST /vision/signature-detection`
-- `POST /vision/qr-barcode`
+Objetivo:
 
-Expected outputs:
+- Verificar elementos de autenticidade tecnica
 
-- Edited region heatmaps
-- Detected layout blocks
-- Logo/stamp/signature matches
-- QR/barcode decoded values
-- Visual anomaly scores
+Verificacoes:
 
-### 4. Advanced OCR engine service
+- QR code valido versus falso
+- Codigo de barras valido versus invalido
+- Watermarks e marcas invisiveis (quando detectavel)
+- Microtexto e holograma (quando viavel por qualidade de imagem)
 
-Suggested service folder:
+### 6. Modulo de IA e Decisao
 
-- `eduguard/ocr-service/`
+Objetivo:
 
-Suggested stack:
+- Produzir resultado quantitativo, qualitativo e explicavel
 
-- FastAPI
-- PaddleOCR
-- EasyOCR
-- Tesseract
+Saidas obrigatorias:
 
-Suggested behavior:
+- Indice Geral de Confiabilidade (0 a 100)
+- Indice de Falsificacao (0 a 100)
+- Nivel de risco: Muito Baixo, Baixo, Medio, Alto, Muito Alto
+- Decisao operacional: aprovar, aprovar com revisao, rejeitar
 
-- Run multiple OCR engines per page
-- Compare agreement between engines
-- Return confidence by field and by region
-- Highlight OCR-image mismatches
+## Modelo de scoring e risco
 
-Suggested endpoints:
+Padrao recomendado:
 
-- `POST /ocr/extract`
-- `POST /ocr/compare-engines`
-- `POST /ocr/field-alignment`
+- confiabilidade = media ponderada de verificacoes positivas
+- falsificacao = pressao acumulada de sinais negativos deterministas e heuristicos
+- incerteza = conflito entre motores + baixa cobertura de evidencias
 
-### 5. Forensic document service
+Faixas de risco sugeridas:
 
-Suggested service folder:
+- Muito Baixo: 0 a 10
+- Baixo: 11 a 30
+- Medio: 31 a 55
+- Alto: 56 a 80
+- Muito Alto: 81 a 100
 
-- `eduguard/forensics-service/`
+Regra de seguranca:
 
-Suggested stack:
+- Evidencia critica deterministica valida bloqueio automatico, mesmo com confiabilidade global moderada.
 
-- FastAPI
-- PyMuPDF
-- pdfplumber
-- pikepdf
-- qpdf
+## Explicabilidade obrigatoria
 
-Checks to implement there:
+Cada suspeita deve incluir:
 
-- PDF integrity
-- Object graph anomalies
-- Hidden objects
-- Incremental save traces
-- Font inventory
-- Embedded image inventory
-- Signature metadata
-- Creation/modification chain
+- O que foi encontrado
+- Porque e suspeito
+- Grau de confianca do achado
+- Evidencias observadas
+- Localizacao exata na imagem/pagina
 
-Suggested endpoints:
+Formato de evidencias:
 
-- `POST /forensics/pdf`
-- `POST /forensics/image`
-- `POST /forensics/signatures`
+- Bounding boxes por regiao
+- Heatmap de anomalias
+- Lista de checks com status: passed, warning, failed, not_applicable
 
-### 6. Public validation connectors
+## Relatorio inteligente em PDF
 
-Suggested file:
+Estrutura minima:
 
-- `eduguard/verify-api/src/public_sources.ts`
+- Resumo Executivo
+- Resultado Geral
+- Indice de Confiabilidade
+- Indice de Falsificacao
+- Nivel de Risco
+- Pontos Suspeitos
+- Pontos Confirmados
+- Analise Tecnica por modulo
+- Recomendacoes
+- Conclusao
 
-Possible responsibilities:
+O relatorio deve ser auditavel:
 
-- Validate issuer domains
-- Validate public QR payloads
-- Validate known official formats
-- Check tax, company, or university public records when legally available
+- Versao do modelo
+- Versao da politica de decisao
+- Data/hora de inferencia
+- Origem das validacoes externas
 
-Important:
+## Aprendizagem continua
 
-- Implement per-country connector isolation
-- Cache responses in Redis
-- Record provenance and timestamp for each public lookup
+Projetar para:
 
-### 7. Learning and retrieval layer
+- Atualizacao de modelos sem downtime significativo
+- Inclusao de novos tipos documentais
+- Recalibracao supervisionada por feedback humano
+- Fluxo semi-supervisionado com triagem de casos ambiguos
+- Monitoramento de drift e degradacao por tipo de documento
 
-Suggested stack:
+Requisitos de dados:
 
-- PostgreSQL
-- pgvector
-- Redis
-- FAISS when offline indexing is needed
+- Dataset anonimizados por categoria
+- Rotulos de fraude confirmada, autenticidade confirmada e inconclusivo
+- Controle de versao de conjunto de treino e metricas
 
-Suggested storage model:
+## Performance e escalabilidade
 
-- `verification_jobs`
-- `verification_checks`
-- `document_profiles`
-- `issuer_profiles`
-- `review_feedback`
-- `fraud_patterns`
-- `evidence_embeddings`
+SLOs minimos:
 
-This layer should support:
+- OCR menor que 3s por documento padrao
+- Analise completa menor que 10s por documento padrao
+- Suporte a GPU quando disponivel
+- Fallback estavel para CPU quando necessario
 
-- Similar-case retrieval
-- Calibration by issuer/document type
-- Drift monitoring
-- False positive and false negative tracking
+Requisitos de plataforma:
 
-## Decision model requirements
+- API horizontalmente escalavel
+- Filas para processamento assincrono em picos
+- Arquitetura preparada para microsservicos
+- Cache para validacoes externas e consultas repetidas
 
-The final decision must always map to one of these outcomes:
+## Qualidade de codigo e testes
 
-- Documento Autentico
-- Documento Provavelmente Autentico
-- Revisao Humana Recomendada
-- Documento Provavelmente Fraudulento
-- Fraude Confirmada
+Padroes obrigatorios:
 
-And one practical answer:
+- Modularidade e baixo acoplamento
+- Documentacao tecnica atualizada
+- Testes unitarios, integracao e regressao
+- Evitar duplicacao de regras
+- Telemetria e logs estruturados por etapa
 
-- Sim.
-- Sim, mas recomenda-se revisao.
-- Nao. Existe forte probabilidade de fraude.
+Matriz minima de testes:
 
-## Performance requirements
+- OCR por idioma e qualidade de imagem
+- Forense PDF e imagem com casos autenticos e adulterados
+- Regras de consistencia por tipo documental
+- Endpoints de decisao com cenarios limite
+- Reproducibilidade de score para mesmo input
 
-To outperform weaker competitors, optimize for these metrics instead of marketing claims:
+## Governanca legal e licenciamento
 
-- Low false negative rate on confirmed fraud
-- Low false positive rate on authentic documents
-- High agreement with expert reviewers
-- Stable performance by document type
-- Explainability completeness per decision
-- Time to decision
+Diretrizes:
 
-## What to build next in code
+- Manter inventario de dependencias e licencas
+- Preservar avisos obrigatorios de copyright/licenca
+- Revisar compatibilidade de licencas antes de distribuicao
+- Evitar ingestao de dados sensiveis sem base legal e controles adequados
 
-1. Add `check_registry.ts` and convert the evidence engine to use registry-driven checks.
-2. Split OCR, forensics, and vision into Python FastAPI services behind stable contracts.
-3. Add PostgreSQL persistence for per-check outcomes instead of JSON-only job files.
-4. Add Redis caching for external/public validations.
-5. Add QR, barcode, logo, stamp, signature, and visual tampering engines.
-6. Add dashboard views for engine drift, top failing checks, and reviewer disagreement.
-7. Add benchmark datasets per document type and measure precision/recall weekly.
+Checklist de conformidade:
 
-## Product rule
+- Dependencia aprovada por politica de licencas
+- Termos de uso de fontes externas revisados
+- Trilha de auditoria para cada verificacao
+- Retencao e descarte de dados conforme politica institucional
 
-The system should never stop at “analysis completed”.
+## Pesquisa cientifica continua
 
-It must end with a decision, a reason, a risk level, a confidence level, and a practical approval answer.
+Manter trilha de pesquisa aplicada em:
+
+- Document Fraud Detection
+- Fake Document Detection
+- Image Tampering Detection
+- Signature Verification
+- AI Document Verification
+- Digital Forensics
+- Document Authentication
+
+Fluxo recomendado:
+
+- Radar mensal de publicacoes
+- Prototipo rapido de tecnicas promissoras
+- Incorporacao apenas apos benchmark interno reproduzivel
+
+## Roadmap de execucao
+
+Fase 1 (0 a 30 dias): consolidacao do baseline
+
+- Padronizar contratos de servicos OCR/visao/forense
+- Finalizar matriz de checks no registro central
+- Validar pipeline de evidencias e pesos em producao controlada
+
+Fase 2 (31 a 60 dias): robustez e explicabilidade
+
+- Expandir detectores de QR, barcode, logo, selo e assinatura
+- Produzir heatmaps e bounding boxes no relatorio final
+- Reforcar validacoes de metadados e consistencia cruzada
+
+Fase 3 (61 a 90 dias): escalabilidade e aprendizado
+
+- Persistencia completa em banco para analytics historico
+- Dashboards de drift, FP/FN e desacordo com revisores
+- Pipeline de recalibracao com feedback humano confiavel
+
+Fase 4 (90+ dias): internacionalizacao
+
+- Conectores publicos por pais/setor
+- Perfis de documento por jurisdicao
+- Benchmarks globais por idioma e formato documental
+
+## Regra de produto
+
+A plataforma nunca deve terminar em "analise concluida" sem posicionamento operacional.
+
+Toda resposta deve encerrar com:
+
+- Decisao
+- Nivel de risco
+- Confiabilidade
+- Probabilidade de falsificacao
+- Justificativa explicavel
+- Evidencia visual

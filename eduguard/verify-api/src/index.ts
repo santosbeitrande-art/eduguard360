@@ -34,6 +34,9 @@ import { buildAuditableDecision, toLegacyFinalDecision } from './decision_policy
 import { buildCaseEvidenceReport, buildSingleDocumentEvidenceReport } from './evidence_engine';
 import { callForensicsService, callOcrExtractService, callVisionService } from './service_clients';
 import { listCompanyJobRecords, readJobRecord, writeJobRecord } from './job_store';
+import { buildVisualMap } from './visual_map';
+import { listPublicSources } from './public_sources';
+import { generateVerificationReportPdf } from './report_pdf';
 
 const app = express();
 app.use(cors());
@@ -819,6 +822,157 @@ function buildLearningImpactMetrics(jobs: any[], feedback: VerificationFeedbackR
   };
 }
 
+function buildDriftMetrics(jobs: any[]) {
+  const now = Date.now();
+  const windows = {
+    d30: now - (30 * 24 * 60 * 60 * 1000),
+    d60: now - (60 * 24 * 60 * 60 * 1000)
+  };
+
+  const recent = jobs.filter((job) => new Date(String(job?.createdAt || '')).getTime() >= windows.d30);
+  const previous = jobs.filter((job) => {
+    const created = new Date(String(job?.createdAt || '')).getTime();
+    return created >= windows.d60 && created < windows.d30;
+  });
+
+  const summarize = (rows: any[]) => {
+    if (!rows.length) {
+      return {
+        count: 0,
+        avgRiskScore: 0,
+        avgConfidence: 0,
+        approvalRate: 0,
+        rejectionRate: 0,
+        reviewRate: 0
+      };
+    }
+
+    let risk = 0;
+    let confidence = 0;
+    let approved = 0;
+    let rejected = 0;
+    let review = 0;
+    for (const row of rows) {
+      const decision = getDecisionView(row?.result);
+      risk += Number(decision?.riskScore || 0);
+      confidence += Number(decision?.confidence || 0);
+      if (decision.approved) approved += 1;
+      if (decision.rejected) rejected += 1;
+      if (decision.requiresReview) review += 1;
+    }
+
+    return {
+      count: rows.length,
+      avgRiskScore: Number((risk / rows.length).toFixed(2)),
+      avgConfidence: Number((confidence / rows.length).toFixed(2)),
+      approvalRate: Number((approved / rows.length).toFixed(4)),
+      rejectionRate: Number((rejected / rows.length).toFixed(4)),
+      reviewRate: Number((review / rows.length).toFixed(4))
+    };
+  };
+
+  const recentStats = summarize(recent);
+  const previousStats = summarize(previous);
+
+  return {
+    windows: {
+      recent30d: recentStats,
+      previous30d: previousStats
+    },
+    deltas: {
+      riskScore: Number((recentStats.avgRiskScore - previousStats.avgRiskScore).toFixed(2)),
+      confidence: Number((recentStats.avgConfidence - previousStats.avgConfidence).toFixed(2)),
+      approvalRate: Number((recentStats.approvalRate - previousStats.approvalRate).toFixed(4)),
+      rejectionRate: Number((recentStats.rejectionRate - previousStats.rejectionRate).toFixed(4)),
+      reviewRate: Number((recentStats.reviewRate - previousStats.reviewRate).toFixed(4))
+    }
+  };
+}
+
+function buildReviewerDisagreementMetrics(feedback: VerificationFeedbackRecord[]) {
+  const byJob = new Map<string, VerificationFeedbackRecord[]>();
+  for (const row of feedback) {
+    const key = String(row.jobId || '');
+    if (!key) continue;
+    if (!byJob.has(key)) byJob.set(key, []);
+    byJob.get(key)?.push(row);
+  }
+
+  let multiReviewerJobs = 0;
+  let disagreementJobs = 0;
+  let weightedMixedJobs = 0;
+
+  for (const rows of byJob.values()) {
+    if (rows.length < 2) continue;
+    multiReviewerJobs += 1;
+    const state = getReviewState(feedback, rows[0].companyId, rows[0].jobId);
+    if (state.consensus === 'mixed') disagreementJobs += 1;
+    if (state.weightedConsensus === 'mixed') weightedMixedJobs += 1;
+  }
+
+  return {
+    multiReviewerJobs,
+    disagreementJobs,
+    weightedMixedJobs,
+    disagreementRate: multiReviewerJobs ? Number((disagreementJobs / multiReviewerJobs).toFixed(4)) : 0,
+    weightedMixedRate: multiReviewerJobs ? Number((weightedMixedJobs / multiReviewerJobs).toFixed(4)) : 0
+  };
+}
+
+function buildGlobalBenchmarkSnapshot(jobs: any[], feedback: VerificationFeedbackRecord[]) {
+  const byCountry: Record<string, { total: number; approved: number; review: number; rejected: number; falsePositiveProxy: number; falseNegativeProxy: number }> = {};
+
+  const feedbackByJob = new Map<string, VerificationFeedbackRecord[]>();
+  for (const item of feedback) {
+    const key = String(item.jobId || '');
+    if (!feedbackByJob.has(key)) feedbackByJob.set(key, []);
+    feedbackByJob.get(key)?.push(item);
+  }
+
+  for (const job of jobs) {
+    const decision = getDecisionView(job?.result);
+    const country = normalizeCountry(job?.result?.profile?.country || 'ANY');
+    if (!byCountry[country]) {
+      byCountry[country] = {
+        total: 0,
+        approved: 0,
+        review: 0,
+        rejected: 0,
+        falsePositiveProxy: 0,
+        falseNegativeProxy: 0
+      };
+    }
+
+    const bucket = byCountry[country];
+    bucket.total += 1;
+    if (decision.approved) bucket.approved += 1;
+    if (decision.requiresReview) bucket.review += 1;
+    if (decision.rejected) bucket.rejected += 1;
+
+    const rows = feedbackByJob.get(String(job?.id || '')) || [];
+    for (const row of rows) {
+      if (row.outcome === 'authenticity_confirmed' && !decision.approved) {
+        bucket.falsePositiveProxy += 1;
+      }
+      if (row.outcome === 'fraud_confirmed' && decision.approved) {
+        bucket.falseNegativeProxy += 1;
+      }
+    }
+  }
+
+  return Object.entries(byCountry)
+    .map(([country, stats]) => ({
+      country,
+      total: stats.total,
+      approvalRate: stats.total ? Number((stats.approved / stats.total).toFixed(4)) : 0,
+      reviewRate: stats.total ? Number((stats.review / stats.total).toFixed(4)) : 0,
+      rejectionRate: stats.total ? Number((stats.rejected / stats.total).toFixed(4)) : 0,
+      falsePositiveProxy: stats.falsePositiveProxy,
+      falseNegativeProxy: stats.falseNegativeProxy
+    }))
+    .sort((a, b) => b.total - a.total || a.country.localeCompare(b.country));
+}
+
 function runOpsBackup() {
   const timestamp = new Date().toISOString();
   const payload = {
@@ -1359,9 +1513,20 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       verificationSummary: evidenceReport.summary
     });
 
+    const visualMap = buildVisualMap({
+      fileName: req.file.originalname,
+      serviceReports: {
+        ocr: null,
+        forensics: serviceForensics,
+        vision: serviceVision
+      },
+      evidenceReport
+    });
+
     const result = {
       decision: auditableDecision,
       evidenceReport,
+      visualMap,
       serviceReports: {
         ocr: null,
         forensics: serviceForensics,
@@ -1687,9 +1852,20 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       verificationSummary: caseEvidenceReport.summary
     });
 
+    const caseVisualMap = buildVisualMap({
+      fileName: files[0]?.originalname || 'dossier',
+      serviceReports: {
+        ocr: null,
+        forensics: null,
+        vision: null
+      },
+      evidenceReport: caseEvidenceReport
+    });
+
     const result = {
       decision: caseDecision,
       evidenceReport: caseEvidenceReport,
+      visualMap: caseVisualMap,
       serviceReports: {
         ocr: null,
         forensics: null,
@@ -1972,6 +2148,16 @@ app.delete('/document-profiles/:id', requireCompanyAuth, (req, res) => {
   return res.json({ ok: true, removedId: id });
 });
 
+app.get('/jurisdictions/sources', requireCompanyAuth, async (req, res) => {
+  const country = normalizeCountry(req.query?.country || 'ANY');
+  const sources = await listPublicSources(country === 'ANY' ? '' : country);
+  return res.json({
+    country,
+    total: sources.length,
+    sources
+  });
+});
+
 app.get('/quality/dashboard', requireCompanyAuth, async (req, res) => {
   const auth = (req as any).auth as AuthContext;
   const jobs = (await listCompanyJobsSafe(auth.companyId)).filter((job: any) => String(job?.status || '') === 'done');
@@ -2106,6 +2292,9 @@ app.get('/quality/dashboard', requireCompanyAuth, async (req, res) => {
   const engineMetrics = aggregateEngineMetrics(jobs);
   const checkMetrics = aggregateCheckMetrics(jobs);
   const learningImpact = buildLearningImpactMetrics(jobs, feedback);
+  const driftMetrics = buildDriftMetrics(jobs);
+  const reviewerDisagreement = buildReviewerDisagreementMetrics(feedback);
+  const globalByCountry = buildGlobalBenchmarkSnapshot(jobs, feedback);
 
   return res.json({
     generatedAt: new Date().toISOString(),
@@ -2117,7 +2306,48 @@ app.get('/quality/dashboard', requireCompanyAuth, async (req, res) => {
     qualityByDocumentType,
     engineMetrics,
     checkMetrics,
-    learningImpact
+    learningImpact,
+    driftMetrics,
+    reviewerDisagreement,
+    globalByCountry
+  });
+});
+
+app.get('/quality/drift', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const jobs = (await listCompanyJobsSafe(auth.companyId)).filter((job: any) => String(job?.status || '') === 'done');
+  const feedback = readVerificationFeedback().filter((item) => item.companyId === auth.companyId);
+
+  return res.json({
+    generatedAt: new Date().toISOString(),
+    driftMetrics: buildDriftMetrics(jobs),
+    reviewerDisagreement: buildReviewerDisagreementMetrics(feedback)
+  });
+});
+
+app.get('/benchmark/global', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) {
+    return res.status(403).json({ error: 'admin-access-required' });
+  }
+
+  const jobs = (await listCompanyJobsSafe(auth.companyId)).filter((job: any) => String(job?.status || '') === 'done');
+  const feedback = readVerificationFeedback().filter((item) => item.companyId === auth.companyId);
+  const publicSources = await listPublicSources();
+
+  return res.json({
+    generatedAt: new Date().toISOString(),
+    totals: {
+      jobs: jobs.length,
+      feedback: feedback.length,
+      configuredPublicSources: publicSources.length
+    },
+    byCountry: buildGlobalBenchmarkSnapshot(jobs, feedback),
+    publicSourcesByCountry: publicSources.reduce<Record<string, number>>((acc, item) => {
+      const key = String(item.countryCode || 'ANY').toUpperCase();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {})
   });
 });
 
@@ -2135,7 +2365,25 @@ app.get('/status/:id/evidence', requireCompanyAuth, async (req, res) => {
   return res.json({
     jobId: id,
     decision: getDecisionView(job?.result),
-    evidenceReport
+    evidenceReport,
+    visualMap: job?.result?.visualMap || null
+  });
+});
+
+app.get('/status/:id/visual-map', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = req.params.id;
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'not found' });
+  }
+
+  const visualMap = job?.result?.visualMap;
+  if (!visualMap) return res.status(404).json({ error: 'visual-map-not-found' });
+  return res.json({
+    jobId: id,
+    visualMap
   });
 });
 
@@ -2156,6 +2404,31 @@ app.get('/status/:id/evidence/export.csv', requireCompanyAuth, async (req, res) 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   return res.status(200).send(csv);
+});
+
+app.get('/status/:id/report.pdf', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  const id = req.params.id;
+  const job = await readJobSafe(id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'not found' });
+  }
+
+  if (!job?.result?.decision) {
+    return res.status(404).json({ error: 'report-not-available' });
+  }
+
+  try {
+    const pdf = await generateVerificationReportPdf(id, job);
+    const fileName = `verify-report-${id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.status(200).send(pdf);
+  } catch (error: any) {
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
 });
 
 app.get('/ops/health/deep', requireCompanyAuth, async (req, res) => {

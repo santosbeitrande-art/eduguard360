@@ -1,3 +1,5 @@
+import { computeWeightedDecisionSignals } from './decision_weights';
+
 export interface FraudIndicator {
   code: string;
   severity: 'low' | 'medium' | 'high';
@@ -71,13 +73,19 @@ export function evaluateFraudRisk(forensic: any, contextual: any) {
   const dateConsistency = String(forensic?.checks?.dateConsistency || forensic?.summary?.dateConsistency || 'unknown');
   const corroborationStrength = Math.min(1, (contextualDomains * 0.35) + (contextualEmails * 0.5));
 
-  let riskScore = 100 - score;
-  riskScore += highCount * 20 + mediumCount * 9 + lowCount * 3;
-  if (aiLikelihood === 'likely-ai') riskScore += 10;
-  else if (aiLikelihood === 'possible-ai') riskScore += 4;
-  if (dateConsistency === 'inconsistent') riskScore += 12;
-  else if (dateConsistency === 'unknown') riskScore += 3;
-  riskScore -= Math.round(corroborationStrength * 10);
+  const weightedSignals = computeWeightedDecisionSignals({
+    authenticityScore: score,
+    indicatorInputs: indicators.map((item) => ({
+      code: item.code,
+      severity: item.severity
+    })),
+    aiLikelihood,
+    dateConsistency,
+    contextualDomains,
+    contextualEmails
+  });
+
+  let riskScore = weightedSignals.adjustedRiskScore;
   riskScore = clamp(riskScore);
 
   const likelyFraudBySignals = highCount > 0
@@ -109,6 +117,12 @@ export function evaluateFraudRisk(forensic: any, contextual: any) {
     riskLevel,
     riskScore,
     confidence,
+    scoring: {
+      authenticityScore: weightedSignals.authenticityScore,
+      fraudPressureScore: weightedSignals.fraudPressureScore,
+      uncertaintyScore: weightedSignals.uncertaintyScore,
+      corroborationStrength: Number(corroborationStrength.toFixed(4))
+    },
     indicators,
     reasons
   };

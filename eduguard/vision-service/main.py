@@ -174,5 +174,75 @@ def detect_qr_barcode(payload: VisionRequest):
     image = _load_image(file_path)
     detector = cv2.QRCodeDetector()
     value, points, _ = detector.detectAndDecode(image)
-    barcode_like = bool(points is not None)
-    return {"status": "ok", "codes": {"qrDetected": barcode_like, "qrValue": value or None, "barcodeDetected": False}}
+
+    h, w = image.shape[:2]
+    boxes = []
+    qr_detected = bool(points is not None)
+    if qr_detected and points is not None:
+        pts = points[0] if len(points.shape) == 3 else points
+        xs = [int(p[0]) for p in pts]
+        ys = [int(p[1]) for p in pts]
+        x0 = max(0, min(xs))
+        y0 = max(0, min(ys))
+        x1 = min(w, max(xs))
+        y1 = min(h, max(ys))
+        if x1 > x0 and y1 > y0:
+            boxes.append({"x": x0, "y": y0, "w": int(x1 - x0), "h": int(y1 - y0), "confidence": 0.95, "type": "qr"})
+
+    barcode_detected = False
+    barcode_value = None
+    try:
+        if hasattr(cv2, "barcode_BarcodeDetector"):
+            barcode_detector = cv2.barcode_BarcodeDetector()
+            ok, decoded_info, _decoded_type, detected_points = barcode_detector.detectAndDecode(image)
+            if ok and decoded_info:
+                barcode_detected = True
+                barcode_value = decoded_info[0] if isinstance(decoded_info, (list, tuple)) and decoded_info else None
+                if detected_points is not None and len(detected_points) > 0:
+                    pts = detected_points[0]
+                    xs = [int(p[0]) for p in pts]
+                    ys = [int(p[1]) for p in pts]
+                    x0 = max(0, min(xs))
+                    y0 = max(0, min(ys))
+                    x1 = min(w, max(xs))
+                    y1 = min(h, max(ys))
+                    if x1 > x0 and y1 > y0:
+                        boxes.append({"x": x0, "y": y0, "w": int(x1 - x0), "h": int(y1 - y0), "confidence": 0.9, "type": "barcode"})
+    except Exception:
+        barcode_detected = False
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 70, 170)
+    rows = 8
+    cols = 8
+    cell_h = max(1, h // rows)
+    cell_w = max(1, w // cols)
+    heatmap = []
+    for row in range(rows):
+        row_values = []
+        y0 = row * cell_h
+        y1 = h if row == rows - 1 else min(h, (row + 1) * cell_h)
+        for col in range(cols):
+            x0 = col * cell_w
+            x1 = w if col == cols - 1 else min(w, (col + 1) * cell_w)
+            cell = edges[y0:y1, x0:x1]
+            density = float(np.count_nonzero(cell)) / float(cell.size or 1)
+            row_values.append(round(min(1.0, density * 2.4), 4))
+        heatmap.append(row_values)
+
+    return {
+        "status": "ok",
+        "codes": {
+            "qrDetected": qr_detected,
+            "qrValue": value or None,
+            "barcodeDetected": barcode_detected,
+            "barcodeValue": barcode_value,
+            "boxes": boxes,
+            "image": {"width": int(w), "height": int(h)},
+            "heatmap": {
+                "gridRows": rows,
+                "gridCols": cols,
+                "values": heatmap
+            }
+        }
+    }

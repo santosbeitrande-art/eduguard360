@@ -12,14 +12,26 @@ export interface ServiceResponseEnvelope {
   endpoint: string | null;
   ok: boolean;
   status: string;
+  contractVersion: string;
+  durationMs: number;
   payload?: any;
   error?: string;
 }
 
 async function callService(baseUrl: string | undefined, route: string, payload: Record<string, unknown>, service: string): Promise<ServiceResponseEnvelope> {
+  const startedAt = Date.now();
   const endpoint = String(baseUrl || '').trim().replace(/\/+$/, '');
   if (!endpoint) {
-    return { available: false, service, endpoint: null, ok: false, status: 'disabled', error: 'missing-service-url' };
+    return {
+      available: false,
+      service,
+      endpoint: null,
+      ok: false,
+      status: 'disabled',
+      contractVersion: 'service-contract-2026.08-v1',
+      durationMs: Date.now() - startedAt,
+      error: 'missing-service-url'
+    };
   }
 
   try {
@@ -41,6 +53,8 @@ async function callService(baseUrl: string | undefined, route: string, payload: 
       endpoint: `${endpoint}${route}`,
       ok: response.ok,
       status: response.ok ? 'ok' : `http-${response.status}`,
+      contractVersion: 'service-contract-2026.08-v1',
+      durationMs: Date.now() - startedAt,
       payload: parsed,
       error: response.ok ? undefined : String(parsed?.error || rawText || `http-${response.status}`)
     };
@@ -51,6 +65,8 @@ async function callService(baseUrl: string | undefined, route: string, payload: 
       endpoint: `${endpoint}${route}`,
       ok: false,
       status: 'error',
+      contractVersion: 'service-contract-2026.08-v1',
+      durationMs: Date.now() - startedAt,
       error: String(error?.message || error)
     };
   }
