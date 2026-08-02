@@ -1209,26 +1209,40 @@ function buildRecoveryEmailBody(token: string, expiresInMinutes: number) {
   ].join('\n');
 }
 
-async function sendPasswordRecoveryEmail(email: string, token: string, expiresInMinutes: number) {
+function getSmtpRuntimeStatus() {
   const host = String(process.env.SMTP_HOST || '').trim();
   const port = Number(process.env.SMTP_PORT || 587);
   const user = String(process.env.SMTP_USER || '').trim();
   const pass = String(process.env.SMTP_PASS || '').trim();
   const from = String(process.env.SMTP_FROM || '').trim() || user;
 
-  if (!host || !from) {
+  return {
+    configured: Boolean(host && from),
+    host,
+    port,
+    secure: port === 465,
+    user,
+    pass,
+    from
+  };
+}
+
+async function sendPasswordRecoveryEmail(email: string, token: string, expiresInMinutes: number) {
+  const smtp = getSmtpRuntimeStatus();
+
+  if (!smtp.configured) {
     return { delivered: false as const, reason: 'smtp-not-configured' as const };
   }
 
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: user && pass ? { user, pass } : undefined
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: smtp.user && smtp.pass ? { user: smtp.user, pass: smtp.pass } : undefined
   });
 
   await transporter.sendMail({
-    from,
+    from: smtp.from,
     to: email,
     subject: 'EduGuard Verify AI - Recuperacao de palavra-passe',
     text: buildRecoveryEmailBody(token, expiresInMinutes)
@@ -2902,6 +2916,49 @@ export function registerAuthRoutes(app: any) {
     saveStore(store);
 
     return res.json({ ok: true, dryRun: false, staleApiKeyDays, revokeStaleApiKeys, stats });
+  });
+
+  app.get('/admin/security/smtp/status', requireAdminToken, (_req: Request, res: Response) => {
+    const smtp = getSmtpRuntimeStatus();
+    return res.json({
+      ok: true,
+      smtp: {
+        configured: smtp.configured,
+        hostSet: Boolean(smtp.host),
+        fromSet: Boolean(smtp.from),
+        userSet: Boolean(smtp.user),
+        passSet: Boolean(smtp.pass),
+        port: smtp.port,
+        secure: smtp.secure
+      }
+    });
+  });
+
+  app.post('/admin/security/smtp/verify', requireAdminToken, async (_req: Request, res: Response) => {
+    const smtp = getSmtpRuntimeStatus();
+    if (!smtp.configured) {
+      return res.status(400).json({ error: 'smtp-not-configured' });
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: smtp.user && smtp.pass ? { user: smtp.user, pass: smtp.pass } : undefined,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
+
+      await transporter.verify();
+      return res.json({ ok: true, message: 'smtp-verified' });
+    } catch (error: any) {
+      return res.status(502).json({
+        error: 'smtp-verification-failed',
+        detail: String(error?.message || error)
+      });
+    }
   });
 
   app.get('/admin/audit', requireAdminToken, (_req: Request, res: Response) => {

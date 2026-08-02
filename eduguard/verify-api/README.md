@@ -58,6 +58,8 @@ New architecture assets:
 - POST /auth/mfa/verify -> complete MFA challenge on JWT login
 - PATCH /admin/users/:id/password -> admin-assisted password reset and forced session revocation
 - POST /admin/security/housekeeping -> cleanup expired refresh/MFA and stale API keys
+- GET /admin/security/smtp/status -> runtime SMTP configuration health (without exposing secrets)
+- POST /admin/security/smtp/verify -> active SMTP connectivity/authentication test
 - GET /admin/audit -> immutable-style audit timeline
 
 Authentication:
