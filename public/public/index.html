@@ -803,6 +803,71 @@
         });
       }
 
+      async function downloadJobArtifact(jobId, artifact) {
+        if (!jobId || offlineMode) return;
+
+        const routes = {
+          report: {
+            path: `/status/${jobId}/report.pdf`,
+            fileName: `verify-report-${jobId}.pdf`,
+            contentType: "application/pdf"
+          },
+          evidenceCsv: {
+            path: `/status/${jobId}/evidence/export.csv`,
+            fileName: `evidence-report-${jobId}.csv`,
+            contentType: "text/csv"
+          },
+          visualMap: {
+            path: `/status/${jobId}/visual-map`,
+            fileName: `visual-map-${jobId}.json`,
+            contentType: "application/json"
+          }
+        };
+
+        const target = routes[artifact];
+        if (!target) return;
+
+        try {
+          const res = await api(target.path, { method: "GET" });
+          if (!res.ok) {
+            const data = await safeJson(res);
+            setResult((lang === "pt" ? "Falha ao exportar artefacto: " : "Failed to export artifact: ") + (data?.error || res.status));
+            return;
+          }
+
+          let blob;
+          if (artifact === "visualMap") {
+            const data = await safeJson(res);
+            blob = new Blob([JSON.stringify(data, null, 2)], { type: target.contentType });
+          } else {
+            blob = await res.blob();
+          }
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = target.fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+        } catch {
+          setResult(lang === "pt" ? "Erro ao descarregar artefacto." : "Error downloading artifact.");
+        }
+      }
+
+      function bindReportActions(jobId) {
+        if (!jobId || offlineMode) return;
+        const buttons = document.querySelectorAll("button[data-job-artifact]");
+        buttons.forEach((button) => {
+          button.addEventListener("click", async () => {
+            const artifact = button.getAttribute("data-job-artifact");
+            if (!artifact) return;
+            await downloadJobArtifact(jobId, artifact);
+          });
+        });
+      }
+
       function renderTrust(result, jobId) {
         const score = result?.trust?.authenticityPercentage ?? result?.summary?.authenticityScore ?? 0;
         const likelyFraud = !!result?.trust?.likelyFraud;
@@ -933,6 +998,19 @@
           `
           : "";
 
+        const exportPanel = (!offlineMode && jobId)
+          ? `
+            <div class="report-block">
+              <strong>${lang === "pt" ? "Exportar relatorios do caso" : "Export case reports"}</strong>
+              <div class="row" style="margin-top:8px;">
+                <button type="button" class="ghost" data-job-artifact="report">${lang === "pt" ? "Baixar PDF inteligente" : "Download intelligent PDF"}</button>
+                <button type="button" class="ghost" data-job-artifact="evidenceCsv">${lang === "pt" ? "Baixar evidencias CSV" : "Download evidence CSV"}</button>
+                <button type="button" class="ghost" data-job-artifact="visualMap">${lang === "pt" ? "Baixar mapa visual JSON" : "Download visual map JSON"}</button>
+              </div>
+            </div>
+          `
+          : "";
+
         return `
           <div class="report-block">
             <div class="decision-banner ${decisionTone}">
@@ -1009,6 +1087,7 @@
             </div>
             ${evidenceArchitectureHtml}
             ${technicalAuditHtml ? `<details class="report-block"><summary><strong>${lang === "pt" ? "Dossier auditavel do caso" : "Auditable case dossier"}</strong></summary>${technicalAuditHtml}</details>` : ""}
+            ${exportPanel}
             ${feedbackPanel}
           </div>
         `;
@@ -1155,6 +1234,7 @@
           const report = renderTrust(data.result || {}, lastVerificationJobId);
           setResult(`<strong>${lang === "pt" ? "Consulta concluida" : "Verification completed"}</strong><br>${report}`);
           bindFeedbackActions(lastVerificationJobId);
+          bindReportActions(lastVerificationJobId);
           await loadSubscriptionStatus();
         } catch {
           setResult(lang === "pt" ? "Falha de ligacao ao servidor." : "Server connection failed.");
