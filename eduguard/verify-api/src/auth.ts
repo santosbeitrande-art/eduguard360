@@ -1816,17 +1816,27 @@ export function registerAuthRoutes(app: any) {
 
     const store = ensureStore();
     const credential = store.credentials.find((c) => c.username.toLowerCase() === email && c.isActive);
+    const expiresInMinutes = Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000);
+    const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+    const allowTokenEcho = String(process.env.PASSWORD_RESET_RETURN_TOKEN || '').toLowerCase() === 'true';
+    const smtp = getSmtpRuntimeStatus();
+
+    // Fallback for environments without SMTP: allow manual token flow.
+    const allowManualTokenFallback = !smtp.configured;
+    const fakeToken = `egv_reset_${crypto.randomBytes(24).toString('hex')}`;
 
     // Always generic to avoid account enumeration.
     if (!credential) {
       return res.json({
         ok: true,
-        message: 'If the account exists, a recovery token will be issued.'
+        message: 'If the account exists, a recovery token will be issued.',
+        recoveryToken: (allowTokenEcho || allowManualTokenFallback || !isProduction) ? fakeToken : undefined,
+        expiresInMinutes,
+        delivery: smtp.configured ? 'sent' : 'not-configured'
       });
     }
 
     const resetToken = issuePasswordResetToken(store, credential);
-    const expiresInMinutes = Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000);
     let delivery: 'sent' | 'not-configured' | 'failed' = 'not-configured';
 
     try {
@@ -1846,13 +1856,10 @@ export function registerAuthRoutes(app: any) {
     });
     saveStore(store);
 
-    const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
-    const allowTokenEcho = String(process.env.PASSWORD_RESET_RETURN_TOKEN || '').toLowerCase() === 'true';
-
     return res.json({
       ok: true,
       message: 'If the account exists, a recovery token will be issued.',
-      recoveryToken: (!isProduction || allowTokenEcho) ? resetToken : undefined,
+      recoveryToken: (!isProduction || allowTokenEcho || allowManualTokenFallback) ? resetToken : undefined,
       expiresInMinutes,
       delivery
     });
