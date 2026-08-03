@@ -109,6 +109,28 @@
         font-size: .9rem;
       }
       .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
+      .feature-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 10px;
+      }
+      .feature-card {
+        border: 1px solid rgba(125,211,252,.18);
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(2, 32, 56, .42);
+      }
+      .feature-card strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #d8f3ff;
+      }
+      .feature-card p {
+        margin: 0;
+        color: #c7d9e8;
+        font-size: .9rem;
+        line-height: 1.45;
+      }
       @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .plans { grid-template-columns: 1fr; } }
       @media (max-width: 900px) { .training-grid { grid-template-columns: 1fr; } }
     </style>
@@ -128,6 +150,28 @@
         <p id="subtitleMain">Crie uma conta com email e password. Receba 10 consultas grátis e ative um plano pago para continuar após a 11.ª consulta.</p>
         <div class="status" id="accountStatus">Sem sessão ativa.</div>
       </div>
+
+      <section class="panel panel-gap-bottom">
+        <h2 id="liveFeaturesTitle">Capacidades já entregues</h2>
+        <div class="feature-summary">
+          <div class="feature-card">
+            <strong>Admin e treino interno</strong>
+            <p>O painel administrativo agora expõe treino de fraude e autenticidade, histórico de exemplos e exportação CSV.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Segurança reforçada</strong>
+            <p>O acesso usa sessão, revisão de palavras-passe e proteção para impedir exposição indevida de contas ou estados.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Calibração probabilística</strong>
+            <p>Os resultados passam a refletir modelos calibrados com feedback e segmentação por tipo de documento e país.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Benchmark e qualidade</strong>
+            <p>As métricas internas mostram consistência, falhas e impacto do treino para acompanhar a evolução da plataforma.</p>
+          </div>
+        </div>
+      </section>
 
       <section class="grid">
         <article class="panel">
