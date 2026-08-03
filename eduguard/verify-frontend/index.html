@@ -128,6 +128,28 @@
         padding: 8px;
         background: rgba(255,255,255,.06);
       }
+      .feature-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 10px;
+      }
+      .feature-card {
+        border: 1px solid rgba(125,211,252,.18);
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(2, 32, 56, .42);
+      }
+      .feature-card strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #d8f3ff;
+      }
+      .feature-card p {
+        margin: 0;
+        color: #c7d9e8;
+        font-size: .9rem;
+        line-height: 1.45;
+      }
       .model-chip-label { font-size: .78rem; opacity: .85; }
       .model-chip-value { font-weight: 700; margin-top: 2px; }
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -157,6 +179,28 @@
         <h1 id="titleMain">EduGuard Verify AI</h1>
         <p id="subtitleMain">Portal de consultas com autenticação por email/password, fidelidade analítica e controlo de subscrição.</p>
         <div id="quotaStatus" class="status">A carregar estado da subscrição...</div>
+      </section>
+
+      <section class="panel">
+        <h2 id="liveFeaturesTitle">Avanços já ativos no portal</h2>
+        <div class="feature-summary" id="liveFeaturesSummary">
+          <div class="feature-card">
+            <strong>Decisão probabilística</strong>
+            <p>O modelo agora calibra confiança, risco e autenticidade com base em exemplos de treino e feedback.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Relatório de evidências</strong>
+            <p>As consultas mostram motivos, evidências críticas, próxima ação e resumo executivo no próprio resultado.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Treino interno</strong>
+            <p>O admin interno pode carregar exemplos de fraude e autenticidade para calibrar o comportamento do sistema.</p>
+          </div>
+          <div class="feature-card">
+            <strong>Benchmark e qualidade</strong>
+            <p>Os motores de avaliação passam a mostrar métricas, falhas e consistência para acompanhar a qualidade real.</p>
+          </div>
+        </div>
       </section>
 
       <section class="panel">
