@@ -130,25 +130,68 @@
       }
       .feature-summary {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 10px;
       }
       .feature-card {
+        position: relative;
+        overflow: hidden;
         border: 1px solid rgba(125,211,252,.18);
-        border-radius: 12px;
-        padding: 12px;
-        background: rgba(2, 32, 56, .42);
+        border-radius: 14px;
+        padding: 14px 14px 12px;
+        background: linear-gradient(180deg, rgba(3, 41, 68, .82), rgba(2, 32, 56, .55));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, .16);
+      }
+      .feature-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #22c7a8, #22a8e0);
+      }
+      .feature-card .feature-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.08);
+        color: #b8e8ff;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
       }
       .feature-card strong {
         display: block;
-        margin-bottom: 4px;
-        color: #d8f3ff;
+        margin-bottom: 6px;
+        color: #f0fbff;
+        font-size: 1rem;
       }
       .feature-card p {
         margin: 0;
-        color: #c7d9e8;
-        font-size: .9rem;
-        line-height: 1.45;
+        color: #c9d8e6;
+        font-size: .92rem;
+        line-height: 1.5;
+      }
+      .feature-meta {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .feature-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.06);
+        border: 1px solid rgba(255,255,255,.12);
+        color: #cdefff;
+        font-size: .74rem;
+        font-weight: 700;
       }
       .model-chip-label { font-size: .78rem; opacity: .85; }
       .model-chip-value { font-weight: 700; margin-top: 2px; }
@@ -165,13 +208,13 @@
     <main class="wrap">
       <div class="top">
         <div class="row lang">
-          <button id="langPt" class="active">PT</button>
-          <button id="langEn">EN</button>
+          <button type="button" id="langPt" class="active">PT</button>
+          <button type="button" id="langEn">EN</button>
           <a class="ghost" href="/">Home</a>
           <a class="ghost" href="/public/login" id="toLogin">Conta e Pagamento</a>
         </div>
         <div class="row">
-          <button class="ghost" id="btnLogout">Sair</button>
+          <button type="button" class="ghost" id="btnLogout">Sair</button>
         </div>
       </div>
 
@@ -183,22 +226,43 @@
 
       <section class="panel">
         <h2 id="liveFeaturesTitle">Avanços já ativos no portal</h2>
+        <p class="muted" id="liveFeaturesHint">Resumo executivo do estado atual do produto e dos módulos já reflectidos em produção.</p>
         <div class="feature-summary" id="liveFeaturesSummary">
           <div class="feature-card">
+            <div class="feature-kicker">Modelo</div>
             <strong>Decisão probabilística</strong>
             <p>O modelo agora calibra confiança, risco e autenticidade com base em exemplos de treino e feedback.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Calibrado</span>
+              <span class="feature-pill">Feedback ativo</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Decisão</div>
             <strong>Relatório de evidências</strong>
             <p>As consultas mostram motivos, evidências críticas, próxima ação e resumo executivo no próprio resultado.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Auditoria</span>
+              <span class="feature-pill">Exportável</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Admin</div>
             <strong>Treino interno</strong>
             <p>O admin interno pode carregar exemplos de fraude e autenticidade para calibrar o comportamento do sistema.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Privado</span>
+              <span class="feature-pill">Controlado</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Qualidade</div>
             <strong>Benchmark e qualidade</strong>
             <p>Os motores de avaliação passam a mostrar métricas, falhas e consistência para acompanhar a qualidade real.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Métricas</span>
+              <span class="feature-pill">CI95</span>
+            </div>
           </div>
         </div>
       </section>

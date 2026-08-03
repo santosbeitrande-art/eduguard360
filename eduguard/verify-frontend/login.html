@@ -111,25 +111,68 @@
       .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
       .feature-summary {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 10px;
       }
       .feature-card {
+        position: relative;
+        overflow: hidden;
         border: 1px solid rgba(125,211,252,.18);
-        border-radius: 12px;
-        padding: 12px;
-        background: rgba(2, 32, 56, .42);
+        border-radius: 14px;
+        padding: 14px 14px 12px;
+        background: linear-gradient(180deg, rgba(3, 41, 68, .82), rgba(2, 32, 56, .55));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, .16);
+      }
+      .feature-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #22c7a8, #22a8e0);
+      }
+      .feature-card .feature-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.08);
+        color: #b8e8ff;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
       }
       .feature-card strong {
         display: block;
-        margin-bottom: 4px;
-        color: #d8f3ff;
+        margin-bottom: 6px;
+        color: #f0fbff;
+        font-size: 1rem;
       }
       .feature-card p {
         margin: 0;
-        color: #c7d9e8;
-        font-size: .9rem;
-        line-height: 1.45;
+        color: #c9d8e6;
+        font-size: .92rem;
+        line-height: 1.5;
+      }
+      .feature-meta {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .feature-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.06);
+        border: 1px solid rgba(255,255,255,.12);
+        color: #cdefff;
+        font-size: .74rem;
+        font-weight: 700;
       }
       @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .plans { grid-template-columns: 1fr; } }
       @media (max-width: 900px) { .training-grid { grid-template-columns: 1fr; } }
@@ -153,22 +196,43 @@
 
       <section class="panel panel-gap-bottom">
         <h2 id="liveFeaturesTitle">Capacidades já entregues</h2>
+        <p class="muted" id="liveFeaturesHint">Resumo dos módulos já reflectidos na plataforma para reduzir a aparência de bloco “solto”.</p>
         <div class="feature-summary">
           <div class="feature-card">
+            <div class="feature-kicker">Admin</div>
             <strong>Admin e treino interno</strong>
             <p>O painel administrativo agora expõe treino de fraude e autenticidade, histórico de exemplos e exportação CSV.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Privado</span>
+              <span class="feature-pill">Auditável</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Segurança</div>
             <strong>Segurança reforçada</strong>
             <p>O acesso usa sessão, revisão de palavras-passe e proteção para impedir exposição indevida de contas ou estados.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Sessão</span>
+              <span class="feature-pill">Recuperação</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Calibração</div>
             <strong>Calibração probabilística</strong>
             <p>Os resultados passam a refletir modelos calibrados com feedback e segmentação por tipo de documento e país.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Segmentado</span>
+              <span class="feature-pill">Probabilístico</span>
+            </div>
           </div>
           <div class="feature-card">
+            <div class="feature-kicker">Benchmark</div>
             <strong>Benchmark e qualidade</strong>
             <p>As métricas internas mostram consistência, falhas e impacto do treino para acompanhar a evolução da plataforma.</p>
+            <div class="feature-meta">
+              <span class="feature-pill">Métricas</span>
+              <span class="feature-pill">CI95</span>
+            </div>
           </div>
         </div>
       </section>
