@@ -1821,16 +1821,14 @@ export function registerAuthRoutes(app: any) {
     const allowTokenEcho = String(process.env.PASSWORD_RESET_RETURN_TOKEN || '').toLowerCase() === 'true';
     const smtp = getSmtpRuntimeStatus();
 
-    // Fallback for environments without SMTP: allow manual token flow.
-    const allowManualTokenFallback = !smtp.configured;
-    const fakeToken = `egv_reset_${crypto.randomBytes(24).toString('hex')}`;
+    // Hardened default: manual token fallback must be explicitly enabled.
+    const allowManualTokenFallback = String(process.env.PASSWORD_RESET_ALLOW_MANUAL_FALLBACK || '').toLowerCase() === 'true';
 
     // Always generic to avoid account enumeration.
     if (!credential) {
       return res.json({
         ok: true,
         message: 'If the account exists, a recovery token will be issued.',
-        recoveryToken: (allowTokenEcho || allowManualTokenFallback || !isProduction) ? fakeToken : undefined,
         expiresInMinutes,
         delivery: smtp.configured ? 'sent' : 'not-configured'
       });
@@ -1859,7 +1857,7 @@ export function registerAuthRoutes(app: any) {
     return res.json({
       ok: true,
       message: 'If the account exists, a recovery token will be issued.',
-      recoveryToken: (!isProduction || allowTokenEcho || allowManualTokenFallback) ? resetToken : undefined,
+      recoveryToken: (!isProduction || allowTokenEcho || (allowManualTokenFallback && !smtp.configured)) ? resetToken : undefined,
       expiresInMinutes,
       delivery
     });
