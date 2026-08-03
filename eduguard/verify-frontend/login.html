@@ -224,10 +224,10 @@
 
       <section id="adminPanel" class="panel hidden panel-gap">
         <div class="row space-between">
-          <h2 id="adminPanelTitle">Painel administrativo (apenas admin)</h2>
+          <h2 id="adminPanelTitle">Painel administrativo (somente admin)</h2>
           <button class="ghost" type="button" id="btnAdminRefresh">Atualizar</button>
         </div>
-        <p class="muted" id="adminPanelHint">Visível apenas depois do login com credenciais de admin.</p>
+        <p class="muted" id="adminPanelHint">Visivel apenas depois de login com credenciais do admin.</p>
 
         <h3 id="usersTitle" class="section-title-tight">Utilizadores</h3>
         <div class="table-wrap">
@@ -389,23 +389,23 @@
           btnSignup: "Criar conta",
           btnCheckout: "Pagar e renovar subscrição",
           btnPortal: "Abrir portal de consulta",
-          adminPanelTitle: "Painel administrativo (apenas admin)",
-          adminPanelHint: "Visível apenas depois do login com credenciais de admin.",
+          adminPanelTitle: "Painel administrativo (somente admin)",
+          adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
           usersTitle: "Utilizadores",
           paymentsTitle: "Pagamentos",
           trainingTitle: "Treino de fraude e autenticidade",
-          trainingHint: "Apenas o admin interno pode carregar documentos de referência para calibração.",
+          trainingHint: "Somente o admin interno pode carregar documentos de referencia para calibracao.",
           fraudUploadTitle: "Exemplos de fraude alta",
           fraudFileLabel: "Documento suspeito/falso",
           fraudReasonsLabel: "Motivos de alto risco (uma linha por motivo)",
           fraudNotesLabel: "Notas adicionais (opcional)",
           btnUploadFraudExample: "Guardar exemplo de fraude",
           authUploadTitle: "Exemplos de alta autenticidade",
-          authFileLabel: "Documento autêntico de referência",
+          authFileLabel: "Documento autentico de referencia",
           authReasonsLabel: "Motivos de baixa suspeita (uma linha por motivo)",
           authNotesLabel: "Notas adicionais (opcional)",
-          btnUploadAuthExample: "Guardar exemplo autêntico",
-          trainingListTitle: "Histórico de exemplos carregados",
+          btnUploadAuthExample: "Guardar exemplo autentico",
+          trainingListTitle: "Historico de exemplos carregados",
           btnTrainingFilter: "Aplicar filtro",
           btnTrainingExportCsv: "Exportar CSV",
           trainingSearchInput: "Pesquisar por documento, motivo ou nota"
@@ -548,7 +548,7 @@
         const session = getLocalSession();
         const email = normalizeEmail(session?.email || "");
         return {
-          isAdmin: offlineMode && email === INTERNAL_ADMIN_EMAIL && localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1",
+          isAdmin: offlineMode && email === INTERNAL_ADMIN_EMAIL,
           email
         };
       }
@@ -681,14 +681,14 @@
               const id = btn.getAttribute("data-training-delete");
               if (!id) return;
               const confirmed = window.confirm(lang === "pt"
-                ? "Deseja remover este exemplo do histórico?"
+                ? "Deseja remover este exemplo do historico?"
                 : "Do you want to remove this example from history?");
               if (!confirmed) return;
               await removeTrainingExample(id);
             });
           });
         } catch {
-          trainingStats.textContent = lang === "pt" ? "Erro de ligação ao histórico de treino." : "Training history connection error.";
+          trainingStats.textContent = lang === "pt" ? "Erro de ligacao ao historico de treino." : "Training history connection error.";
         }
       }
 
@@ -714,7 +714,7 @@
           setMessage(lang === "pt" ? "Exemplo removido com sucesso." : "Example removed successfully.");
           await loadTrainingExamples();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligação ao remover o exemplo." : "Connection error while removing example.");
+          setMessage(lang === "pt" ? "Erro de ligacao ao remover exemplo." : "Connection error while removing example.");
         }
       }
 
@@ -767,7 +767,7 @@
           URL.revokeObjectURL(url);
           setMessage(lang === "pt" ? "CSV exportado com sucesso." : "CSV exported successfully.");
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligação na exportação de CSV." : "CSV export connection error.");
+          setMessage(lang === "pt" ? "Erro de ligacao na exportacao CSV." : "CSV export connection error.");
         }
       }
 
@@ -900,7 +900,7 @@
             : `Training sample saved. Calculated score: ${score}% | Risk: ${risk}.`));
           await loadTrainingExamples();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligação ao guardar o exemplo." : "Connection error while saving sample.");
+          setMessage(lang === "pt" ? "Erro de ligacao ao guardar exemplo." : "Connection error while saving sample.");
         }
       }
 
@@ -1138,7 +1138,7 @@
           `).join("");
         } catch {
           plansEl.textContent = lang === "pt"
-            ? "Não foi possível carregar os planos. Verifique a ligação com a API de verificação."
+            ? "Nao foi possivel carregar planos. Verifique ligacao com API de verificacao."
             : "Unable to load plans. Check connectivity with verification API.";
         }
       }
@@ -1146,7 +1146,7 @@
       async function loadSubscriptionStatus() {
         const token = getToken();
         if (!token) {
-          accountStatus.textContent = lang === "pt" ? "Sem sessão ativa." : "No active session.";
+          accountStatus.textContent = lang === "pt" ? "Sem sessao ativa." : "No active session.";
           return;
         }
 
@@ -1154,12 +1154,12 @@
           const res = await api("/company/subscription/status");
           const data = await safeJson(res);
           if (!res.ok) {
-            accountStatus.textContent = lang === "pt" ? "Sessão expirada. Entre novamente." : "Session expired. Please sign in again.";
+            accountStatus.textContent = lang === "pt" ? "Sessao expirada. Entre novamente." : "Session expired. Please sign in again.";
             return;
           }
 
           const c = data.company;
-          accountStatus.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Válido até" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
+          accountStatus.textContent = `${c.name} | ${lang === "pt" ? "Consultas restantes" : "Remaining checks"}: ${c.remainingQueries} | ${lang === "pt" ? "Valido ate" : "Valid until"}: ${new Date(c.validUntil).toLocaleDateString()}`;
         } catch {
           accountStatus.textContent = lang === "pt" ? "Falha ao consultar estado da conta." : "Failed to fetch account status.";
         }
@@ -1184,7 +1184,43 @@
           }
           await loadAdminOverview();
         } catch {
-          setMessage(lang === "pt" ? "Erro de ligação no painel de admin." : "Admin panel connection error.");
+          setMessage(lang === "pt" ? "Erro de ligacao no painel admin." : "Admin panel connection error.");
+        }
+      }
+
+      async function adminResetUserPassword(userId, username) {
+        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+        if (!adminToken) return;
+
+        const temporaryPassword = window.prompt(
+          lang === "pt"
+            ? `Defina uma password temporaria para ${username} (min 8 caracteres):`
+            : `Set a temporary password for ${username} (min 8 characters):`
+        );
+
+        if (temporaryPassword === null) return;
+        if (String(temporaryPassword).trim().length < 8) {
+          setMessage(lang === "pt" ? "Password temporaria invalida (min 8)." : "Invalid temporary password (min 8).");
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/password`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-admin-token": adminToken
+            },
+            body: JSON.stringify({ newPassword: temporaryPassword })
+          });
+          const data = await safeJson(res);
+          if (!res.ok) {
+            setMessage((lang === "pt" ? "Falha ao redefinir password: " : "Failed to reset password: ") + (data?.error || "unknown"));
+            return;
+          }
+          setMessage(lang === "pt" ? "Password redefinida com sucesso." : "Password reset successfully.");
+        } catch {
+          setMessage(lang === "pt" ? "Erro de ligacao ao redefinir password." : "Connection error while resetting password.");
         }
       }
 
@@ -1298,7 +1334,7 @@
           if (!res.ok) {
             if (data?.error === "email-already-registered") {
               setMessage(lang === "pt"
-                ? "Este email ja existe. Entre no painel com as mesmas credenciais."
+                ? "Este email já existe. Entre no painel com as mesmas credenciais."
                 : "This email is already registered. Sign in with existing credentials.");
               document.getElementById("loginEmail").value = payload.email;
               document.getElementById("loginPassword").focus();
@@ -1324,7 +1360,7 @@
         event.preventDefault();
         const email = String(recoveryEmail?.value || document.getElementById("loginEmail").value || "").trim();
         if (!email) {
-          setMessage(lang === "pt" ? "Indique o email da conta." : "Enter the account email.");
+          setMessage(lang === "pt" ? "Informe o email da conta." : "Enter the account email.");
           return;
         }
 
@@ -1425,42 +1461,6 @@
       }
 
       async function loadAdminOverview() {
-
-      async function adminResetUserPassword(userId, username) {
-        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
-        if (!adminToken) return;
-
-        const temporaryPassword = window.prompt(
-          lang === "pt"
-            ? `Defina uma password temporária para ${username} (mín. 8 caracteres):`
-            : `Set a temporary password for ${username} (min 8 characters):`
-        );
-
-        if (temporaryPassword === null) return;
-        if (String(temporaryPassword).trim().length < 8) {
-          setMessage(lang === "pt" ? "Password temporária inválida (mín. 8)." : "Invalid temporary password (min 8).");
-          return;
-        }
-
-        try {
-          const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/password`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              "x-admin-token": adminToken
-            },
-            body: JSON.stringify({ newPassword: temporaryPassword })
-          });
-          const data = await safeJson(res);
-          if (!res.ok) {
-            setMessage((lang === "pt" ? "Falha ao redefinir password: " : "Failed to reset password: ") + (data?.error || "unknown"));
-            return;
-          }
-          setMessage(lang === "pt" ? "Password redefinida com sucesso." : "Password reset successfully.");
-        } catch {
-          setMessage(lang === "pt" ? "Erro de ligação ao redefinir password." : "Connection error while resetting password.");
-        }
-      }
         const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
         if (!adminToken) return;
 
@@ -1533,14 +1533,14 @@
             ? `Painel admin ativo. Utilizadores: ${usersCount}. Pagamentos: ${paymentsCount}.`
             : `Admin panel active. Users: ${usersCount}. Payments: ${paymentsCount}.`));
         } catch {
-          setMessage(lang === "pt" ? "Admin autenticado, mas não foi possível carregar o painel." : "Admin authenticated, but panel loading failed.");
+          setMessage(lang === "pt" ? "Admin ligado, mas nao foi possivel carregar painel." : "Admin authenticated, but panel loading failed.");
         }
       }
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
         if (offlineMode) {
           setMessage(lang === "pt"
-            ? "Pagamento indisponivel sem API externa. Restabeleca a ligacao com o backend."
+            ? "Pagamento indisponível sem API externa. Restabeleça a ligação com o backend."
             : "Payment unavailable without external API. Restore backend connectivity.");
           return;
         }
@@ -1554,7 +1554,7 @@
         if (isMobileProvider) {
           const phone = String(mobilePayPhone.value || "").replace(/\s+/g, "").trim();
           if (!phone || phone.length < 9) {
-            setMessage(lang === "pt" ? "Indique um número de telefone válido para pagamento móvel." : "Enter a valid phone number for mobile payment.");
+            setMessage(lang === "pt" ? "Informe um número de telefone válido para pagamento móvel." : "Enter a valid phone number for mobile payment.");
             return;
           }
           if (!awaitingMobilePin) {
