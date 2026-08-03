@@ -16,8 +16,8 @@ As paginas acima sao estaticas e comunicam com uma API externa via:
 - `https://api.eduguard360.co.mz`
 
 Se a API estiver em outro host, ajuste o valor em:
-- [public/public/index.html](public/public/index.html)
-- [public/public/login.html](public/public/login.html)
+- [eduguard/verify-frontend/index.html](eduguard/verify-frontend/index.html)
+- [eduguard/verify-frontend/login.html](eduguard/verify-frontend/login.html)
 
 ### Passos
 1. Fazer push para o repositorio ligado a Vercel.

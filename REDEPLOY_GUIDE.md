@@ -192,6 +192,14 @@ npm run dev
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+      {
+         "source": "/public",
+         "destination": "/public/index.html?v=2026-08-03-portal"
+      },
+      {
+         "source": "/public/login",
+         "destination": "/public/login.html?v=2026-08-03-portal"
+      },
     {
       "source": "/(.*)",
       "destination": "/index.html"
@@ -204,7 +212,15 @@ npm run dev
 - `framework: "vite"` - Usa Vite para build
 - `buildCommand` - Comando de build automático
 - `outputDirectory` - Pasta onde fica o site final
-- `rewrites` - **IMPORTANTE**: Faz redireção de todas as rotas para `/index.html` (necessário para SPA React Router)
+- `rewrites` - **IMPORTANTE**: Mantém ` /public` e ` /public/login` alinhados com o build e deixa o resto para a SPA React Router
+
+### Fonte canónica do frontend público
+
+As páginas públicas são mantidas em:
+- [eduguard/verify-frontend/index.html](eduguard/verify-frontend/index.html)
+- [eduguard/verify-frontend/login.html](eduguard/verify-frontend/login.html)
+
+O build copia essas páginas para `dist/public/` via `scripts/copy-public-pages.mjs`.
 
 ---
 
