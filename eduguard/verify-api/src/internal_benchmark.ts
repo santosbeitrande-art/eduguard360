@@ -14,6 +14,8 @@ type FixtureCase = {
   id: string;
   label: 'genuine' | 'fraud';
   documentType: string;
+  country?: string;
+  language?: string;
   mtime: string;
   text: string;
   expect?: {
@@ -27,9 +29,17 @@ type BenchmarkRecord = {
   id: string;
   label: 'genuine' | 'fraud';
   documentType: string;
+  country: string;
+  language: string;
   predictedFraud: boolean;
   decisionStatus: 'validated' | 'review_required' | 'blocked';
 };
+
+interface InternalBenchmarkOptions {
+  fixturesPath?: string;
+  country?: string;
+  language?: string;
+}
 
 function safeRatio(num: number, den: number) {
   if (!den) return 0;
@@ -38,6 +48,31 @@ function safeRatio(num: number, den: number) {
 
 function round4(value: number) {
   return Number(value.toFixed(4));
+}
+
+function normalizeCountry(value: unknown) {
+  const text = String(value || 'ANY').trim().toUpperCase();
+  return text || 'ANY';
+}
+
+function normalizeLanguage(value: unknown) {
+  const text = String(value || 'any').trim().toLowerCase();
+  return text || 'any';
+}
+
+function wilsonInterval(successes: number, total: number, z = 1.96) {
+  if (!total) {
+    return { low: 0, high: 0 };
+  }
+  const p = successes / total;
+  const z2 = z * z;
+  const denominator = 1 + (z2 / total);
+  const center = (p + (z2 / (2 * total))) / denominator;
+  const margin = (z * Math.sqrt((p * (1 - p) / total) + (z2 / (4 * total * total)))) / denominator;
+  return {
+    low: round4(Math.max(0, center - margin)),
+    high: round4(Math.min(1, center + margin))
+  };
 }
 
 function writeTempDocument(name: string, text: string, mtimeIso: string): string {
@@ -83,6 +118,7 @@ function computeMetrics(records: BenchmarkRecord[]) {
   const recall = safeRatio(tp, tp + fn);
   const falsePositiveRate = safeRatio(fp, fp + tn);
   const falseNegativeRate = safeRatio(fn, fn + tp);
+  const accuracy = safeRatio(tp + tn, total);
 
   return {
     count: total,
@@ -91,7 +127,11 @@ function computeMetrics(records: BenchmarkRecord[]) {
     tn,
     fn,
     precision: round4(precision),
+    precisionCI95: wilsonInterval(tp, tp + fp),
     recall: round4(recall),
+    recallCI95: wilsonInterval(tp, tp + fn),
+    accuracy: round4(accuracy),
+    accuracyCI95: wilsonInterval(tp + tn, total),
     falsePositiveRate: round4(falsePositiveRate),
     falseNegativeRate: round4(falseNegativeRate),
     reviewRate: round4(safeRatio(reviewCount, total)),
@@ -100,11 +140,21 @@ function computeMetrics(records: BenchmarkRecord[]) {
   };
 }
 
-export function runInternalBenchmark(fixturesPath = path.join(process.cwd(), 'test-fixtures', 'fraud_cases.json')) {
+export function runInternalBenchmark(options: InternalBenchmarkOptions = {}) {
+  const fixturesPath = options.fixturesPath || path.join(process.cwd(), 'test-fixtures', 'fraud_cases.json');
+  const filterCountry = normalizeCountry(options.country || 'ANY');
+  const filterLanguage = normalizeLanguage(options.language || 'any');
   const fixtures = loadFixtures(fixturesPath);
+  const filteredFixtures = fixtures.filter((item) => {
+    const fixtureCountry = normalizeCountry(item.country || 'ANY');
+    const fixtureLanguage = normalizeLanguage(item.language || 'any');
+    const countryMatch = filterCountry === 'ANY' || fixtureCountry === filterCountry;
+    const languageMatch = filterLanguage === 'any' || fixtureLanguage === filterLanguage;
+    return countryMatch && languageMatch;
+  });
   const records: BenchmarkRecord[] = [];
 
-  for (const fixture of fixtures) {
+  for (const fixture of filteredFixtures) {
     const filePath = writeTempDocument(fixture.id, fixture.text, fixture.mtime);
     const forensic = analyzeDocument(filePath, fixture.text);
     const contextual = { found: { domains: [], emails: [] }, checks: [] };
@@ -128,6 +178,8 @@ export function runInternalBenchmark(fixturesPath = path.join(process.cwd(), 'te
       id: fixture.id,
       label: fixture.label,
       documentType: String(fixture.documentType || 'unknown'),
+      country: normalizeCountry(fixture.country || 'ANY'),
+      language: normalizeLanguage(fixture.language || 'any'),
       predictedFraud: Boolean(risk.likelyFraud || decision.status === 'blocked'),
       decisionStatus: decision.status
     });
@@ -138,6 +190,18 @@ export function runInternalBenchmark(fixturesPath = path.join(process.cwd(), 'te
   const documentTypes = Array.from(new Set(records.map((item) => item.documentType)));
   for (const docType of documentTypes) {
     byDocumentType[docType] = computeMetrics(records.filter((item) => item.documentType === docType));
+  }
+
+  const byCountry: Record<string, ReturnType<typeof computeMetrics>> = {};
+  const countries = Array.from(new Set(records.map((item) => item.country)));
+  for (const country of countries) {
+    byCountry[country] = computeMetrics(records.filter((item) => item.country === country));
+  }
+
+  const byLanguage: Record<string, ReturnType<typeof computeMetrics>> = {};
+  const languages = Array.from(new Set(records.map((item) => item.language)));
+  for (const language of languages) {
+    byLanguage[language] = computeMetrics(records.filter((item) => item.language === language));
   }
 
   return {
@@ -153,12 +217,20 @@ export function runInternalBenchmark(fixturesPath = path.join(process.cwd(), 'te
       }
     },
     totals: {
-      fixtures: fixtures.length,
-      fraud: fixtures.filter((item) => item.label === 'fraud').length,
-      genuine: fixtures.filter((item) => item.label === 'genuine').length,
-      documentTypes: documentTypes.length
+      fixtures: filteredFixtures.length,
+      fraud: filteredFixtures.filter((item) => item.label === 'fraud').length,
+      genuine: filteredFixtures.filter((item) => item.label === 'genuine').length,
+      documentTypes: documentTypes.length,
+      countries: countries.length,
+      languages: languages.length
+    },
+    filters: {
+      country: filterCountry,
+      language: filterLanguage
     },
     overall,
-    byDocumentType
+    byDocumentType,
+    byCountry,
+    byLanguage
   };
 }

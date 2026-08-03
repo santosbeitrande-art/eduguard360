@@ -81,6 +81,8 @@ interface TrainingExampleRecord {
     authenticityScore: number;
     likelyFraud: boolean;
     riskLevel: string;
+    documentType: string;
+    country: string;
     aiLikelihood: string;
     dateConsistency: string;
     indicatorCount: number;
@@ -116,6 +118,8 @@ interface VerificationFeedbackRecord {
   authenticityScore: number | null;
   riskScore: number | null;
   decisionStatus: string;
+  documentType?: string;
+  country?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -260,6 +264,48 @@ function findDocumentProfile(companyId: string, documentType: string, country: s
   return rows.find((item) => normalizeDocType(item.documentType) === normalizedType && normalizeCountry(item.country) === normalizedCountry)
     || rows.find((item) => normalizeDocType(item.documentType) === normalizedType && normalizeCountry(item.country) === 'ANY')
     || null;
+}
+
+const REGULATORY_BASELINES: Record<string, { riskFloor: number; minConfidence: number }> = {
+  'MZ:identity': { riskFloor: 46, minConfidence: 62 },
+  'MZ:income-statement': { riskFloor: 50, minConfidence: 64 },
+  'MZ:bank-statement': { riskFloor: 48, minConfidence: 63 },
+  'BR:identity': { riskFloor: 47, minConfidence: 63 },
+  'BR:bank-statement': { riskFloor: 49, minConfidence: 64 },
+  'PT:identity': { riskFloor: 46, minConfidence: 63 },
+  'PT:income-statement': { riskFloor: 50, minConfidence: 65 },
+  'ANY:dossier': { riskFloor: 52, minConfidence: 66 },
+  'ANY:identity': { riskFloor: 45, minConfidence: 60 },
+  'ANY:income-statement': { riskFloor: 48, minConfidence: 62 },
+  'ANY:bank-statement': { riskFloor: 47, minConfidence: 62 },
+  'ANY:residence-proof': { riskFloor: 43, minConfidence: 58 }
+};
+
+function applyRegulatoryBaselineToTrust(
+  trust: CalibrationTrustInput,
+  context: { documentType: string; country: string }
+) {
+  const docType = normalizeDocType(context.documentType);
+  const country = normalizeCountry(context.country);
+  const baseline = REGULATORY_BASELINES[`${country}:${docType}`] || REGULATORY_BASELINES[`ANY:${docType}`] || null;
+  if (!baseline) return;
+
+  trust.riskScore = Math.max(Number(trust.riskScore || 0), baseline.riskFloor);
+  if (Number(trust.confidence || 0) < baseline.minConfidence) {
+    trust.riskScore = Math.max(Number(trust.riskScore || 0), baseline.riskFloor + 4);
+  }
+  trust.likelyFraud = trust.riskScore >= 70 ? true : Boolean(trust.likelyFraud);
+  trust.indicators = Array.isArray(trust.indicators) ? trust.indicators : [];
+  trust.fraudReasons = Array.isArray(trust.fraudReasons) ? trust.fraudReasons : [];
+  trust.indicators.push({
+    code: 'regulatory-baseline',
+    severity: 'low',
+    reason: `Baseline regulatorio aplicado para tipo=${docType} pais=${country}.`
+  });
+  trust.fraudReasons = Array.from(new Set([
+    ...trust.fraudReasons,
+    `Baseline regulatorio aplicado (${docType}/${country}).`
+  ]));
 }
 
 function applyDocumentProfileToTrust(
@@ -1007,7 +1053,10 @@ function toCalibrationExamplesFromFeedback(feedbackRows: VerificationFeedbackRec
       companyId: item.companyId,
       category: item.outcome === 'fraud_confirmed' ? 'high-risk-fraud' : 'high-authenticity',
       analysis: {
-        authenticityScore: Number(item.authenticityScore || 0)
+        authenticityScore: Number(item.authenticityScore || 0),
+        reviewerConfidence: Number(item.reviewerConfidence || 0),
+        documentType: normalizeDocType(item.documentType || 'unknown'),
+        country: normalizeCountry(item.country || 'ANY')
       }
     }));
 }
@@ -1019,7 +1068,7 @@ function getCompanyCalibrationProfile(auth: AuthContext, companyId: string): Cal
   return buildCalibrationProfile(merged, companyId);
 }
 
-async function createTrainingExampleRecord(auth: AuthContext, file: Express.Multer.File, payload: { category?: unknown; reasons?: unknown; notes?: unknown }) {
+async function createTrainingExampleRecord(auth: AuthContext, file: Express.Multer.File, payload: { category?: unknown; reasons?: unknown; notes?: unknown; country?: unknown; documentType?: unknown }) {
   const rawCategory = String(payload.category || '').trim().toLowerCase();
   const category: TrainingCategory = rawCategory === 'high-authenticity' ? 'high-authenticity' : 'high-risk-fraud';
   const reasons = parseReasons(payload.reasons);
@@ -1054,6 +1103,8 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
       authenticityScore: Number(forensic?.summary?.authenticityScore ?? forensic?.score ?? 0),
       likelyFraud: Boolean(risk.likelyFraud),
       riskLevel: String(risk.riskLevel || 'unknown'),
+      documentType: normalizeDocType(payload.documentType || forensic?.summary?.documentType || forensic?.checks?.documentType || 'unknown'),
+      country: normalizeCountry(payload.country),
       aiLikelihood: String(forensic?.summary?.aiLikelihood || 'unknown'),
       dateConsistency: String(forensic?.summary?.dateConsistency || 'unknown'),
       indicatorCount: Array.isArray(risk.indicators) ? risk.indicators.length : 0,
@@ -1421,6 +1472,10 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       text
     });
     const fraudSignals = evaluateFraudRisk(forensic, contextual);
+    const profileContext = {
+      documentType: normalizeDocType(forensic?.summary?.documentType || forensic?.checks?.documentType || 'unknown'),
+      country: normalizeCountry(req.body?.country)
+    };
     const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
     const calibratedTrust = applyCalibrationToTrust({
       authenticityPercentage: forensic.summary?.authenticityScore ?? forensic.score,
@@ -1429,13 +1484,13 @@ app.post('/upload', requireCompanyAuth, upload.single('file'), async (req, res) 
       riskScore: fraudSignals.riskScore,
       confidence: fraudSignals.confidence,
       fraudReasons: fraudSignals.reasons,
-      indicators: fraudSignals.indicators
+      indicators: fraudSignals.indicators,
+      documentType: profileContext.documentType,
+      country: profileContext.country
     } as CalibrationTrustInput, calibrationProfile);
-    const profileContext = {
-      documentType: normalizeDocType(forensic?.summary?.documentType || forensic?.checks?.documentType || 'unknown'),
-      country: normalizeCountry(req.body?.country)
-    };
+
     const documentProfile = findDocumentProfile(auth.companyId, profileContext.documentType, profileContext.country);
+    applyRegulatoryBaselineToTrust(calibratedTrust, profileContext);
     applyDocumentProfileToTrust(calibratedTrust, documentProfile, profileContext);
     const externalValidation = await runExternalValidation({
       jobId,
@@ -1747,13 +1802,18 @@ app.post('/upload-case', requireCompanyAuth, upload.array('files', 10), async (r
       ].filter(Boolean),
       indicators: [...caseAnalysis.indicators, ...metadataIndicatorsFromDocs]
     };
-    const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
-    const calibratedTrust = applyCalibrationToTrust(baseTrust, calibrationProfile);
     const profileContext = {
       documentType: normalizeDocType('dossier'),
       country: normalizeCountry(req.body?.country)
     };
+    const calibrationProfile = getCompanyCalibrationProfile(auth, auth.companyId);
+    const calibratedTrust = applyCalibrationToTrust({
+      ...baseTrust,
+      documentType: profileContext.documentType,
+      country: profileContext.country
+    }, calibrationProfile);
     const documentProfile = findDocumentProfile(auth.companyId, profileContext.documentType, profileContext.country);
+    applyRegulatoryBaselineToTrust(calibratedTrust, profileContext);
     applyDocumentProfileToTrust(calibratedTrust, documentProfile, profileContext);
     if (fallbackFileNames.length) {
       applyNoExtractableTextRisk(calibratedTrust, fallbackFileNames);
@@ -1973,7 +2033,10 @@ app.get('/benchmark/internal', requireCompanyAuth, (req, res) => {
   }
 
   try {
-    const report = runInternalBenchmark();
+    const report = runInternalBenchmark({
+      country: String(req.query?.country || 'ANY'),
+      language: String(req.query?.language || 'any')
+    });
     return res.json(report);
   } catch (error: any) {
     return res.status(500).json({ error: String(error?.message || error) });
@@ -2031,6 +2094,8 @@ app.post('/verification-feedback', requireCompanyAuth, async (req, res) => {
     authenticityScore: Number.isFinite(authenticityScoreRaw) ? authenticityScoreRaw : null,
     riskScore: Number.isFinite(riskScoreRaw) ? riskScoreRaw : null,
     decisionStatus: String(job?.result?.decision?.status || job?.result?.finalDecision || 'unknown'),
+    documentType: normalizeDocType(job?.result?.profile?.documentType || job?.result?.summary?.documentType || 'unknown'),
+    country: normalizeCountry(job?.result?.profile?.country || 'ANY'),
     createdAt: existingIdx >= 0 ? all[existingIdx].createdAt : now,
     updatedAt: now
   };
@@ -2490,7 +2555,9 @@ app.post('/training-examples', requireCompanyAuth, upload.single('file'), async 
     const record = await createTrainingExampleRecord(auth, req.file, {
       category: req.body?.category,
       reasons: req.body?.reasons,
-      notes: req.body?.notes
+      notes: req.body?.notes,
+      country: req.body?.country,
+      documentType: req.body?.documentType
     });
 
     return res.json({ ok: true, record });
@@ -2575,7 +2642,9 @@ app.post('/admin/training-examples', requireCompanyAuth, upload.single('file'), 
     const record = await createTrainingExampleRecord(auth, req.file, {
       category: req.body?.category,
       reasons: req.body?.reasons,
-      notes: req.body?.notes
+      notes: req.body?.notes,
+      country: req.body?.country,
+      documentType: req.body?.documentType
     });
     return res.json({ ok: true, record });
   } catch (error: any) {
