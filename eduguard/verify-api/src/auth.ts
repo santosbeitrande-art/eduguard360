@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 
 export type BillingCycle = 'monthly' | 'quarterly' | 'annual';
 export type CompanyStatus = 'pending' | 'active' | 'suspended' | 'expired';
+export type CredentialLifecycleStatus = 'active' | 'suspended' | 'cancelled';
 export type CompanyTier = 'public' | 'business' | 'enterprise';
 export type CompanyPlan = 'payg' | 'subscription' | 'enterprise';
 export type SubscriptionPlanCode = 'starter' | 'business' | 'enterprise' | 'annual';
@@ -38,6 +39,7 @@ interface Credential {
   mfaEnabled?: boolean;
   mfaSecret?: string;
   isActive: boolean;
+  lifecycleStatus?: CredentialLifecycleStatus;
   createdAt: string;
 }
 
@@ -249,6 +251,13 @@ function parseSubscriptionPlan(raw: unknown): SubscriptionPlanCode {
     return value;
   }
   return 'business';
+}
+
+function resolveCredentialLifecycleStatus(credential: Credential): CredentialLifecycleStatus {
+  const raw = String(credential?.lifecycleStatus || '').trim().toLowerCase();
+  if (raw === 'cancelled' || raw === 'canceled') return 'cancelled';
+  if (raw === 'suspended') return 'suspended';
+  return credential.isActive ? 'active' : 'suspended';
 }
 
 function normalizeMsisdn(raw: unknown) {
@@ -2082,6 +2091,7 @@ export function registerAuthRoutes(app: any) {
       username: c.username,
       role: roleForLegacyUser(c.role),
       isActive: c.isActive,
+      lifecycleStatus: resolveCredentialLifecycleStatus(c),
       createdAt: c.createdAt
     }));
     return res.json({ users });
@@ -2089,24 +2099,59 @@ export function registerAuthRoutes(app: any) {
 
   app.patch('/admin/users/:id/status', requireAdminToken, (req: Request, res: Response) => {
     const userId = String(req.params.id || '');
-    const isActive = Boolean(req.body?.isActive);
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const hasLegacyFlag = typeof req.body?.isActive === 'boolean';
+    const legacyIsActive = hasLegacyFlag ? Boolean(req.body?.isActive) : null;
     const store = ensureStore();
     const credential = store.credentials.find((c) => c.id === userId);
     if (!credential) return res.status(404).json({ error: 'user-not-found' });
 
+    let nextIsActive = credential.isActive;
+    let lifecycleStatus: CredentialLifecycleStatus = resolveCredentialLifecycleStatus(credential);
+    let resolvedAction = action;
+
+    if (action === 'reactivate' || action === 'activate') {
+      nextIsActive = true;
+      lifecycleStatus = 'active';
+    } else if (action === 'suspend' || action === 'suspended') {
+      nextIsActive = false;
+      lifecycleStatus = 'suspended';
+    } else if (action === 'cancel' || action === 'cancelled' || action === 'canceled') {
+      nextIsActive = false;
+      lifecycleStatus = 'cancelled';
+      resolvedAction = 'cancel';
+    } else if (hasLegacyFlag) {
+      nextIsActive = Boolean(legacyIsActive);
+      lifecycleStatus = nextIsActive ? 'active' : 'suspended';
+      resolvedAction = nextIsActive ? 'reactivate' : 'suspend';
+    } else {
+      return res.status(400).json({ error: 'invalid-status-action' });
+    }
+
     // Protect internal admin account from accidental disable.
-    if (credential.username.toLowerCase() === INTERNAL_ADMIN_EMAIL && !isActive) {
+    if (credential.username.toLowerCase() === INTERNAL_ADMIN_EMAIL && !nextIsActive) {
       return res.status(400).json({ error: 'cannot-disable-internal-admin' });
     }
 
-    credential.isActive = isActive;
+    credential.isActive = nextIsActive;
+    credential.lifecycleStatus = lifecycleStatus;
     appendAuditEvent(store, 'admin', 'admin-token', 'admin.user.status.updated', credential.companyId, {
       userId,
       username: credential.username,
-      isActive
+      action: resolvedAction,
+      isActive: nextIsActive,
+      lifecycleStatus
     });
     saveStore(store);
-    return res.json({ ok: true, user: { id: credential.id, username: credential.username, isActive: credential.isActive } });
+    return res.json({
+      ok: true,
+      user: {
+        id: credential.id,
+        username: credential.username,
+        isActive: credential.isActive,
+        lifecycleStatus: credential.lifecycleStatus
+      }
+    });
   });
 
   app.patch('/admin/users/:id/password', requireAdminToken, (req: Request, res: Response) => {

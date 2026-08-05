@@ -199,15 +199,6 @@
         <p class="muted" id="liveFeaturesHint">Resumo dos módulos já reflectidos na plataforma para reduzir a aparência de bloco “solto”.</p>
         <div class="feature-summary">
           <div class="feature-card">
-            <div class="feature-kicker">Admin</div>
-            <strong>Admin e calibração interna</strong>
-            <p>A área administrativa reserva gestão interna e calibração controlada, visível apenas para o admin interno quando a sessão estiver ativa.</p>
-            <div class="feature-meta">
-              <span class="feature-pill">Privado</span>
-              <span class="feature-pill">Auditável</span>
-            </div>
-          </div>
-          <div class="feature-card">
             <div class="feature-kicker">Segurança</div>
             <strong>Segurança reforçada</strong>
             <p>O acesso usa sessão, revisão de palavras-passe e proteção para impedir exposição indevida de contas ou estados.</p>
@@ -419,7 +410,7 @@
 
       <section id="trainingPanel" class="panel hidden panel-gap">
         <div class="row space-between">
-          <h2 id="trainingTitle">Treino interno do admin</h2>
+          <h2 id="trainingTitle">Treino de fraude e autenticidade</h2>
           <button class="ghost" type="button" id="btnTrainingRefresh">Atualizar treino</button>
         </div>
         <p class="muted" id="trainingHint">Use esta area para calibrar a deteccao com exemplos reais ou suspeitos.</p>
@@ -644,7 +635,7 @@
           exportsSmokeStatus: "Not yet validated in this session.",
           usersTitle: "Users",
           paymentsTitle: "Payments",
-          trainingTitle: "Internal admin training",
+          trainingTitle: "Fraud and authenticity training",
           trainingHint: "Use this area to calibrate detection with real or suspicious examples.",
           trainingSteps: "1. Upload an example. 2. Review the history. 3. Filter or export when needed.",
           fraudUploadTitle: "1. Register suspicious example",
@@ -1216,7 +1207,7 @@
         if (!value || value === "unknown") return lang === "pt" ? "serviço indisponível" : "service unavailable";
         if (value === "invalid-credentials") return lang === "pt" ? "credenciais inválidas" : "invalid credentials";
         if (value === "email-already-registered") return lang === "pt" ? "email já registado" : "email already registered";
-        if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para admin interno" : "email reserved for internal admin";
+        if (value === "reserved-admin-email") return lang === "pt" ? "email reservado para uso interno" : "email reserved for internal use";
         if (value === "connection-error" || value === "api-unreachable") return lang === "pt" ? "sem ligação com a API" : "API unreachable";
         if (value === "external-api-required") return lang === "pt" ? "API externa obrigatória" : "external API required";
         if (value === "invalid-email") return lang === "pt" ? "email inválido" : "invalid email";
@@ -1456,9 +1447,57 @@
         }
       }
 
-      async function updateUserStatus(userId, isActive) {
+      function resolveUserLifecycleStatus(user) {
+        const raw = String(user?.lifecycleStatus || "").trim().toLowerCase();
+        if (raw === "cancelled" || raw === "canceled") return "cancelled";
+        if (raw === "suspended") return "suspended";
+        return user?.isActive ? "active" : "suspended";
+      }
+
+      function getUserLifecycleLabel(status) {
+        if (status === "cancelled") return lang === "pt" ? "Cancelado" : "Cancelled";
+        if (status === "suspended") return lang === "pt" ? "Suspenso" : "Suspended";
+        return lang === "pt" ? "Ativo" : "Active";
+      }
+
+      function renderUserLifecycleActions(user) {
+        const status = resolveUserLifecycleStatus(user);
+        if (normalizeEmail(user?.username) === INTERNAL_ADMIN_EMAIL) {
+          return "-";
+        }
+
+        const suspendLabel = lang === "pt" ? "Suspender" : "Suspend";
+        const cancelLabel = lang === "pt" ? "Cancelar" : "Cancel";
+        const reactivateLabel = lang === "pt" ? "Reativar" : "Reactivate";
+        const resetLabel = lang === "pt" ? "Redefinir password" : "Reset password";
+
+        if (status === "active") {
+          return `<button class="ghost" data-user-action="suspend" data-userid="${user.id}">${suspendLabel}</button> <button class="ghost" data-user-action="cancel" data-userid="${user.id}">${cancelLabel}</button> <button class="ghost" data-user-password-reset="${user.id}" data-username="${user.username || ""}">${resetLabel}</button>`;
+        }
+
+        if (status === "suspended") {
+          return `<button class="ghost" data-user-action="reactivate" data-userid="${user.id}">${reactivateLabel}</button> <button class="ghost" data-user-action="cancel" data-userid="${user.id}">${cancelLabel}</button> <button class="ghost" data-user-password-reset="${user.id}" data-username="${user.username || ""}">${resetLabel}</button>`;
+        }
+
+        return `<button class="ghost" data-user-action="reactivate" data-userid="${user.id}">${reactivateLabel}</button>`;
+      }
+
+      async function updateUserStatus(userId, action) {
         const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
         if (!adminToken) return;
+
+        const normalizedAction = String(action || "").trim().toLowerCase();
+        if (!normalizedAction) return;
+
+        const requiresConfirmation = normalizedAction === "cancel" || normalizedAction === "suspend";
+        if (requiresConfirmation) {
+          const confirmationText = normalizedAction === "cancel"
+            ? (lang === "pt" ? "Confirma o cancelamento deste utilizador?" : "Confirm user cancellation?")
+            : (lang === "pt" ? "Confirma a suspensão deste utilizador?" : "Confirm user suspension?");
+          const confirmed = window.confirm(confirmationText);
+          if (!confirmed) return;
+        }
+
         try {
           const res = await fetch(`${API_BASE}/admin/users/${userId}/status`, {
             method: "PATCH",
@@ -1466,7 +1505,7 @@
               "Content-Type": "application/json",
               "x-admin-token": adminToken
             },
-            body: JSON.stringify({ isActive })
+            body: JSON.stringify({ action: normalizedAction })
           });
           const data = await safeJson(res);
           if (!res.ok) {
@@ -1616,8 +1655,8 @@
           document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
           document.getElementById("loginPassword").focus();
           setMessage(lang === "pt"
-            ? "Este email é reservado ao admin. Use o painel Entrar com admin@eduguard360.co.mz e a palavra-passe do admin."
-            : "This email is reserved for admin. Use the Sign in panel with admin@eduguard360.co.mz and admin password.");
+            ? "Este email é reservado para uso interno da plataforma."
+            : "This email is reserved for internal platform use.");
           return;
         }
 
@@ -1682,8 +1721,8 @@
           }
           if (data?.delivery === "not-configured" && !data?.recoveryToken) {
             setMessage(lang === "pt"
-              ? "Recuperação iniciada, mas o envio por email ainda não está configurado no servidor. Contacte o suporte/admin para ativar SMTP."
-              : "Recovery started, but email delivery is not configured on the server yet. Contact support/admin to enable SMTP.");
+              ? "Recuperação iniciada, mas o envio por email ainda não está configurado no servidor. Contacte o suporte técnico para ativar SMTP."
+              : "Recovery started, but email delivery is not configured on the server yet. Contact technical support to enable SMTP.");
             return;
           }
           if (data?.delivery === "failed") {
@@ -1760,6 +1799,38 @@
         } catch {}
       }
 
+      document.getElementById("btnUploadFraudExample")?.addEventListener("click", () => {
+        uploadTrainingExample("fraud");
+      });
+
+      document.getElementById("btnUploadAuthExample")?.addEventListener("click", () => {
+        uploadTrainingExample("authentic");
+      });
+
+      document.getElementById("btnTrainingRefresh")?.addEventListener("click", async () => {
+        await loadTrainingExamples();
+      });
+
+      document.getElementById("btnTrainingFilter")?.addEventListener("click", async () => {
+        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
+        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
+        await loadTrainingExamples();
+      });
+
+      trainingSearchInput?.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
+        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
+        await loadTrainingExamples();
+      });
+
+      document.getElementById("btnTrainingExportCsv")?.addEventListener("click", async () => {
+        trainingQueryState.category = String(trainingCategoryFilter?.value || "").trim();
+        trainingQueryState.search = String(trainingSearchInput?.value || "").trim();
+        await exportTrainingExamplesCsv();
+      });
+
       async function loadAdminOverview() {
         const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
         if (!adminToken) return;
@@ -1788,11 +1859,9 @@
               <td>${u.username || "-"}</td>
               <td>${u.companyName || "-"}</td>
               <td>${u.role || "-"}</td>
-              <td><span class="tag ${u.isActive ? "ok" : "off"}">${u.isActive ? "Active" : "Inactive"}</span></td>
+              <td><span class="tag ${resolveUserLifecycleStatus(u) === "active" ? "ok" : "off"}">${getUserLifecycleLabel(resolveUserLifecycleStatus(u))}</span></td>
               <td>
-                ${u.username === "admin@eduguard360.co.mz"
-                  ? "-"
-                  : `<button class="ghost" data-userid="${u.id}" data-next="${u.isActive ? "false" : "true"}">${u.isActive ? (lang === "pt" ? "Desativar" : "Disable") : (lang === "pt" ? "Ativar" : "Enable")}</button> <button class="ghost" data-user-password-reset="${u.id}" data-username="${u.username || ""}">${lang === "pt" ? "Redefinir password" : "Reset password"}</button>`}
+                ${renderUserLifecycleActions(u)}
               </td>
             </tr>
           `).join("");
@@ -1813,11 +1882,11 @@
 
           await loadExportsSmokeStatus();
 
-          usersBody.querySelectorAll("button[data-userid]").forEach((btn) => {
+          usersBody.querySelectorAll("button[data-user-action]").forEach((btn) => {
             btn.addEventListener("click", () => {
               const userId = btn.getAttribute("data-userid");
-              const next = btn.getAttribute("data-next") === "true";
-              updateUserStatus(userId, next);
+              const action = btn.getAttribute("data-user-action");
+              updateUserStatus(userId, action);
             });
           });
 
