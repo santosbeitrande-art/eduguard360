@@ -102,6 +102,47 @@ function toRiskLabel(riskScore: number) {
   return 'Muito Alto';
 }
 
+function getConfidenceDirection(likelyFraud: boolean) {
+  if (likelyFraud) {
+    return {
+      short: 'suspeita/fraude',
+      detail: 'A percentagem aponta para risco de documento falso ou suspeito.'
+    };
+  }
+
+  return {
+    short: 'autenticidade',
+    detail: 'A percentagem aponta para autenticidade do documento.'
+  };
+}
+
+export function buildVerificationReportPdfSmoke(jobId: string, job: any) {
+  const result = job?.result || {};
+  const decision = result?.decision || {};
+  const trust = result?.trust || {};
+  const summary = result?.summary || {};
+
+  const authenticity = num(trust?.authenticityPercentage, num(summary?.authenticityScore, 0));
+  const fraudProbability = num(trust?.riskScore, num(decision?.riskScore, 0));
+  const confidence = num(decision?.confidence, num(trust?.confidence, 0));
+  const likelyFraud = Boolean(trust?.likelyFraud);
+  const confidenceDirection = getConfidenceDirection(likelyFraud);
+
+  return {
+    jobId,
+    confidencePercentage: Number(confidence.toFixed(2)),
+    confidenceDirection: confidenceDirection.short,
+    confidenceDirectionDetail: confidenceDirection.detail,
+    authenticityPercentage: Number(authenticity.toFixed(2)),
+    fraudRiskPercentage: Number(fraudProbability.toFixed(2)),
+    summaryLines: {
+      confidenceLine: `Confianca da IA: ${confidence.toFixed(2)}% (${confidenceDirection.short})`,
+      directionLine: `Sentido da confianca: ${confidenceDirection.detail}`,
+      conclusionLine: `A decisao final foi ${safe(decision?.statusLabel || result?.finalDecision || 'N/A')} com indice de falsificacao ${fraudProbability.toFixed(2)}%, confiabilidade ${authenticity.toFixed(2)}% e confianca da IA ${confidence.toFixed(2)}% (${confidenceDirection.short}). ${confidenceDirection.detail}`
+    }
+  };
+}
+
 export async function generateVerificationReportPdf(jobId: string, job: any): Promise<Buffer> {
   const PDFDocument = require('pdfkit');
   const doc = new PDFDocument({
@@ -123,14 +164,17 @@ export async function generateVerificationReportPdf(jobId: string, job: any): Pr
 
   const result = job?.result || {};
   const decision = result?.decision || {};
-  const trust = result?.trust || {};
-  const summary = result?.summary || {};
   const evidenceReport = result?.evidenceReport || {};
   const visualMap = result?.visualMap || {};
 
-  const authenticity = num(trust?.authenticityPercentage, num(summary?.authenticityScore, 0));
-  const fraudProbability = num(trust?.riskScore, num(decision?.riskScore, 0));
-  const confidence = num(decision?.confidence, num(trust?.confidence, 0));
+  const smoke = buildVerificationReportPdfSmoke(jobId, job);
+  const authenticity = smoke.authenticityPercentage;
+  const fraudProbability = smoke.fraudRiskPercentage;
+  const confidence = smoke.confidencePercentage;
+  const confidenceDirection = {
+    short: smoke.confidenceDirection,
+    detail: smoke.confidenceDirectionDetail
+  };
   const riskLabel = toRiskLabel(fraudProbability);
 
   doc.fontSize(20).fillColor('#0b1d2a').text('EduGuard Verify AI - Relatorio Inteligente');
@@ -145,7 +189,8 @@ export async function generateVerificationReportPdf(jobId: string, job: any): Pr
   writeKeyValue(doc, 'Confiabilidade geral', `${authenticity.toFixed(2)}%`);
   writeKeyValue(doc, 'Indice de falsificacao', `${fraudProbability.toFixed(2)}%`);
   writeKeyValue(doc, 'Nivel de risco', riskLabel);
-  writeKeyValue(doc, 'Confianca da IA', `${confidence.toFixed(2)}%`);
+  writeKeyValue(doc, 'Confianca da IA', `${confidence.toFixed(2)}% (${confidenceDirection.short})`);
+  writeKeyValue(doc, 'Sentido da confianca', confidenceDirection.detail);
 
   sectionTitle(doc, 'Justificativa e Evidencias');
   doc.fontSize(10).fillColor('#0b1d2a').text(safe(decision?.justification || decision?.reason || 'Sem justificativa fornecida.'));
@@ -172,9 +217,7 @@ export async function generateVerificationReportPdf(jobId: string, job: any): Pr
   writeKeyValue(doc, 'Versao do mapa visual', safe(visualMap?.version || 'N/A'));
 
   sectionTitle(doc, 'Conclusao');
-  doc.fontSize(10).fillColor('#0b1d2a').text(
-    `A decisao final foi ${safe(decision?.statusLabel || result?.finalDecision || 'N/A')} com indice de falsificacao ${fraudProbability.toFixed(2)}% e confiabilidade ${authenticity.toFixed(2)}%. Recomenda-se seguir a decisao operacional indicada e revisar os pontos suspeitos listados neste relatorio.`
-  );
+  doc.fontSize(10).fillColor('#0b1d2a').text(`${smoke.summaryLines.conclusionLine} Recomenda-se seguir a decisao operacional indicada e revisar os pontos suspeitos listados neste relatorio.`);
 
   doc.end();
   return done;

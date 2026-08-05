@@ -8,6 +8,7 @@ Endpoints:
  - GET /status/:id/report.pdf -> intelligent PDF report with decision, metrics, suspicious points, and visual evidence map
  - GET /status/:id/evidence/export.csv -> CSV export of all evidence checks by engine for one job
  - GET /status/:id/audit -> auditable case dossier snapshot
+ - GET /ops/smoke/exports -> internal-admin smoke proof that PDF/CSV exports include confidence direction fields
  - POST /fraud-signature -> submit anonymized fraud signature (body must include `id`)
  - GET /fraud-signature/:id -> retrieve stored fraud signature
  - POST /training-examples -> authenticated user uploads labeled fraud/authenticity reference docs

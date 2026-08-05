@@ -36,7 +36,7 @@ import { callForensicsService, callOcrExtractService, callVisionService } from '
 import { listCompanyJobRecords, readJobRecord, writeJobRecord } from './job_store';
 import { buildVisualMap } from './visual_map';
 import { listPublicSources } from './public_sources';
-import { generateVerificationReportPdf } from './report_pdf';
+import { buildVerificationReportPdfSmoke, generateVerificationReportPdf } from './report_pdf';
 
 const app = express();
 app.use(cors());
@@ -79,6 +79,7 @@ interface TrainingExampleRecord {
   createdAt: string;
   analysis: {
     authenticityScore: number;
+    confidence: number;
     likelyFraud: boolean;
     riskLevel: string;
     documentType: string;
@@ -372,7 +373,11 @@ function buildTrainingCsv(rows: TrainingExampleRecord[]) {
     'companyId',
     'uploadedBy',
     'originalFileName',
+    'confidencePercentage',
+    'confidenceDirection',
+    'confidenceDirectionDetail',
     'authenticityScore',
+    'fraudRiskPercentage',
     'riskLevel',
     'likelyFraud',
     'aiLikelihood',
@@ -383,21 +388,32 @@ function buildTrainingCsv(rows: TrainingExampleRecord[]) {
   ];
 
   const lines = rows.map((item) => [
-    item.id,
-    item.createdAt,
-    item.category,
-    item.companyId,
-    item.uploadedBy,
-    item.originalFileName,
-    item.analysis.authenticityScore,
-    item.analysis.riskLevel,
-    item.analysis.likelyFraud,
-    item.analysis.aiLikelihood,
-    item.analysis.dateConsistency,
-    item.analysis.indicatorCount,
-    item.reasons.join(' | '),
-    item.notes
-  ].map((cell) => escapeCsvCell(cell)).join(','));
+    (() => {
+      const confidenceDirection = getConfidenceDirectionCsv(Boolean(item.analysis?.likelyFraud));
+      const authenticityScore = Number(item.analysis?.authenticityScore || 0);
+      const fraudRiskPercentage = Math.max(0, Math.min(100, 100 - authenticityScore));
+      return [
+        item.id,
+        item.createdAt,
+        item.category,
+        item.companyId,
+        item.uploadedBy,
+        item.originalFileName,
+        Number(item.analysis?.confidence || 0),
+        confidenceDirection.short,
+        confidenceDirection.detail,
+        authenticityScore,
+        fraudRiskPercentage,
+        item.analysis.riskLevel,
+        item.analysis.likelyFraud,
+        item.analysis.aiLikelihood,
+        item.analysis.dateConsistency,
+        item.analysis.indicatorCount,
+        item.reasons.join(' | '),
+        item.notes
+      ];
+    })()
+  ].flat().map((cell) => escapeCsvCell(cell)).join(','));
 
   return [header.join(','), ...lines].join('\n');
 }
@@ -710,9 +726,38 @@ function getEvidenceReport(job: any) {
   return job?.result?.evidenceReport || null;
 }
 
-function buildEvidenceReportCsv(jobId: string, evidenceReport: any) {
+function getConfidenceDirectionCsv(likelyFraud: boolean) {
+  if (likelyFraud) {
+    return {
+      short: 'suspeita/fraude',
+      detail: 'A percentagem aponta para risco de documento falso ou suspeito.'
+    };
+  }
+
+  return {
+    short: 'autenticidade',
+    detail: 'A percentagem aponta para autenticidade do documento.'
+  };
+}
+
+function buildEvidenceReportCsv(jobId: string, job: any, evidenceReport: any) {
+  const trust = job?.result?.trust || {};
+  const summary = job?.result?.summary || {};
+  const decision = job?.result?.decision || {};
+  const authenticityPercentage = Number(trust?.authenticityPercentage ?? summary?.authenticityScore ?? 0);
+  const fraudRiskPercentage = Number(trust?.riskScore ?? decision?.riskScore ?? Math.max(0, Math.min(100, 100 - authenticityPercentage)));
+  const confidencePercentage = Number(decision?.confidence ?? trust?.confidence ?? 0);
+  const likelyFraud = Boolean(trust?.likelyFraud);
+  const confidenceDirection = getConfidenceDirectionCsv(likelyFraud);
+
   const header = [
     'jobId',
+    'confidencePercentage',
+    'confidenceDirection',
+    'confidenceDirectionDetail',
+    'authenticityPercentage',
+    'fraudRiskPercentage',
+    'likelyFraud',
     'engine',
     'checkId',
     'label',
@@ -725,6 +770,12 @@ function buildEvidenceReportCsv(jobId: string, evidenceReport: any) {
   const rows = Array.isArray(evidenceReport?.checks)
     ? evidenceReport.checks.map((check: any) => [
       jobId,
+      confidencePercentage,
+      confidenceDirection.short,
+      confidenceDirection.detail,
+      authenticityPercentage,
+      fraudRiskPercentage,
+      likelyFraud,
       check?.engine,
       check?.id,
       check?.label,
@@ -736,6 +787,18 @@ function buildEvidenceReportCsv(jobId: string, evidenceReport: any) {
     : [];
 
   return [header.join(','), ...rows].join('\n');
+}
+
+function splitCsvHeader(csv: string) {
+  return String(csv || '')
+    .split(/\r?\n/, 1)[0]
+    .split(',')
+    .map((cell) => String(cell || '').trim())
+    .filter(Boolean);
+}
+
+function getLatestDoneJobWithExports(jobs: any[]) {
+  return jobs.find((job) => String(job?.status || '') === 'done' && job?.result?.decision && getEvidenceReport(job));
 }
 
 function aggregateEngineMetrics(jobs: any[]) {
@@ -1101,6 +1164,7 @@ async function createTrainingExampleRecord(auth: AuthContext, file: Express.Mult
     createdAt: new Date().toISOString(),
     analysis: {
       authenticityScore: Number(forensic?.summary?.authenticityScore ?? forensic?.score ?? 0),
+      confidence: Number(risk?.confidence ?? 0),
       likelyFraud: Boolean(risk.likelyFraud),
       riskLevel: String(risk.riskLevel || 'unknown'),
       documentType: normalizeDocType(payload.documentType || forensic?.summary?.documentType || forensic?.checks?.documentType || 'unknown'),
@@ -2464,7 +2528,7 @@ app.get('/status/:id/evidence/export.csv', requireCompanyAuth, async (req, res) 
   const evidenceReport = getEvidenceReport(job);
   if (!evidenceReport) return res.status(404).json({ error: 'evidence-report-not-found' });
 
-  const csv = buildEvidenceReportCsv(id, evidenceReport);
+  const csv = buildEvidenceReportCsv(id, job, evidenceReport);
   const fileName = `evidence-report-${id}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -2516,6 +2580,84 @@ app.get('/ops/health/deep', requireCompanyAuth, async (req, res) => {
       trainingExamples: readTrainingExamples().length,
       verificationFeedback: readVerificationFeedback().length,
       documentProfiles: readDocumentProfiles().length
+    }
+  });
+});
+
+app.get('/ops/smoke/exports', requireCompanyAuth, async (req, res) => {
+  const auth = (req as any).auth as AuthContext;
+  if (!requireInternalAdmin(auth)) return res.status(403).json({ error: 'admin-access-required' });
+
+  const requestedJobId = String(req.query?.jobId || '').trim();
+  const job = requestedJobId
+    ? await readJobSafe(requestedJobId)
+    : getLatestDoneJobWithExports(await listCompanyJobsSafe(auth.companyId));
+
+  if (!job) {
+    return res.status(404).json({ error: requestedJobId ? 'job-not-found' : 'no-done-job-with-exports' });
+  }
+
+  if (job.companyId && job.companyId !== auth.companyId) {
+    return res.status(404).json({ error: 'job-not-found' });
+  }
+
+  const evidenceReport = getEvidenceReport(job);
+  if (!evidenceReport) return res.status(404).json({ error: 'evidence-report-not-found' });
+
+  const jobId = String(job?.id || requestedJobId || 'unknown-job');
+  const pdfBuffer = await generateVerificationReportPdf(jobId, job);
+  const pdfSmoke = buildVerificationReportPdfSmoke(jobId, job);
+
+  const evidenceCsv = buildEvidenceReportCsv(jobId, job, evidenceReport);
+  const evidenceCsvHeader = splitCsvHeader(evidenceCsv);
+
+  const trainingResponse = queryTrainingExamples({
+    auth,
+    limit: Number(req.query?.trainingLimit || 5),
+    scopeAll: true,
+    category: req.query?.trainingCategory as string,
+    search: req.query?.trainingSearch as string
+  });
+  const trainingCsv = buildTrainingCsv(trainingResponse.items);
+  const trainingCsvHeader = splitCsvHeader(trainingCsv);
+  const firstTraining = trainingResponse.items[0] || null;
+
+  return res.json({
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    selectedJobId: jobId,
+    proof: {
+      reportPdf: {
+        bytes: pdfBuffer.length,
+        confidencePercentage: pdfSmoke.confidencePercentage,
+        confidenceDirection: pdfSmoke.confidenceDirection,
+        confidenceDirectionDetail: pdfSmoke.confidenceDirectionDetail,
+        summaryLines: pdfSmoke.summaryLines,
+        hasDirectionInSummary: pdfSmoke.summaryLines.confidenceLine.includes(pdfSmoke.confidenceDirection)
+          && pdfSmoke.summaryLines.directionLine.includes(pdfSmoke.confidenceDirectionDetail)
+      },
+      evidenceCsv: {
+        header: evidenceCsvHeader,
+        hasDirectionColumns: ['confidencePercentage', 'confidenceDirection', 'confidenceDirectionDetail', 'authenticityPercentage', 'fraudRiskPercentage', 'likelyFraud']
+          .every((column) => evidenceCsvHeader.includes(column))
+      },
+      trainingCsv: {
+        totalRows: trainingResponse.items.length,
+        header: trainingCsvHeader,
+        hasDirectionColumns: ['confidencePercentage', 'confidenceDirection', 'confidenceDirectionDetail', 'authenticityScore', 'fraudRiskPercentage', 'likelyFraud']
+          .every((column) => trainingCsvHeader.includes(column)),
+        firstRowPreview: firstTraining
+          ? {
+              id: firstTraining.id,
+              file: firstTraining.originalFileName,
+              confidencePercentage: Number(firstTraining?.analysis?.confidence || 0),
+              confidenceDirection: getConfidenceDirectionCsv(Boolean(firstTraining?.analysis?.likelyFraud)),
+              authenticityScore: Number(firstTraining?.analysis?.authenticityScore || 0),
+              fraudRiskPercentage: Math.max(0, Math.min(100, 100 - Number(firstTraining?.analysis?.authenticityScore || 0))),
+              likelyFraud: Boolean(firstTraining?.analysis?.likelyFraud)
+            }
+          : null
+      }
     }
   });
 });

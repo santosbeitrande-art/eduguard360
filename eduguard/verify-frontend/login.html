@@ -200,8 +200,8 @@
         <div class="feature-summary">
           <div class="feature-card">
             <div class="feature-kicker">Admin</div>
-            <strong>Admin e treino interno</strong>
-            <p>O painel administrativo agora expõe treino de fraude e autenticidade, histórico de exemplos e exportação CSV.</p>
+            <strong>Admin e calibração interna</strong>
+            <p>A área administrativa reserva gestão interna e calibração controlada, visível apenas para o admin interno quando a sessão estiver ativa.</p>
             <div class="feature-meta">
               <span class="feature-pill">Privado</span>
               <span class="feature-pill">Auditável</span>
@@ -336,6 +336,16 @@
           <button class="ghost" type="button" id="btnAdminRefresh">Atualizar</button>
         </div>
         <p class="muted" id="adminPanelHint">Visivel apenas depois de login com credenciais do admin.</p>
+        <div class="training-card panel-gap-bottom">
+          <strong id="exportsSmokeTitle">Smoke test dos exports</strong>
+          <p class="muted" id="exportsSmokeHint">Valide sem terminal se PDF e CSV já expõem a direção da confiança no backend público.</p>
+          <div class="stats-line" id="exportsSmokeEndpoint">Endpoint: GET /ops/smoke/exports</div>
+          <div class="actions block-gap">
+            <button class="btn" type="button" id="btnExportsSmokeRun">Validar endpoint online</button>
+            <a class="ghost" id="exportsSmokeOpenLink" href="https://api.eduguard360.co.mz/ops/smoke/exports" target="_blank" rel="noopener noreferrer">Abrir endpoint</a>
+          </div>
+          <div class="stats-line" id="exportsSmokeStatus">Ainda não validado nesta sessão.</div>
+        </div>
 
         <h3 id="usersTitle" class="section-title-tight">Utilizadores</h3>
         <div class="table-wrap">
@@ -407,6 +417,77 @@
 
       </section>
 
+      <section id="trainingPanel" class="panel hidden panel-gap">
+        <div class="row space-between">
+          <h2 id="trainingTitle">Treino interno do admin</h2>
+          <button class="ghost" type="button" id="btnTrainingRefresh">Atualizar treino</button>
+        </div>
+        <p class="muted" id="trainingHint">Use esta area para calibrar a deteccao com exemplos reais ou suspeitos.</p>
+        <div class="stats-line" id="trainingSteps">1. Carregue um exemplo. 2. Revise o historico. 3. Filtre ou exporte quando precisar.</div>
+
+        <div class="training-grid">
+          <div class="training-card">
+            <strong id="fraudUploadTitle">1. Registar exemplo suspeito</strong>
+            <label for="fraudExampleFile" id="fraudFileLabel">Carregue o documento suspeito/falso</label>
+            <input id="fraudExampleFile" type="file" />
+
+            <label for="fraudReasons" id="fraudReasonsLabel">Motivos para marcar como fraude alta (uma linha por motivo)</label>
+            <textarea id="fraudReasons"></textarea>
+
+            <label for="fraudNotes" id="fraudNotesLabel">Notas para a equipa interna (opcional)</label>
+            <textarea id="fraudNotes"></textarea>
+
+            <button class="btn" type="button" id="btnUploadFraudExample">Guardar exemplo de fraude</button>
+          </div>
+
+          <div class="training-card">
+            <strong id="authUploadTitle">2. Registar exemplo autentico</strong>
+            <label for="authExampleFile" id="authFileLabel">Carregue o documento autentico de referencia</label>
+            <input id="authExampleFile" type="file" />
+
+            <label for="authReasons" id="authReasonsLabel">Motivos para considerar baixa suspeita (uma linha por motivo)</label>
+            <textarea id="authReasons"></textarea>
+
+            <label for="authNotes" id="authNotesLabel">Notas para calibracao interna (opcional)</label>
+            <textarea id="authNotes"></textarea>
+
+            <button class="btn" type="button" id="btnUploadAuthExample">Guardar exemplo autentico</button>
+          </div>
+        </div>
+
+        <h3 id="trainingListTitle" class="section-title">3. Historico e filtros</h3>
+        <div class="actions block-gap">
+          <select id="trainingCategoryFilter" title="Filtrar por categoria">
+            <option value="">Todas as categorias</option>
+            <option value="high-risk-fraud">Fraude alta</option>
+            <option value="high-authenticity">Alta autenticidade</option>
+          </select>
+          <input id="trainingSearchInput" type="text" placeholder="Pesquisar por documento, motivo ou nota" />
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" id="btnTrainingFilter">Aplicar filtro</button>
+          <button class="ghost" type="button" id="btnTrainingExportCsv">Exportar CSV</button>
+        </div>
+
+        <div id="trainingStats" class="stats-line">Sem dados.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Categoria</th>
+                <th>Ficheiro</th>
+                <th>Score</th>
+                <th>Risco</th>
+                <th>Motivos</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="trainingExamplesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="status panel-gap" id="msg">Pronto.</div>
     </main>
 
@@ -450,6 +531,7 @@
       const qualityMetrics = document.getElementById("qualityMetrics");
       const engineMetricsBody = document.getElementById("engineMetricsBody");
       const checkMetricsBody = document.getElementById("checkMetricsBody");
+      const exportsSmokeStatus = document.getElementById("exportsSmokeStatus");
       const trainingExamplesBody = document.getElementById("trainingExamplesBody");
       const trainingStats = document.getElementById("trainingStats");
       const trainingCategoryFilter = document.getElementById("trainingCategoryFilter");
@@ -499,21 +581,28 @@
           btnPortal: "Abrir portal de consulta",
           adminPanelTitle: "Painel administrativo (somente admin)",
           adminPanelHint: "Visivel apenas depois de login com credenciais do admin.",
+          exportsSmokeTitle: "Smoke test dos exports",
+          exportsSmokeHint: "Valide sem terminal se PDF e CSV já expõem a direção da confiança no backend público.",
+          exportsSmokeEndpoint: "Endpoint: GET /ops/smoke/exports",
+          btnExportsSmokeRun: "Validar endpoint online",
+          exportsSmokeOpenLink: "Abrir endpoint",
+          exportsSmokeStatus: "Ainda não validado nesta sessão.",
           usersTitle: "Utilizadores",
           paymentsTitle: "Pagamentos",
           trainingTitle: "Treino de fraude e autenticidade",
-          trainingHint: "Somente o admin interno pode carregar documentos de referencia para calibracao.",
-          fraudUploadTitle: "Exemplos de fraude alta",
-          fraudFileLabel: "Documento suspeito/falso",
-          fraudReasonsLabel: "Motivos de alto risco (uma linha por motivo)",
-          fraudNotesLabel: "Notas adicionais (opcional)",
+          trainingHint: "Use esta area para calibrar a deteccao com exemplos reais ou suspeitos.",
+          trainingSteps: "1. Carregue um exemplo. 2. Revise o historico. 3. Filtre ou exporte quando precisar.",
+          fraudUploadTitle: "1. Registar exemplo suspeito",
+          fraudFileLabel: "Carregue o documento suspeito/falso",
+          fraudReasonsLabel: "Motivos para marcar como fraude alta (uma linha por motivo)",
+          fraudNotesLabel: "Notas para a equipa interna (opcional)",
           btnUploadFraudExample: "Guardar exemplo de fraude",
-          authUploadTitle: "Exemplos de alta autenticidade",
-          authFileLabel: "Documento autentico de referencia",
-          authReasonsLabel: "Motivos de baixa suspeita (uma linha por motivo)",
-          authNotesLabel: "Notas adicionais (opcional)",
+          authUploadTitle: "2. Registar exemplo autentico",
+          authFileLabel: "Carregue o documento autentico de referencia",
+          authReasonsLabel: "Motivos para considerar baixa suspeita (uma linha por motivo)",
+          authNotesLabel: "Notas para calibracao interna (opcional)",
           btnUploadAuthExample: "Guardar exemplo autentico",
-          trainingListTitle: "Historico de exemplos carregados",
+          trainingListTitle: "3. Historico e filtros",
           btnTrainingFilter: "Aplicar filtro",
           btnTrainingExportCsv: "Exportar CSV",
           trainingSearchInput: "Pesquisar por documento, motivo ou nota"
@@ -547,21 +636,28 @@
           btnPortal: "Open verification portal",
           adminPanelTitle: "Administrative panel (admin only)",
           adminPanelHint: "Visible only after admin credential login.",
+          exportsSmokeTitle: "Export smoke test",
+          exportsSmokeHint: "Validate without a terminal whether PDF and CSV already expose confidence direction on the public backend.",
+          exportsSmokeEndpoint: "Endpoint: GET /ops/smoke/exports",
+          btnExportsSmokeRun: "Validate live endpoint",
+          exportsSmokeOpenLink: "Open endpoint",
+          exportsSmokeStatus: "Not yet validated in this session.",
           usersTitle: "Users",
           paymentsTitle: "Payments",
-          trainingTitle: "Fraud and authenticity training",
-          trainingHint: "Only the internal admin can upload reference documents for calibration.",
-          fraudUploadTitle: "High-risk fraud examples",
-          fraudFileLabel: "Suspicious/fake document",
-          fraudReasonsLabel: "High-risk reasons (one line per reason)",
-          fraudNotesLabel: "Additional notes (optional)",
+          trainingTitle: "Internal admin training",
+          trainingHint: "Use this area to calibrate detection with real or suspicious examples.",
+          trainingSteps: "1. Upload an example. 2. Review the history. 3. Filter or export when needed.",
+          fraudUploadTitle: "1. Register suspicious example",
+          fraudFileLabel: "Upload the suspicious/fake document",
+          fraudReasonsLabel: "Reasons to mark as high-risk fraud (one line per reason)",
+          fraudNotesLabel: "Notes for the internal team (optional)",
           btnUploadFraudExample: "Save fraud example",
-          authUploadTitle: "High-authenticity examples",
-          authFileLabel: "Authentic reference document",
-          authReasonsLabel: "Low-risk reasons (one line per reason)",
-          authNotesLabel: "Additional notes (optional)",
+          authUploadTitle: "2. Register authentic example",
+          authFileLabel: "Upload the authentic reference document",
+          authReasonsLabel: "Reasons to consider low suspicion (one line per reason)",
+          authNotesLabel: "Notes for internal calibration (optional)",
           btnUploadAuthExample: "Save authentic example",
-          trainingListTitle: "Uploaded examples history",
+          trainingListTitle: "3. History and filters",
           btnTrainingFilter: "Apply filter",
           btnTrainingExportCsv: "Export CSV",
           trainingSearchInput: "Search by document, reason, or note"
@@ -570,6 +666,10 @@
 
       function hideAdminPanel() {
         adminPanel.classList.add("hidden");
+        trainingPanel?.classList.add("hidden");
+        if (exportsSmokeStatus) {
+          exportsSmokeStatus.textContent = (copy[lang] || copy.pt).exportsSmokeStatus;
+        }
         usersBody.innerHTML = "";
         paymentsBody.innerHTML = "";
         qualitySummary.textContent = lang === "pt" ? "Sem dados." : "No data.";
@@ -581,6 +681,41 @@
 
       function renderMetricCard(label, value) {
         return `<div class="training-card"><strong>${label}</strong><div style="margin-top:4px; font-size:1.1rem;">${value}</div></div>`;
+      }
+
+      async function loadExportsSmokeStatus() {
+        const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+        if (!adminToken || !exportsSmokeStatus) return;
+
+        exportsSmokeStatus.textContent = lang === "pt"
+          ? "A validar endpoint público dos exports..."
+          : "Validating public export endpoint...";
+
+        try {
+          const res = await fetch(`${API_BASE}/ops/smoke/exports`, {
+            method: "GET",
+            headers: { "x-admin-token": adminToken }
+          });
+          const data = await safeJson(res);
+
+          if (!res.ok || !data?.ok) {
+            exportsSmokeStatus.textContent = (lang === "pt"
+              ? "Endpoint ainda não publicado ou sem prova disponível"
+              : "Endpoint not yet deployed or proof unavailable") + ` (${res.status})`;
+            return;
+          }
+
+          const reportProof = data?.proof?.reportPdf || {};
+          const evidenceProof = data?.proof?.evidenceCsv || {};
+          const trainingProof = data?.proof?.trainingCsv || {};
+          exportsSmokeStatus.textContent = lang === "pt"
+            ? `Online: job ${data.selectedJobId || "-"} | PDF: ${reportProof.confidenceDirection || "-"} | CSV evidências: ${evidenceProof.hasDirectionColumns ? "ok" : "falhou"} | CSV treino: ${trainingProof.hasDirectionColumns ? "ok" : "falhou"}`
+            : `Online: job ${data.selectedJobId || "-"} | PDF: ${reportProof.confidenceDirection || "-"} | Evidence CSV: ${evidenceProof.hasDirectionColumns ? "ok" : "failed"} | Training CSV: ${trainingProof.hasDirectionColumns ? "ok" : "failed"}`;
+        } catch {
+          exportsSmokeStatus.textContent = lang === "pt"
+            ? "Sem ligação ao endpoint público do smoke test."
+            : "Unable to reach the public smoke test endpoint.";
+        }
       }
 
       function renderQualityDashboard(data) {
@@ -631,6 +766,24 @@
         return lang === "pt" ? "Baixo" : "Low";
       }
 
+      function getConfidenceDirectionShort(likelyFraud) {
+        if (likelyFraud) {
+          return lang === "pt" ? "suspeita/fraude" : "fraud suspicion";
+        }
+        return lang === "pt" ? "autenticidade" : "authenticity";
+      }
+
+      function getConfidenceDirectionLabel(likelyFraud) {
+        if (likelyFraud) {
+          return lang === "pt"
+            ? "A percentagem aponta para risco de documento falso ou suspeito."
+            : "The percentage leans toward fake/suspicious document risk.";
+        }
+        return lang === "pt"
+          ? "A percentagem aponta para autenticidade do documento."
+          : "The percentage leans toward document authenticity.";
+      }
+
       function getCategoryLabel(category) {
         if (category === "high-authenticity") {
           return lang === "pt" ? "Alta autenticidade" : "High authenticity";
@@ -670,25 +823,52 @@
       }
 
       function buildTrainingCsv(items) {
-        const header = ["id", "createdAt", "category", "uploadedBy", "file", "score", "risk", "likelyFraud", "ai", "dateConsistency", "reasons", "notes"];
+        const header = [
+          "id",
+          "createdAt",
+          "category",
+          "uploadedBy",
+          "file",
+          "confidencePercentage",
+          "confidenceDirection",
+          "confidenceDirectionDetail",
+          "authenticityScore",
+          "fraudRiskPercentage",
+          "riskLevel",
+          "likelyFraud",
+          "ai",
+          "dateConsistency",
+          "reasons",
+          "notes"
+        ];
         const escapeCell = (value) => {
           const text = String(value ?? "");
           return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
         };
-        const rows = items.map((entry) => [
-          entry.id,
-          entry.createdAt,
-          entry.category,
-          entry.uploadedBy,
-          entry.originalFileName,
-          entry?.analysis?.authenticityScore ?? 0,
-          entry?.analysis?.riskLevel || "unknown",
-          Boolean(entry?.analysis?.likelyFraud),
-          entry?.analysis?.aiLikelihood || "unknown",
-          entry?.analysis?.dateConsistency || "unknown",
-          Array.isArray(entry.reasons) ? entry.reasons.join(" | ") : "",
-          entry.notes || ""
-        ].map(escapeCell).join(","));
+        const rows = items.map((entry) => {
+          const authenticityScore = Number(entry?.analysis?.authenticityScore ?? 0);
+          const fraudRiskPercentage = Math.max(0, Math.min(100, 100 - authenticityScore));
+          const likelyFraud = Boolean(entry?.analysis?.likelyFraud);
+          const confidencePercentage = Number(entry?.analysis?.confidence ?? 0);
+          return [
+            entry.id,
+            entry.createdAt,
+            entry.category,
+            entry.uploadedBy,
+            entry.originalFileName,
+            confidencePercentage,
+            getConfidenceDirectionShort(likelyFraud),
+            getConfidenceDirectionLabel(likelyFraud),
+            authenticityScore,
+            fraudRiskPercentage,
+            entry?.analysis?.riskLevel || "unknown",
+            likelyFraud,
+            entry?.analysis?.aiLikelihood || "unknown",
+            entry?.analysis?.dateConsistency || "unknown",
+            Array.isArray(entry.reasons) ? entry.reasons.join(" | ") : "",
+            entry.notes || ""
+          ].map(escapeCell).join(",");
+        });
         return [header.join(","), ...rows].join("\n");
       }
 
@@ -929,6 +1109,7 @@
             createdAt: new Date().toISOString(),
             analysis: {
               authenticityScore: mapping.category === "high-risk-fraud" ? 25 : 93,
+              confidence: mapping.category === "high-risk-fraud" ? 78 : 84,
               likelyFraud: mapping.category === "high-risk-fraud",
               riskLevel,
               aiLikelihood: "unknown",
@@ -1052,10 +1233,12 @@
       function updateInternalAdminSession(emailRaw, loginSucceeded) {
         if (loginSucceeded && normalizeEmail(emailRaw) === INTERNAL_ADMIN_EMAIL) {
           localStorage.setItem(INTERNAL_ADMIN_SESSION_KEY, "1");
+          trainingPanel?.classList.remove("hidden");
           return;
         }
         localStorage.removeItem(INTERNAL_ADMIN_SESSION_KEY);
         localStorage.removeItem(ADMIN_TOKEN_KEY);
+        trainingPanel?.classList.add("hidden");
       }
 
       function readLocalAccounts() {
@@ -1382,6 +1565,7 @@
           updateInternalAdminSession(payload.username, true);
           setTokens(data.accessToken, data.refreshToken);
           clearLocalSession();
+          const isInternalAdmin = normalizeEmail(payload.username) === INTERNAL_ADMIN_EMAIL;
 
           if (data?.requiresPasswordChange === true || data?.user?.mustChangePassword === true) {
             setMessage(lang === "pt" ? "É obrigatória a troca da palavra-passe antes de continuar." : "Password change is required before continuing.");
@@ -1392,6 +1576,12 @@
           setMessage(lang === "pt" ? "Login efetuado com sucesso." : "Login successful.");
           await loadSubscriptionStatus();
           await getAdminTokenForInternalAdmin(payload.username);
+          if (isInternalAdmin) {
+            setMessage(lang === "pt"
+              ? "Admin autenticado. O painel interno está disponível abaixo nesta página."
+              : "Admin authenticated. The internal panel is available below on this page.");
+            return;
+          }
           window.location.href = "/public";
         } catch {
           updateInternalAdminSession(payload.username, false);
@@ -1563,7 +1753,9 @@
           if (res.ok && data?.adminToken) {
             localStorage.setItem(ADMIN_TOKEN_KEY, data.adminToken);
             adminPanel.classList.remove("hidden");
+            trainingPanel?.classList.remove("hidden");
             await loadAdminOverview();
+            await loadTrainingExamples();
           }
         } catch {}
       }
@@ -1618,6 +1810,8 @@
           if (qualityRes.ok && qualityData) {
             renderQualityDashboard(qualityData);
           }
+
+          await loadExportsSmokeStatus();
 
           usersBody.querySelectorAll("button[data-userid]").forEach((btn) => {
             btn.addEventListener("click", () => {
@@ -1731,6 +1925,11 @@
 
       document.getElementById("btnAdminRefresh").addEventListener("click", () => {
         loadAdminOverview();
+        loadExportsSmokeStatus();
+      });
+
+      document.getElementById("btnExportsSmokeRun")?.addEventListener("click", async () => {
+        await loadExportsSmokeStatus();
       });
 
       (async () => {
@@ -1743,6 +1942,9 @@
         }
         await loadPlans();
         await loadSubscriptionStatus();
+        if (localStorage.getItem(INTERNAL_ADMIN_SESSION_KEY) === "1" && getToken()) {
+          await getAdminTokenForInternalAdmin(INTERNAL_ADMIN_EMAIL);
+        }
         await loadAdminOverview();
         updateMobilePayVisibility();
       })();
