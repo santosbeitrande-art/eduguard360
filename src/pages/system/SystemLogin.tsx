@@ -177,6 +177,32 @@ const buildFallbackSchoolsFromLocalSources = (): Array<{ id: string; nome: strin
   }));
 };
 
+const buildFallbackSchoolsFromUsers = async (): Promise<Array<{ id: string; nome: string }>> => {
+  try {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('utilizadores')
+        .select('escola_id')
+        .not('escola_id', 'is', null)
+        .limit(200),
+      10000,
+      'Users fallback schools timeout'
+    );
+
+    if (error || !Array.isArray(data) || data.length === 0) return [];
+
+    const ids = Array.from(new Set(
+      data
+        .map((item: any) => String(item?.escola_id || '').trim())
+        .filter(Boolean)
+    ));
+
+    return ids.map((id) => ({ id, nome: `Escola ${id.slice(0, 8)}` }));
+  } catch {
+    return [];
+  }
+};
+
 const SystemLoginContent = () => {
   const { t } = useLanguage();
   const { login: edgeLogin } = useSystemAuth();
@@ -202,35 +228,50 @@ const SystemLoginContent = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const loadSchools = async () => {
-      setLoadingSchools(true);
-      try {
-        const { data, error } = await withTimeout(
-          supabase.from("escolas").select("id,nome").order("nome"),
-          10000,
-          'Schools load timeout'
-        );
-        if (!error && Array.isArray(data) && data.length > 0) {
-          const fetchedSchools = (data || []) as Array<{ id: string; nome: string }>;
-          setSchools(fetchedSchools);
-          writeSchoolsCache(fetchedSchools);
+  const loadSchools = async () => {
+    setLoadingSchools(true);
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from("escolas").select("id,nome").order("nome"),
+        10000,
+        'Schools load timeout'
+      );
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const fetchedSchools = (data || []) as Array<{ id: string; nome: string }>;
+        setSchools(fetchedSchools);
+        writeSchoolsCache(fetchedSchools);
+      } else {
+        const fallbackFromUsers = await buildFallbackSchoolsFromUsers();
+        if (fallbackFromUsers.length > 0) {
+          setSchools(fallbackFromUsers);
         } else {
           const fallbackSchools = buildFallbackSchoolsFromLocalSources();
           if (fallbackSchools.length > 0) {
             setSchools(fallbackSchools);
           }
         }
-      } catch (err) {
-        console.error(err);
+      }
+    } catch (err) {
+      console.error(err);
+      const fallbackFromUsers = await buildFallbackSchoolsFromUsers();
+      if (fallbackFromUsers.length > 0) {
+        setSchools(fallbackFromUsers);
+      } else {
         const fallbackSchools = buildFallbackSchoolsFromLocalSources();
         if (fallbackSchools.length > 0) {
           setSchools(fallbackSchools);
         }
-      } finally {
-        setLoadingSchools(false);
       }
-    };
+    } finally {
+      setLoadingSchools(false);
+    }
+  };
+
+  useEffect(() => {
+    const cachedSchools = readSchoolsCache();
+    if (cachedSchools.length > 0) {
+      setSchools(cachedSchools);
+    }
 
     loadSchools();
   }, []);
@@ -593,13 +634,16 @@ const SystemLoginContent = () => {
       return;
     }
 
-    if (!selectedSchoolId) {
+    const requiresSchoolSelection = selectedRole === 'director' || schools.length > 0;
+    if (requiresSchoolSelection && !selectedSchoolId) {
       setErrorMessage(t('sistema.selecionar_escola'));
       setLoading(false);
       return;
     }
 
-    ensureSchoolTrial(selectedSchoolId);
+    if (selectedSchoolId) {
+      ensureSchoolTrial(selectedSchoolId);
+    }
 
     try {
       const { data, error } = await withTimeout(supabase.auth.signUp({
@@ -812,6 +856,20 @@ const SystemLoginContent = () => {
                   <option key={school.id} value={school.id}>{school.nome}</option>
                 ))}
               </select>
+              {!loadingSchools && schools.length === 0 && (
+                <button
+                  type="button"
+                  onClick={loadSchools}
+                  className="inline-flex items-center justify-center rounded-lg border border-[#2e5a6e] px-3 py-2 text-xs font-semibold text-[#d1e4ef] hover:bg-[#12344a]"
+                >
+                  Tentar novamente
+                </button>
+              )}
+              {!loadingSchools && schools.length === 0 && selectedRole !== 'director' && (
+                <p className="text-xs text-[#9bbbc9]">
+                  Sem escolas disponiveis no momento. Pode continuar o registo e o administrador ira associar a escola depois.
+                </p>
+              )}
 
               {selectedRole === "director" && (
                 <div className="rounded-xl border border-[#2e5a6e] bg-[#102c3f] p-3 text-sm text-[#d1e4ef]">
