@@ -5,6 +5,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
+import { EnterpriseModule } from './modules/enterprise/enterprise.module';
 import { DatabaseConfig } from './config/database.config';
 
 @Module({
@@ -18,6 +19,7 @@ import { DatabaseConfig } from './config/database.config';
     UsersModule,
     ListingsModule,
     ReservationsModule,
+    EnterpriseModule,
   ],
   controllers: [],
   providers: [],

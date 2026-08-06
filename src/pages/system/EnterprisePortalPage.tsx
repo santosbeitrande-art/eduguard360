@@ -94,6 +94,21 @@ const EnterprisePortalPage = () => {
   const [staff, setStaff] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [enterpriseOverview, setEnterpriseOverview] = useState<any | null>(null);
+
+  const resolveCurrentUserSnapshot = () => {
+    for (const key of ['currentUser', 'eduguard_user', 'user']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -132,6 +147,64 @@ const EnterprisePortalPage = () => {
         parents: usersData.filter((item: any) => getRoleLabel(item?.perfil) === 'parent' || studentsData.some((student: any) => String(student.encarregado_id) === String(item.id))).length,
         pendingUsers,
       });
+
+      try {
+        const overviewRes = await withTimeout(fetch('/api/v1/enterprise/overview'), 10000, 'Enterprise overview timeout');
+        if (overviewRes.ok) {
+          const overviewData = await overviewRes.json();
+          setEnterpriseOverview(overviewData);
+        }
+
+        const currentUser = resolveCurrentUserSnapshot();
+        if (currentUser) {
+          const heartbeatBody = {
+            userId: String(currentUser.id || currentUser.user_id || 'guest-user'),
+            userName: String(currentUser.nome || currentUser.name || currentUser.email || 'Utilizador'),
+            userRole: String(currentUser.perfil || currentUser.role || 'staff'),
+            device: navigator.platform || 'web',
+            browser: navigator.userAgent,
+            location: 'Portal Enterprise',
+            trusted: true,
+          };
+
+          const heartbeatRes = await withTimeout(
+            fetch('/api/v1/enterprise/sessions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(heartbeatBody),
+            }),
+            8000,
+            'Enterprise session heartbeat timeout'
+          );
+
+          if (heartbeatRes.ok) {
+            const heartbeat = await heartbeatRes.json();
+            if (heartbeat?.id) {
+              localStorage.setItem('eduguard_enterprise_session_id', String(heartbeat.id));
+            }
+          }
+
+          await withTimeout(
+            fetch('/api/v1/enterprise/audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                actorId: heartbeatBody.userId,
+                actorName: heartbeatBody.userName,
+                actorRole: heartbeatBody.userRole,
+                action: 'enterprise_portal_viewed',
+                resourceType: 'enterprise_dashboard',
+                metadata: { lens: dashboardLens },
+                userAgent: navigator.userAgent,
+              }),
+            }),
+            8000,
+            'Enterprise audit write timeout'
+          );
+        }
+      } catch (overviewError) {
+        console.warn('Enterprise backend blocks unavailable, using local fallback:', overviewError);
+      }
     } catch (error) {
       console.error('Erro ao carregar Enterprise Portal:', error);
       const cachedSchoolsRaw = localStorage.getItem('eduguard_admin_schools_cache');
@@ -149,6 +222,7 @@ const EnterprisePortalPage = () => {
           source: 'local',
         }))
       );
+      setEnterpriseOverview(null);
     } finally {
       setLoading(false);
     }
@@ -218,13 +292,15 @@ const EnterprisePortalPage = () => {
     const pendingUsers = users.filter((item: any) => item?.status === 'pending' || item?.is_active === false).length;
     const studentsWithoutClass = students.filter((item: any) => !String(item?.classe || '').trim()).length;
 
+    const workflowSummary = enterpriseOverview?.workflows?.summary || {};
+
     return [
       { id: 'enrollment', title: 'Matrículas por aprovar', owner: 'Secretaria', count: pendingRequests, tone: 'amber' },
-      { id: 'teacher-schedule', title: 'Professores sem escola atribuída', owner: 'Direção', count: teachersWithoutSchool, tone: 'sky' },
-      { id: 'accounts', title: 'Contas pendentes/inativas', owner: 'Admin', count: pendingUsers, tone: 'rose' },
-      { id: 'classroom', title: 'Alunos sem turma definida', owner: 'Gestão Académica', count: studentsWithoutClass, tone: 'emerald' },
+      { id: 'teacher-schedule', title: 'Professores sem escola atribuída', owner: 'Direção', count: Math.max(teachersWithoutSchool, Number(workflowSummary.in_review || 0)), tone: 'sky' },
+      { id: 'accounts', title: 'Contas pendentes/inativas', owner: 'Admin', count: Math.max(pendingUsers, Number(workflowSummary.pending || 0)), tone: 'rose' },
+      { id: 'classroom', title: 'Alunos sem turma definida', owner: 'Gestão Académica', count: Math.max(studentsWithoutClass, Number(workflowSummary.approved || 0)), tone: 'emerald' },
     ];
-  }, [users, staff, students]);
+  }, [users, staff, students, enterpriseOverview]);
 
   const pendingTotal = pendingItems.reduce((sum, item) => sum + item.count, 0);
 
@@ -266,14 +342,16 @@ const EnterprisePortalPage = () => {
   }, [globalSearch, students, staff, schools]);
 
   const notifications = useMemo(() => {
+    const auditToday = Number(enterpriseOverview?.audit?.totalToday || 0);
+    const sessionsActive = Number(enterpriseOverview?.sessions?.active || 0);
     const items = [
       { id: 'notif-1', text: `${pendingTotal} pendência(s) operacional(is) no sistema.`, tone: pendingTotal > 0 ? 'amber' : 'emerald' },
       { id: 'notif-2', text: `${stats.pendingUsers} conta(s) com necessidade de validação/reativação.`, tone: stats.pendingUsers > 0 ? 'rose' : 'emerald' },
-      { id: 'notif-3', text: `${stats.schools} escola(s) monitorizada(s) no Enterprise.`, tone: 'sky' },
-      { id: 'notif-4', text: `${stats.teachers} professor(es) e ${stats.directors} diretor(es) ativos.`, tone: 'emerald' },
+      { id: 'notif-3', text: `${sessionsActive || Math.max(1, stats.staff)} sessão(ões) ativa(s) monitorizada(s).`, tone: 'sky' },
+      { id: 'notif-4', text: `${auditToday || 0} evento(s) de auditoria registado(s) hoje.`, tone: 'emerald' },
     ];
     return items;
-  }, [pendingTotal, stats]);
+  }, [pendingTotal, stats, enterpriseOverview]);
 
   const agendaItems = [
     { id: 'a1', date: '12 Set', title: 'Conselho pedagógico', module: 'Direção', status: 'Confirmado' },
@@ -282,15 +360,33 @@ const EnterprisePortalPage = () => {
     { id: 'a4', date: '25 Set', title: 'Reunião com encarregados', module: 'Comunicação', status: 'Planeado' },
   ];
 
-  const workflowSteps = [
-    { id: 'wf-1', label: 'Pedido', count: pendingItems[0]?.count || 0 },
-    { id: 'wf-2', label: 'Secretaria', count: Math.max(1, Math.round((pendingItems[0]?.count || 0) * 0.6)) },
-    { id: 'wf-3', label: 'Direção', count: Math.max(1, Math.round((pendingItems[2]?.count || 0) * 0.4)) },
-    { id: 'wf-4', label: 'Financeiro', count: Math.max(1, Math.round((pendingItems[1]?.count || 0) * 0.5)) },
-    { id: 'wf-5', label: 'Concluído', count: Math.max(3, stats.schools) },
-  ];
+  const workflowSteps = useMemo(() => {
+    const summary = enterpriseOverview?.workflows?.summary || {};
+    return [
+      { id: 'wf-1', label: 'Pedido', count: Math.max(pendingItems[0]?.count || 0, Number(summary.pending || 0)) },
+      { id: 'wf-2', label: 'Secretaria', count: Math.max(1, Number(summary.in_review || Math.round((pendingItems[0]?.count || 0) * 0.6))) },
+      { id: 'wf-3', label: 'Direção', count: Math.max(1, Number(summary.approved || Math.round((pendingItems[2]?.count || 0) * 0.4))) },
+      { id: 'wf-4', label: 'Financeiro', count: Math.max(1, Number(summary.rejected || Math.round((pendingItems[1]?.count || 0) * 0.5))) },
+      { id: 'wf-5', label: 'Concluído', count: Math.max(1, Number(summary.completed || stats.schools)) },
+    ];
+  }, [enterpriseOverview, pendingItems, stats.schools]);
 
   const timelineEvents: TimelineEvent[] = useMemo(() => {
+    const backendTimeline = enterpriseOverview?.audit?.latest;
+    if (Array.isArray(backendTimeline) && backendTimeline.length > 0) {
+      return backendTimeline.slice(0, 6).map((item: any, index: number) => {
+        const date = item?.createdAt ? new Date(item.createdAt) : new Date();
+        const action = String(item?.action || 'evento').replaceAll('_', ' ');
+        return {
+          id: `backend-${item.id || index}`,
+          at: date.toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' }),
+          label: action.charAt(0).toUpperCase() + action.slice(1),
+          detail: `${item?.resourceType || 'recurso'}${item?.actorName ? ` · por ${item.actorName}` : ''}`,
+          tone: item?.severity === 'warn' ? 'amber' : item?.severity === 'error' ? 'sky' : 'emerald',
+        } as TimelineEvent;
+      });
+    }
+
     const now = new Date();
     const fmt = (minutesAgo: number) => {
       const d = new Date(now.getTime() - minutesAgo * 60 * 1000);
@@ -304,7 +400,7 @@ const EnterprisePortalPage = () => {
       { id: 't4', at: fmt(46), label: 'Documento emitido', detail: 'Declaração assinada digitalmente', tone: 'amber' },
       { id: 't5', at: fmt(62), label: 'Nova turma criada', detail: 'Estrutura letiva expandida', tone: 'sky' },
     ];
-  }, [stats.schools]);
+  }, [stats.schools, enterpriseOverview]);
 
   const lensWidgets = {
     director: [
@@ -329,11 +425,18 @@ const EnterprisePortalPage = () => {
     ],
   };
 
-  const securityHighlights = [
-    { label: 'Auditoria ativa', value: 'Logs de login/edição/exportação consolidados por sessão local' },
-    { label: 'Sessões monitorizadas', value: `${Math.max(1, staff.length)} sessão(ões) institucional(is) observada(s)` },
-    { label: 'MFA e políticas', value: 'Recomendado habilitar MFA, expiração e dispositivo confiável por perfil' },
-  ];
+  const securityHighlights = useMemo(() => {
+    const mfa = enterpriseOverview?.security?.mfa || {};
+    const policies = Array.isArray(enterpriseOverview?.security?.policies) ? enterpriseOverview.security.policies : [];
+    const sessionsActive = Number(enterpriseOverview?.sessions?.active || 0);
+    const auditToday = Number(enterpriseOverview?.audit?.totalToday || 0);
+
+    return [
+      { label: 'Auditoria ativa', value: `${auditToday} evento(s) registado(s) hoje no backend enterprise` },
+      { label: 'Sessões monitorizadas', value: `${sessionsActive || Math.max(1, staff.length)} sessão(ões) institucional(is) ativa(s)` },
+      { label: 'MFA e políticas', value: `${Number(mfa.verified || 0)} MFA verificado(s) · ${policies.length} política(s) de segurança` },
+    ];
+  }, [enterpriseOverview, staff.length]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
