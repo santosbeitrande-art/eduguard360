@@ -39,6 +39,50 @@ type EnterpriseRole =
   | 'student'
   | 'other';
 type DashboardLens = 'director' | 'teacher' | 'secretaria' | 'financeiro';
+type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'approve' | 'export';
+type PermissionDomain =
+  | 'schools'
+  | 'users'
+  | 'courses'
+  | 'disciplines'
+  | 'classes'
+  | 'teachers'
+  | 'students'
+  | 'enrollments'
+  | 'schedule'
+  | 'grades'
+  | 'attendance'
+  | 'incidents'
+  | 'payments'
+  | 'employees'
+  | 'documents'
+  | 'qr'
+  | 'analytics'
+  | 'security'
+  | 'workflow';
+
+type AccessProfile = {
+  role: string;
+  portal: string;
+  permissions: Record<PermissionDomain, PermissionAction[]>;
+  tenantScope?: {
+    mode?: string;
+    schoolId?: string | null;
+    tenantId?: string | null;
+  };
+  analyticsScope?: {
+    level?: string;
+    canViewAllSchools?: boolean;
+    schoolId?: string | null;
+    modules?: string[];
+  };
+};
+
+type WorkspaceModule = {
+  domain: PermissionDomain;
+  title: string;
+  description: string;
+};
 
 type EnterpriseCard = {
   title: string;
@@ -107,6 +151,76 @@ const toneClass = {
   emerald: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200',
 };
 
+const roleWorkspaceModules: Record<string, WorkspaceModule[]> = {
+  super_admin: [
+    { domain: 'schools', title: 'Instituição', description: 'Configuração global de escolas e unidade institucional.' },
+    { domain: 'users', title: 'Utilizadores', description: 'Gestão de contas, estados, papéis e acessos.' },
+    { domain: 'workflow', title: 'Aprovações', description: 'Fluxos interdepartamentais e decisões pendentes.' },
+    { domain: 'analytics', title: 'Analytics', description: 'Indicadores globais e análise transversal.' },
+    { domain: 'security', title: 'Auditoria', description: 'Sessões, trilhas de auditoria e políticas de segurança.' },
+  ],
+  director: [
+    { domain: 'schools', title: 'Instituição', description: 'Gestão estratégica da escola e parâmetros-chave.' },
+    { domain: 'users', title: 'Utilizadores', description: 'Criação, ativação e governação de contas da escola.' },
+    { domain: 'workflow', title: 'Aprovações', description: 'Decisões finais em fluxos académicos e administrativos.' },
+    { domain: 'analytics', title: 'Relatórios', description: 'Desempenho académico, operacional e financeiro.' },
+    { domain: 'security', title: 'Auditoria', description: 'Rastreabilidade e conformidade de operações.' },
+  ],
+  administrator: [
+    { domain: 'users', title: 'Administração Escolar', description: 'Operação diária de utilizadores e cadastros.' },
+    { domain: 'students', title: 'Alunos', description: 'Consulta e manutenção de dados estudantis.' },
+    { domain: 'enrollments', title: 'Matrículas', description: 'Operação de matrículas e acompanhamento de estado.' },
+    { domain: 'documents', title: 'Documentos', description: 'Gestão documental e emissão operacional.' },
+  ],
+  secretaria: [
+    { domain: 'enrollments', title: 'Matrículas', description: 'Registo, atualização e seguimento de matrículas.' },
+    { domain: 'students', title: 'Alunos', description: 'Dados pessoais, encarregados e histórico escolar.' },
+    { domain: 'classes', title: 'Turmas', description: 'Alocação de alunos e organização de turmas.' },
+    { domain: 'documents', title: 'Declarações e Certificados', description: 'Emissão e gestão de documentos académicos.' },
+    { domain: 'schedule', title: 'Calendário', description: 'Consulta de calendário escolar e marcos operacionais.' },
+  ],
+  coordenador: [
+    { domain: 'disciplines', title: 'Disciplinas', description: 'Estrutura curricular e conteúdos por disciplina.' },
+    { domain: 'schedule', title: 'Horários', description: 'Planeamento e distribuição de horários académicos.' },
+    { domain: 'courses', title: 'Currículos', description: 'Organização de cursos e alinhamento pedagógico.' },
+    { domain: 'teachers', title: 'Professores', description: 'Acompanhamento pedagógico e distribuição docente.' },
+    { domain: 'workflow', title: 'Planeamento', description: 'Fluxos académicos e validações de coordenação.' },
+  ],
+  professor: [
+    { domain: 'classes', title: 'Minhas Turmas', description: 'Visão de turmas atribuídas ao docente.' },
+    { domain: 'attendance', title: 'Frequência', description: 'Registo e atualização de assiduidade.' },
+    { domain: 'grades', title: 'Avaliações', description: 'Lançamento e atualização de notas.' },
+    { domain: 'incidents', title: 'Ocorrências', description: 'Registo de ocorrências pedagógicas e disciplinares.' },
+    { domain: 'schedule', title: 'Horários', description: 'Consulta de horários e carga letiva.' },
+  ],
+  financeiro: [
+    { domain: 'payments', title: 'Propinas e Pagamentos', description: 'Cobrança, liquidação e histórico de pagamentos.' },
+    { domain: 'payments', title: 'Faturas', description: 'Emissão e gestão de faturas institucionais.' },
+    { domain: 'payments', title: 'Bolsas e Dívidas', description: 'Bolsas, acordos e carteira de dívidas.' },
+    { domain: 'payments', title: 'Reconciliação', description: 'Conciliação financeira e fecho operacional.' },
+  ],
+  rh: [
+    { domain: 'employees', title: 'Funcionários', description: 'Cadastro e ciclo de vida de colaboradores.' },
+    { domain: 'employees', title: 'Contratos', description: 'Gestão contratual e vínculo funcional.' },
+    { domain: 'employees', title: 'Férias', description: 'Controlo de férias e disponibilidade.' },
+    { domain: 'employees', title: 'Avaliações', description: 'Avaliação de desempenho e evolução.' },
+    { domain: 'documents', title: 'Formação', description: 'Planos e histórico de formação interna.' },
+  ],
+  seguranca: [
+    { domain: 'qr', title: 'Controlo de Entradas', description: 'Validação QR e monitorização de acessos.' },
+    { domain: 'incidents', title: 'Ocorrências', description: 'Registo e acompanhamento de ocorrências.' },
+    { domain: 'security', title: 'Conformidade', description: 'Consulta de políticas e evidências de segurança.' },
+  ],
+};
+
+const approvalFlowByProfile = [
+  { id: 'step-secretaria', title: 'Submissão de Matrícula', owner: 'secretaria', label: 'Secretaria Académica' },
+  { id: 'step-coordenacao', title: 'Validação Pedagógica', owner: 'coordenador', label: 'Coordenação Académica' },
+  { id: 'step-direcao', title: 'Aprovação Institucional', owner: 'director', label: 'Direção' },
+  { id: 'step-financeiro', title: 'Confirmação Financeira', owner: 'financeiro', label: 'Gestão Financeira' },
+  { id: 'step-final', title: 'Concluído', owner: 'administrator', label: 'Administração Escolar' },
+];
+
 const EnterprisePortalPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -129,6 +243,8 @@ const EnterprisePortalPage = () => {
   const [students, setStudents] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [enterpriseOverview, setEnterpriseOverview] = useState<any | null>(null);
+  const [currentEnterpriseRole, setCurrentEnterpriseRole] = useState<EnterpriseRole>('other');
+  const [accessProfile, setAccessProfile] = useState<AccessProfile | null>(null);
 
   const resolveCurrentUserSnapshot = () => {
     for (const key of ['currentUser', 'eduguard_user', 'user']) {
@@ -195,6 +311,34 @@ const EnterprisePortalPage = () => {
       try {
         const currentUser = resolveCurrentUserSnapshot();
         const enterpriseHeaders = currentUser ? buildEnterpriseHeaders(currentUser) : undefined;
+
+        if (currentUser) {
+          try {
+            const resolveRes = await withTimeout(
+              fetch('/api/v1/enterprise/rbac/resolve', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  role: String(currentUser?.perfil || currentUser?.role || ''),
+                  schoolId: String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
+                  tenantId: String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
+                  userId: String(currentUser?.id || currentUser?.user_id || ''),
+                }),
+              }),
+              8000,
+              'Enterprise RBAC resolve timeout'
+            );
+
+            if (resolveRes.ok) {
+              const resolved = await resolveRes.json();
+              setAccessProfile(resolved);
+            }
+          } catch (resolveError) {
+            console.warn('RBAC resolve unavailable:', resolveError);
+          }
+        }
 
         const overviewRes = await withTimeout(
           fetch('/api/v1/enterprise/overview', {
@@ -296,6 +440,8 @@ const EnterprisePortalPage = () => {
         return;
       }
 
+      setCurrentEnterpriseRole(getRoleLabel(role));
+
       if (role === 'professor') setDashboardLens('teacher');
       if (role === 'financeiro') setDashboardLens('financeiro');
       if (role === 'secretaria') setDashboardLens('secretaria');
@@ -317,6 +463,37 @@ const EnterprisePortalPage = () => {
       || String(item.roleLabel || '').toLowerCase().includes(q)
     );
   }, [staffSearch, staff]);
+
+  const can = (domain: PermissionDomain, action: PermissionAction): boolean => {
+    const actions = accessProfile?.permissions?.[domain] || [];
+    return Array.isArray(actions) && actions.includes(action);
+  };
+
+  const workspaceModules = useMemo(() => {
+    const role = currentEnterpriseRole === 'other' ? 'administrator' : currentEnterpriseRole;
+    const base = roleWorkspaceModules[role] || roleWorkspaceModules.administrator;
+    return base.filter((module) => can(module.domain, 'read'));
+  }, [currentEnterpriseRole, accessProfile]);
+
+  const workspacePermissionRows = useMemo(() => {
+    const rows = workspaceModules.map((module) => ({
+      ...module,
+      create: can(module.domain, 'create'),
+      read: can(module.domain, 'read'),
+      update: can(module.domain, 'update'),
+      delete: can(module.domain, 'delete'),
+      approve: can(module.domain, 'approve'),
+      export: can(module.domain, 'export'),
+    }));
+    return rows;
+  }, [workspaceModules, accessProfile]);
+
+  const roleOwnershipFlow = useMemo(() => {
+    return approvalFlowByProfile.map((step) => ({
+      ...step,
+      canExecute: currentEnterpriseRole === step.owner || currentEnterpriseRole === 'super_admin',
+    }));
+  }, [currentEnterpriseRole]);
 
   const cards: EnterpriseCard[] = [
     { title: 'Escolas ativas', value: String(stats.schools), subtitle: 'Instituições geridas no sistema', accent: 'from-blue-600 to-cyan-600', icon: <Building2 className="w-6 h-6" /> },
@@ -549,6 +726,97 @@ const EnterprisePortalPage = () => {
                 </span>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Portal de Trabalho por Perfil</h2>
+                <p className="text-sm text-slate-300">Ambiente operacional resolvido pelo perfil após login único.</p>
+              </div>
+              <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
+                {getRoleDisplayLabel(currentEnterpriseRole)}
+              </span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {workspaceModules.length === 0 ? (
+                <p className="text-sm text-slate-400">Nenhum módulo disponível para este perfil no escopo atual.</p>
+              ) : workspaceModules.map((module) => (
+                <div key={`${module.domain}-${module.title}`} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                  <p className="font-semibold text-white">{module.title}</p>
+                  <p className="mt-1 text-sm text-slate-300">{module.description}</p>
+                  <p className="mt-2 text-xs text-slate-400">Domínio RBAC: {module.domain}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Fluxo de Aprovação por Responsável</h2>
+                <p className="text-sm text-slate-300">Cada etapa pertence a um perfil executante específico.</p>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">Workflow funcional</span>
+            </div>
+
+            <div className="space-y-3">
+              {roleOwnershipFlow.map((step) => (
+                <div key={step.id} className={`rounded-2xl border p-4 ${step.canExecute ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-white/10 bg-slate-950/50 text-slate-200'}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold">{step.title}</p>
+                    <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">{step.label}</span>
+                  </div>
+                  <p className="mt-1 text-xs opacity-90">{step.canExecute ? 'Pode executar esta etapa.' : 'Apenas leitura para este perfil.'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Permissões Granulares por Ação</h2>
+              <p className="text-sm text-slate-300">Visão explícita de Ver, Criar, Editar, Eliminar, Aprovar e Exportar por módulo.</p>
+            </div>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">CRUD + Aprovar + Exportar</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-slate-300">
+                  <th className="px-3 py-2">Módulo</th>
+                  <th className="px-3 py-2">Ver</th>
+                  <th className="px-3 py-2">Criar</th>
+                  <th className="px-3 py-2">Editar</th>
+                  <th className="px-3 py-2">Eliminar</th>
+                  <th className="px-3 py-2">Aprovar</th>
+                  <th className="px-3 py-2">Exportar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workspacePermissionRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-4 text-slate-400">Sem módulos com permissão de leitura para este perfil.</td>
+                  </tr>
+                ) : workspacePermissionRows.map((row) => (
+                  <tr key={`perm-${row.domain}-${row.title}`} className="border-b border-white/5 text-slate-200">
+                    <td className="px-3 py-3">{row.title}</td>
+                    <td className="px-3 py-3">{row.read ? '✅' : '❌'}</td>
+                    <td className="px-3 py-3">{row.create ? '✅' : '❌'}</td>
+                    <td className="px-3 py-3">{row.update ? '✅' : '❌'}</td>
+                    <td className="px-3 py-3">{row.delete ? '✅' : '❌'}</td>
+                    <td className="px-3 py-3">{row.approve ? '✅' : '❌'}</td>
+                    <td className="px-3 py-3">{row.export ? '✅' : '❌'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
