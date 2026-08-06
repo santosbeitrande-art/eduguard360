@@ -600,6 +600,19 @@ const AdminGlobalDashboard = () => {
     return name.includes(search) || email.includes(search) || schoolName.includes(search) || roleLabel.includes(search);
   });
 
+  const peopleSummary = filteredPeopleRows.reduce((summary, person) => {
+    summary[person.roleKey as 'teacher' | 'director' | 'security'] = (summary[person.roleKey as 'teacher' | 'director' | 'security'] || 0) + 1;
+    if (person.escola_id) {
+      summary.schools.add(String(person.escola_id));
+    }
+    return summary;
+  }, {
+    teacher: 0,
+    director: 0,
+    security: 0,
+    schools: new Set<string>(),
+  } as { teacher: number; director: number; security: number; schools: Set<string> });
+
   const loadStudents = async (schoolId: string) => {
     if (schoolId.startsWith('local-school-')) {
       setStudents(getCachedStudentsForSchool(schoolId));
@@ -2030,8 +2043,12 @@ const AdminGlobalDashboard = () => {
                   <h2 className="text-xl font-semibold text-white">Equipa por Perfil</h2>
                   <p className="text-gray-400 text-sm">Professores, diretores e seguranças numa única visão com filtros rápidos por perfil e escola.</p>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
-                  <Users className="w-4 h-4" /> {filteredPeopleRows.length} registo(s)
+                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1"><Users className="w-4 h-4" /> {filteredPeopleRows.length} registo(s)</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Professores: {peopleSummary.teacher}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Diretores: {peopleSummary.director}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Seguranças: {peopleSummary.security}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Escolas: {peopleSummary.schools.size}</span>
                 </div>
               </div>
               <div className="p-6 space-y-4">
