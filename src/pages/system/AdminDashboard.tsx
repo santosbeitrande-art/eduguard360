@@ -192,6 +192,9 @@ const AdminGlobalDashboard = () => {
   const [directorsLoading, setDirectorsLoading] = useState(false);
   const [securityUsers, setSecurityUsers] = useState<any[]>([]);
   const [securityUsersLoading, setSecurityUsersLoading] = useState(false);
+  const [peopleProfileFilter, setPeopleProfileFilter] = useState<'all' | 'teacher' | 'director' | 'security'>('all');
+  const [peopleSchoolFilter, setPeopleSchoolFilter] = useState('all');
+  const [peopleSearch, setPeopleSearch] = useState('');
 
   const readSchoolsCache = (): any[] => {
     try {
@@ -563,6 +566,39 @@ const AdminGlobalDashboard = () => {
       loadStudents(selectedSchoolId);
     }
   };
+
+  const peopleRows = [
+    ...teachers.map((item) => ({ ...item, roleKey: 'teacher', roleLabel: 'Professor' })),
+    ...directors.map((item) => ({ ...item, roleKey: 'director', roleLabel: 'Diretor' })),
+    ...securityUsers.map((item) => ({ ...item, roleKey: 'security', roleLabel: 'Segurança' })),
+  ];
+
+  const schoolFilterOptions = Array.from(new Map(
+    [...escolas, ...peopleRows]
+      .map((item: any) => {
+        const schoolId = String(item?.escola_id || '').trim();
+        const schoolName = String(item?.schoolName || item?.nome || '').trim();
+        return schoolId
+          ? [schoolId, schoolName || `Escola ${schoolId.slice(0, 8)}`]
+          : null;
+      })
+      .filter(Boolean)
+  ).entries()).map(([id, name]) => ({ id, name }));
+
+  const filteredPeopleRows = peopleRows.filter((person) => {
+    if (peopleProfileFilter !== 'all' && person.roleKey !== peopleProfileFilter) return false;
+    if (peopleSchoolFilter !== 'all' && String(person.escola_id || '') !== peopleSchoolFilter) return false;
+
+    const search = peopleSearch.trim().toLowerCase();
+    if (!search) return true;
+
+    const name = String(person.nome || '').toLowerCase();
+    const email = String(person.email || '').toLowerCase();
+    const schoolName = String(person.schoolName || '').toLowerCase();
+    const roleLabel = String(person.roleLabel || '').toLowerCase();
+
+    return name.includes(search) || email.includes(search) || schoolName.includes(search) || roleLabel.includes(search);
+  });
 
   const loadStudents = async (schoolId: string) => {
     if (schoolId.startsWith('local-school-')) {
@@ -1989,88 +2025,75 @@ const AdminGlobalDashboard = () => {
         <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-6">
           <div className="space-y-6">
             <div className="card bg-[#081825] border border-white/10 overflow-hidden">
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <div className="p-6 border-b border-white/10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-white">Professores Registados</h2>
-                  <p className="text-gray-400 text-sm">Lista de professores com a respetiva escola e estado da conta.</p>
+                  <h2 className="text-xl font-semibold text-white">Equipa por Perfil</h2>
+                  <p className="text-gray-400 text-sm">Professores, diretores e seguranças numa única visão com filtros rápidos por perfil e escola.</p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
-                  <Users className="w-4 h-4" /> {teachers.length} registo(s)
+                  <Users className="w-4 h-4" /> {filteredPeopleRows.length} registo(s)
                 </div>
               </div>
-              <div className="p-6 space-y-3">
-                <button onClick={loadTeachers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Professores</button>
-                {teachersLoading ? (
-                  <div className="text-gray-400">A carregar professores...</div>
-                ) : teachers.length === 0 ? (
-                  <div className="text-gray-400">Nenhum professor registado encontrado.</div>
-                ) : (
-                  teachers.map((teacher) => (
-                    <div key={teacher.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="font-semibold text-white">{teacher.nome}</p>
-                      <p className="text-sm text-gray-300">{teacher.email || 'Sem email'} · {teacher.telefone || 'Sem telefone'}</p>
-                      <p className="text-sm text-gray-400">Escola: {teacher.schoolName}</p>
-                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(teacher.perfil)} · Fonte: {teacher.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+              <div className="p-6 space-y-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <select
+                    value={peopleProfileFilter}
+                    onChange={(event) => setPeopleProfileFilter(event.target.value as 'all' | 'teacher' | 'director' | 'security')}
+                    className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white outline-none"
+                    aria-label="Filtrar por perfil"
+                  >
+                    <option value="all">Todos os perfis</option>
+                    <option value="teacher">Professores</option>
+                    <option value="director">Diretores</option>
+                    <option value="security">Seguranças</option>
+                  </select>
+                  <select
+                    value={peopleSchoolFilter}
+                    onChange={(event) => setPeopleSchoolFilter(event.target.value)}
+                    className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white outline-none"
+                    aria-label="Filtrar por escola"
+                  >
+                    <option value="all">Todas as escolas</option>
+                    {schoolFilterOptions.map((school) => (
+                      <option key={school.id} value={school.id}>{school.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={peopleSearch}
+                    onChange={(event) => setPeopleSearch(event.target.value)}
+                    className="rounded-xl border border-white/10 bg-[#03121e] px-3 py-2 text-sm text-white outline-none"
+                    placeholder="Pesquisar por nome, email ou escola"
+                  />
+                </div>
 
-            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Diretores Registados</h2>
-                  <p className="text-gray-400 text-sm">Lista de diretores e a escola que representam.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={loadAllRoleUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Lista</button>
+                  <button onClick={loadTeachers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Professores</button>
+                  <button onClick={loadDirectors} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Diretores</button>
+                  <button onClick={loadSecurityUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Seguranças</button>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
-                  <Users className="w-4 h-4" /> {directors.length} registo(s)
-                </div>
-              </div>
-              <div className="p-6 space-y-3">
-                <button onClick={loadDirectors} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Diretores</button>
-                {directorsLoading ? (
-                  <div className="text-gray-400">A carregar diretores...</div>
-                ) : directors.length === 0 ? (
-                  <div className="text-gray-400">Nenhum diretor registado encontrado.</div>
-                ) : (
-                  directors.map((director) => (
-                    <div key={director.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="font-semibold text-white">{director.nome}</p>
-                      <p className="text-sm text-gray-300">{director.email || 'Sem email'} · {director.telefone || 'Sem telefone'}</p>
-                      <p className="text-sm text-gray-400">Escola: {director.schoolName}</p>
-                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(director.perfil)} · Fonte: {director.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
 
-            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Seguranças Registados</h2>
-                  <p className="text-gray-400 text-sm">Lista de seguranças QR e as escolas onde operam.</p>
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
-                  <Users className="w-4 h-4" /> {securityUsers.length} registo(s)
-                </div>
-              </div>
-              <div className="p-6 space-y-3">
-                <button onClick={loadSecurityUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Seguranças</button>
-                {securityUsersLoading ? (
-                  <div className="text-gray-400">A carregar seguranças...</div>
-                ) : securityUsers.length === 0 ? (
-                  <div className="text-gray-400">Nenhum segurança registado encontrado.</div>
+                {teachersLoading || directorsLoading || securityUsersLoading ? (
+                  <div className="text-gray-400">A carregar perfis...</div>
+                ) : filteredPeopleRows.length === 0 ? (
+                  <div className="text-gray-400">Nenhum registo encontrado para os filtros selecionados.</div>
                 ) : (
-                  securityUsers.map((security) => (
-                    <div key={security.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="font-semibold text-white">{security.nome}</p>
-                      <p className="text-sm text-gray-300">{security.email || 'Sem email'} · {security.telefone || 'Sem telefone'}</p>
-                      <p className="text-sm text-gray-400">Escola: {security.schoolName}</p>
-                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(security.perfil)} · Fonte: {security.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
-                    </div>
-                  ))
+                  <div className="space-y-3">
+                    {filteredPeopleRows.map((person) => (
+                      <div key={`${person.roleKey}-${person.id}`} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-white">{person.nome}</p>
+                            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-gray-200">{person.roleLabel}</span>
+                          </div>
+                          <p className="text-sm text-gray-300">{person.email || 'Sem email'} · {person.telefone || 'Sem telefone'}</p>
+                          <p className="text-sm text-gray-400">Escola: {person.schoolName}</p>
+                        </div>
+                        <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(person.perfil)} · Fonte: {person.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
