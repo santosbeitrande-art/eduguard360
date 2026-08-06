@@ -4,6 +4,22 @@ import fs from 'fs';
 
 const router = express.Router();
 
+function resolveFrontendFile(fileName: string): string {
+  const candidates = [
+    path.join(process.cwd(), '..', 'verify-frontend', fileName),
+    path.join(__dirname, '..', '..', '..', 'verify-frontend', fileName),
+    path.join(__dirname, '..', '..', 'verify-frontend', fileName),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
 function sendNoCacheHtml(res: express.Response, filePath: string) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -21,15 +37,15 @@ router.get('/health', (_req, res) => {
 });
 
 router.get('/public/login', (_req, res) => {
-  sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'login.html'));
+  sendNoCacheHtml(res, resolveFrontendFile('login.html'));
 });
 
 router.get('/public', (req, res) => {
-  sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
+  sendNoCacheHtml(res, resolveFrontendFile('index.html'));
 });
 
 router.get('/public/', (req, res) => {
-  sendNoCacheHtml(res, path.join(__dirname, '..', '..', 'verify-frontend', 'index.html'));
+  sendNoCacheHtml(res, resolveFrontendFile('index.html'));
 });
 
 export default router;

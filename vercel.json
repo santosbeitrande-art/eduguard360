@@ -5,15 +5,15 @@
   "rewrites": [
     {
       "source": "/public",
-      "destination": "/public/index.html?v=2026-08-03-portal"
+      "destination": "/public/index.html?v=2026-08-06-loginfix"
     },
     {
       "source": "/public/",
-      "destination": "/public/index.html?v=2026-08-03-portal"
+      "destination": "/public/index.html?v=2026-08-06-loginfix"
     },
     {
       "source": "/public/login",
-      "destination": "/public/login.html?v=2026-08-03-portal"
+      "destination": "/public/login.html?v=2026-08-06-loginfix"
     },
     {
       "source": "/(.*)",
