@@ -1218,6 +1218,10 @@ function buildRecoveryEmailBody(token: string, expiresInMinutes: number) {
   ].join('\n');
 }
 
+function buildRecoveryEmailSubject() {
+  return 'EduGuard Verify AI - Recuperacao de palavra-passe';
+}
+
 function getSmtpRuntimeStatus() {
   const host = String(process.env.SMTP_HOST || '').trim();
   const port = Number(process.env.SMTP_PORT || 587);
@@ -1236,11 +1240,35 @@ function getSmtpRuntimeStatus() {
   };
 }
 
-async function sendPasswordRecoveryEmail(email: string, token: string, expiresInMinutes: number) {
+function getFormSubmitRuntimeStatus() {
+  const endpoint = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_ENDPOINT || 'https://formsubmit.co/ajax').trim().replace(/\/+$/, '');
+  const recipient = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT || '').trim();
+  const includeCc = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_CC || 'true').trim().toLowerCase() !== 'false';
+
+  return {
+    configured: Boolean(endpoint && recipient),
+    endpoint,
+    recipient,
+    includeCc
+  };
+}
+
+function getRecoveryEmailRuntimeStatus() {
+  const smtp = getSmtpRuntimeStatus();
+  const formsubmit = getFormSubmitRuntimeStatus();
+  return {
+    configured: smtp.configured || formsubmit.configured,
+    preferredProvider: smtp.configured ? 'smtp' : (formsubmit.configured ? 'formsubmit' : 'none'),
+    smtp,
+    formsubmit
+  };
+}
+
+async function sendPasswordRecoveryViaSmtp(email: string, token: string, expiresInMinutes: number) {
   const smtp = getSmtpRuntimeStatus();
 
   if (!smtp.configured) {
-    return { delivered: false as const, reason: 'smtp-not-configured' as const };
+    return { delivered: false as const, reason: 'smtp-not-configured' as const, provider: 'smtp' as const };
   }
 
   const transporter = nodemailer.createTransport({
@@ -1253,11 +1281,76 @@ async function sendPasswordRecoveryEmail(email: string, token: string, expiresIn
   await transporter.sendMail({
     from: smtp.from,
     to: email,
-    subject: 'EduGuard Verify AI - Recuperacao de palavra-passe',
+    subject: buildRecoveryEmailSubject(),
     text: buildRecoveryEmailBody(token, expiresInMinutes)
   });
 
-  return { delivered: true as const };
+  return { delivered: true as const, provider: 'smtp' as const };
+}
+
+async function sendPasswordRecoveryViaFormSubmit(email: string, token: string, expiresInMinutes: number) {
+  const formsubmit = getFormSubmitRuntimeStatus();
+  if (!formsubmit.configured) {
+    return { delivered: false as const, reason: 'formsubmit-not-configured' as const, provider: 'formsubmit' as const };
+  }
+
+  const body = {
+    _subject: buildRecoveryEmailSubject(),
+    _captcha: 'false',
+    _replyto: email,
+    _cc: formsubmit.includeCc ? email : undefined,
+    email,
+    recoveryToken: token,
+    expiresInMinutes,
+    message: buildRecoveryEmailBody(token, expiresInMinutes)
+  };
+
+  const response = await fetch(`${formsubmit.endpoint}/${encodeURIComponent(formsubmit.recipient)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'unknown-response');
+    throw new Error(`formsubmit-send-failed:${response.status}:${detail}`);
+  }
+
+  return { delivered: true as const, provider: 'formsubmit' as const };
+}
+
+async function sendPasswordRecoveryEmail(email: string, token: string, expiresInMinutes: number) {
+  const runtime = getRecoveryEmailRuntimeStatus();
+  if (!runtime.configured) {
+    return { delivered: false as const, reason: 'recovery-email-not-configured' as const, provider: 'none' as const };
+  }
+
+  const errors: string[] = [];
+
+  if (runtime.smtp.configured) {
+    try {
+      return await sendPasswordRecoveryViaSmtp(email, token, expiresInMinutes);
+    } catch (error: any) {
+      errors.push(`smtp:${String(error?.message || error)}`);
+    }
+  }
+
+  if (runtime.formsubmit.configured) {
+    try {
+      return await sendPasswordRecoveryViaFormSubmit(email, token, expiresInMinutes);
+    } catch (error: any) {
+      errors.push(`formsubmit:${String(error?.message || error)}`);
+    }
+  }
+
+  return {
+    delivered: false as const,
+    reason: errors.length ? errors.join(' | ') : 'recovery-email-delivery-failed',
+    provider: runtime.preferredProvider
+  };
 }
 
 function verifyPassword(password: string, encoded: string) {
@@ -1828,7 +1921,7 @@ export function registerAuthRoutes(app: any) {
     const expiresInMinutes = Math.round(PASSWORD_RESET_TOKEN_TTL_MS / 60000);
     const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
     const allowTokenEcho = String(process.env.PASSWORD_RESET_RETURN_TOKEN || '').toLowerCase() === 'true';
-    const smtp = getSmtpRuntimeStatus();
+    const recoveryEmailRuntime = getRecoveryEmailRuntimeStatus();
 
     // Hardened default: manual token fallback must be explicitly enabled.
     const allowManualTokenFallback = String(process.env.PASSWORD_RESET_ALLOW_MANUAL_FALLBACK || '').toLowerCase() === 'true';
@@ -1839,19 +1932,24 @@ export function registerAuthRoutes(app: any) {
         ok: true,
         message: 'If the account exists, a recovery token will be issued.',
         expiresInMinutes,
-        delivery: smtp.configured ? 'sent' : 'not-configured'
+        delivery: recoveryEmailRuntime.configured ? 'sent' : 'not-configured'
       });
     }
 
     const resetToken = issuePasswordResetToken(store, credential);
     let delivery: 'sent' | 'not-configured' | 'failed' = 'not-configured';
+    let deliveryProvider = 'none';
 
     try {
       const deliveryResult = await sendPasswordRecoveryEmail(email, resetToken, expiresInMinutes);
       delivery = deliveryResult.delivered ? 'sent' : 'not-configured';
+      deliveryProvider = String(deliveryResult.provider || 'none');
+      if (!deliveryResult.delivered && String(deliveryResult.reason || '').includes('failed')) {
+        delivery = 'failed';
+      }
     } catch (error: any) {
       delivery = 'failed';
-      appendAuditEvent(store, 'system', 'smtp', 'auth.password_recovery.email_failed', credential.companyId, {
+      appendAuditEvent(store, 'system', 'recovery-email', 'auth.password_recovery.email_failed', credential.companyId, {
         credentialId: credential.id,
         error: String(error?.message || error)
       });
@@ -1859,16 +1957,18 @@ export function registerAuthRoutes(app: any) {
 
     appendAuditEvent(store, 'public', email, 'auth.password_recovery.requested', credential.companyId, {
       credentialId: credential.id,
-      delivery
+      delivery,
+      deliveryProvider
     });
     saveStore(store);
 
     return res.json({
       ok: true,
       message: 'If the account exists, a recovery token will be issued.',
-      recoveryToken: (!isProduction || allowTokenEcho || (allowManualTokenFallback && !smtp.configured)) ? resetToken : undefined,
+      recoveryToken: (!isProduction || allowTokenEcho || (allowManualTokenFallback && !recoveryEmailRuntime.configured)) ? resetToken : undefined,
       expiresInMinutes,
-      delivery
+      delivery,
+      channel: deliveryProvider
     });
   });
 
@@ -2970,8 +3070,20 @@ export function registerAuthRoutes(app: any) {
 
   app.get('/admin/security/smtp/status', requireAdminToken, (_req: Request, res: Response) => {
     const smtp = getSmtpRuntimeStatus();
+    const formsubmit = getFormSubmitRuntimeStatus();
+    const recoveryEmailRuntime = getRecoveryEmailRuntimeStatus();
     return res.json({
       ok: true,
+      recoveryEmail: {
+        configured: recoveryEmailRuntime.configured,
+        preferredProvider: recoveryEmailRuntime.preferredProvider,
+        formsubmit: {
+          configured: formsubmit.configured,
+          endpointSet: Boolean(formsubmit.endpoint),
+          recipientSet: Boolean(formsubmit.recipient),
+          includeCc: formsubmit.includeCc
+        }
+      },
       smtp: {
         configured: smtp.configured,
         hostSet: Boolean(smtp.host),
