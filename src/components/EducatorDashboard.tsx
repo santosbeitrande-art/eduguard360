@@ -407,6 +407,25 @@ const EducatorSettings = () => {
 // ============================================
 
 export const CreateCourseForm = ({ onSuccess }) => {
+  const resolveStoredInstructorId = () => {
+    for (const key of ['eduguard_user', 'currentUser', 'user']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+
+        const parsed = JSON.parse(raw);
+        const normalizedType = String(parsed?.type || parsed?.role || parsed?.perfil || '').trim().toLowerCase();
+        if (parsed?.id && normalizedType === 'educator') {
+          return String(parsed.id);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return '';
+  };
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '',
@@ -415,6 +434,7 @@ export const CreateCourseForm = ({ onSuccess }) => {
     level: 'beginner',
     price_mzn: 0,
     is_free: false,
+    instructorId: resolveStoredInstructorId(),
     cover_image: null
   });
 
@@ -428,10 +448,21 @@ export const CreateCourseForm = ({ onSuccess }) => {
 
   const handleSubmit = async () => {
     try {
+      if (!formData.instructorId) {
+        console.error('Instrutor não encontrado no armazenamento local');
+        return;
+      }
+
       const response = await fetch('/api/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          instructorId: formData.instructorId,
+          price: formData.is_free ? 0 : Number(formData.price_mzn || 0),
+          content: [],
+        })
       });
 
       if (response.ok) {
@@ -450,6 +481,10 @@ export const CreateCourseForm = ({ onSuccess }) => {
           Passo {step} de 4
         </DialogDescription>
       </DialogHeader>
+
+      <div className="mb-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
+        Instrutor vinculado: {formData.instructorId || 'não encontrado'}
+      </div>
 
       <div className="space-y-4 py-4">
         {step === 1 && (

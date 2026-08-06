@@ -25,7 +25,32 @@ interface Course {
   students: string[];
   rating: number;
   status: 'draft' | 'published' | 'archived';
+  disciplineIds?: string[];
+  turmaIds?: string[];
   createdAt: Date;
+}
+
+interface Discipline {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  courseIds: string[];
+  status: 'active' | 'archived';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Turma {
+  id: string;
+  name: string;
+  grade: string;
+  shift: string;
+  capacity: number;
+  courseIds: string[];
+  status: 'active' | 'inactive';
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface Transaction {
@@ -41,7 +66,74 @@ interface Transaction {
 // Mock Database (em produção, usar MongoDB/PostgreSQL)
 const users: Map<string, User> = new Map();
 const courses: Map<string, Course> = new Map();
+const disciplines: Map<string, Discipline> = new Map();
+const turmas: Map<string, Turma> = new Map();
 const transactions: Map<string, Transaction> = new Map();
+
+const normalizeStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+};
+
+const seedCurriculumData = () => {
+  if (disciplines.size === 0) {
+    const defaults: Discipline[] = [
+      {
+        id: 'disc_matematica',
+        name: 'Matemática',
+        code: 'MAT',
+        description: 'Disciplina base para cálculo e raciocínio lógico.',
+        courseIds: [],
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'disc_portugues',
+        name: 'Português',
+        code: 'POR',
+        description: 'Comunicação, leitura e escrita formal.',
+        courseIds: [],
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    defaults.forEach((item) => disciplines.set(item.id, item));
+  }
+
+  if (turmas.size === 0) {
+    const defaults: Turma[] = [
+      {
+        id: 'turma_a',
+        name: 'Turma A',
+        grade: '5ª Classe',
+        shift: 'Manhã',
+        capacity: 35,
+        courseIds: [],
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'turma_b',
+        name: 'Turma B',
+        grade: '6ª Classe',
+        shift: 'Tarde',
+        capacity: 35,
+        courseIds: [],
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    defaults.forEach((item) => turmas.set(item.id, item));
+  }
+};
+
+seedCurriculumData();
 
 // Email transporter
 const transporter = nodemailer.createTransport({
@@ -142,7 +234,7 @@ router.get('/users/:userId', (req: Request, res: Response) => {
  */
 router.post('/courses', async (req: Request, res: Response) => {
   try {
-    const { title, instructorId, price, description, content } = req.body;
+    const { title, instructorId, price, description, content, disciplineIds, turmaIds } = req.body;
 
     if (!title || !instructorId || !price) {
       return res.status(400).json({ error: 'Campos obrigatórios: title, instructorId, price' });
@@ -164,6 +256,8 @@ router.post('/courses', async (req: Request, res: Response) => {
       students: [],
       rating: 0,
       status: 'draft',
+      disciplineIds: normalizeStringArray(disciplineIds),
+      turmaIds: normalizeStringArray(turmaIds),
       createdAt: new Date(),
     };
 
@@ -189,7 +283,7 @@ router.get('/courses', (req: Request, res: Response) => {
     const { category, status = 'published' } = req.query;
     let allCourses = Array.from(courses.values());
 
-    if (status) {
+    if (status && String(status).toLowerCase() !== 'all') {
       allCourses = allCourses.filter((c) => c.status === status);
     }
 
@@ -209,7 +303,7 @@ router.get('/courses', (req: Request, res: Response) => {
 router.put('/courses/:courseId', async (req: Request, res: Response) => {
   try {
     const { courseId } = req.params;
-    const { title, price, description, status } = req.body;
+    const { title, price, description, status, instructorId, content, disciplineIds, turmaIds } = req.body;
 
     const course = courses.get(courseId);
     if (!course) {
@@ -220,6 +314,10 @@ router.put('/courses/:courseId', async (req: Request, res: Response) => {
     if (title) course.title = title;
     if (price) course.price = price;
     if (description) course.description = description;
+    if (instructorId) course.instructorId = instructorId;
+    if (Array.isArray(content)) course.content = content;
+    if (disciplineIds) course.disciplineIds = normalizeStringArray(disciplineIds);
+    if (turmaIds) course.turmaIds = normalizeStringArray(turmaIds);
     if (status && ['draft', 'published', 'archived'].includes(status)) {
       course.status = status;
     }
@@ -231,6 +329,200 @@ router.put('/courses/:courseId', async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao atualizar curso' });
+  }
+});
+
+/**
+ * DELETE /api/courses/:courseId
+ * Remover curso
+ */
+router.delete('/courses/:courseId', async (req: Request, res: Response) => {
+  try {
+    const { courseId } = req.params;
+
+    if (!courses.has(courseId)) {
+      return res.status(404).json({ error: 'Curso não encontrado' });
+    }
+
+    courses.delete(courseId);
+    disciplines.forEach((discipline) => {
+      discipline.courseIds = discipline.courseIds.filter((id) => id !== courseId);
+      discipline.updatedAt = new Date();
+    });
+    turmas.forEach((turma) => {
+      turma.courseIds = turma.courseIds.filter((id) => id !== courseId);
+      turma.updatedAt = new Date();
+    });
+
+    res.json({ success: true, message: 'Curso removido com sucesso' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao remover curso' });
+  }
+});
+
+// ==================== DISCIPLINAS ====================
+
+router.get('/disciplines', (_req: Request, res: Response) => {
+  try {
+    res.json({
+      total: disciplines.size,
+      disciplines: Array.from(disciplines.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt')),
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao listar disciplinas' });
+  }
+});
+
+router.post('/disciplines', (req: Request, res: Response) => {
+  try {
+    const { name, code, description, courseIds, status } = req.body;
+
+    if (!name || !code) {
+      return res.status(400).json({ error: 'Campos obrigatórios: name, code' });
+    }
+
+    const disciplineId = `discipline_${Date.now()}`;
+    const discipline: Discipline = {
+      id: disciplineId,
+      name,
+      code,
+      description: description || '',
+      courseIds: normalizeStringArray(courseIds),
+      status: status === 'archived' ? 'archived' : 'active',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    disciplines.set(disciplineId, discipline);
+
+    res.status(201).json({ success: true, discipline });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao criar disciplina' });
+  }
+});
+
+router.put('/disciplines/:disciplineId', (req: Request, res: Response) => {
+  try {
+    const { disciplineId } = req.params;
+    const { name, code, description, courseIds, status } = req.body;
+
+    const discipline = disciplines.get(disciplineId);
+    if (!discipline) {
+      return res.status(404).json({ error: 'Disciplina não encontrada' });
+    }
+
+    if (name) discipline.name = name;
+    if (code) discipline.code = code;
+    if (description !== undefined) discipline.description = description;
+    if (courseIds) discipline.courseIds = normalizeStringArray(courseIds);
+    if (status && ['active', 'archived'].includes(status)) discipline.status = status;
+    discipline.updatedAt = new Date();
+
+    res.json({ success: true, discipline });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar disciplina' });
+  }
+});
+
+router.delete('/disciplines/:disciplineId', (req: Request, res: Response) => {
+  try {
+    const { disciplineId } = req.params;
+    if (!disciplines.has(disciplineId)) {
+      return res.status(404).json({ error: 'Disciplina não encontrada' });
+    }
+
+    disciplines.delete(disciplineId);
+    courses.forEach((course) => {
+      course.disciplineIds = (course.disciplineIds || []).filter((id) => id !== disciplineId);
+    });
+
+    res.json({ success: true, message: 'Disciplina removida com sucesso' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao remover disciplina' });
+  }
+});
+
+// ==================== TURMAS ====================
+
+router.get('/turmas', (_req: Request, res: Response) => {
+  try {
+    res.json({
+      total: turmas.size,
+      turmas: Array.from(turmas.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt')),
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao listar turmas' });
+  }
+});
+
+router.post('/turmas', (req: Request, res: Response) => {
+  try {
+    const { name, grade, shift, capacity, courseIds, status } = req.body;
+
+    if (!name || !grade) {
+      return res.status(400).json({ error: 'Campos obrigatórios: name, grade' });
+    }
+
+    const turmaId = `turma_${Date.now()}`;
+    const turma: Turma = {
+      id: turmaId,
+      name,
+      grade,
+      shift: shift || 'Manhã',
+      capacity: Number(capacity || 0),
+      courseIds: normalizeStringArray(courseIds),
+      status: status === 'inactive' ? 'inactive' : 'active',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    turmas.set(turmaId, turma);
+
+    res.status(201).json({ success: true, turma });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao criar turma' });
+  }
+});
+
+router.put('/turmas/:turmaId', (req: Request, res: Response) => {
+  try {
+    const { turmaId } = req.params;
+    const { name, grade, shift, capacity, courseIds, status } = req.body;
+
+    const turma = turmas.get(turmaId);
+    if (!turma) {
+      return res.status(404).json({ error: 'Turma não encontrada' });
+    }
+
+    if (name) turma.name = name;
+    if (grade) turma.grade = grade;
+    if (shift) turma.shift = shift;
+    if (capacity !== undefined) turma.capacity = Number(capacity);
+    if (courseIds) turma.courseIds = normalizeStringArray(courseIds);
+    if (status && ['active', 'inactive'].includes(status)) turma.status = status;
+    turma.updatedAt = new Date();
+
+    res.json({ success: true, turma });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar turma' });
+  }
+});
+
+router.delete('/turmas/:turmaId', (req: Request, res: Response) => {
+  try {
+    const { turmaId } = req.params;
+    if (!turmas.has(turmaId)) {
+      return res.status(404).json({ error: 'Turma não encontrada' });
+    }
+
+    turmas.delete(turmaId);
+    courses.forEach((course) => {
+      course.turmaIds = (course.turmaIds || []).filter((id) => id !== turmaId);
+    });
+
+    res.json({ success: true, message: 'Turma removida com sucesso' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao remover turma' });
   }
 });
 

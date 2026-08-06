@@ -59,7 +59,16 @@ export const CourseDiscovery = () => {
     try {
       const response = await fetch('/api/courses');
       const data = await response.json();
-      setCourses(data);
+      const rawCourses = Array.isArray(data?.courses) ? data.courses : Array.isArray(data) ? data : [];
+      setCourses(
+        rawCourses.map((course) => ({
+          ...course,
+          price_mzn: course.price_mzn ?? course.price ?? 0,
+          total_lessons: course.total_lessons ?? (Array.isArray(course.content) ? course.content.length : 0),
+          rating: course.rating ?? 0,
+          status: course.status ?? 'published',
+        }))
+      );
     } catch (error) {
       console.error('Erro ao carregar cursos:', error);
     }
