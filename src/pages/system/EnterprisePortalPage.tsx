@@ -159,6 +159,33 @@ const EnterprisePortalPage = () => {
 
   const audienceTags = ['Diretores', 'Administradores', 'Secretarias', 'Coordenadores', 'Professores', 'Financeiro', 'RH'];
 
+  const quickActions = [
+    {
+      title: 'Gerir Cursos',
+      description: 'Abrir rascunhos e publicação no painel de cursos.',
+      icon: <GraduationCap className="w-5 h-5" />,
+      action: () => navigate('/sistema/admin/edumarket'),
+    },
+    {
+      title: 'Criar Curso',
+      description: 'Abrir o formulário de criação de curso.',
+      icon: <FileText className="w-5 h-5" />,
+      action: () => navigate('/edumarket/criar-curso'),
+    },
+    {
+      title: 'Relatório de Professores',
+      description: 'Abrir o Admin filtrado por perfil docente.',
+      icon: <Users className="w-5 h-5" />,
+      action: () => navigate('/admin?peopleProfile=teacher'),
+    },
+    {
+      title: 'Relatório de Diretores',
+      description: 'Abrir o Admin filtrado por diretores escolares.',
+      icon: <Building2 className="w-5 h-5" />,
+      action: () => navigate('/admin?peopleProfile=director'),
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
       <header className="border-b border-white/10 bg-white/5 backdrop-blur-xl sticky top-0 z-20">
@@ -209,6 +236,36 @@ const EnterprisePortalPage = () => {
               <p className="mt-2 text-sm text-slate-400">{card.subtitle}</p>
             </div>
           ))}
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Ações reais</h2>
+              <p className="text-sm text-slate-300">Atalhos para os fluxos que já existem no sistema.</p>
+            </div>
+            <button onClick={() => navigate('/admin')} className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15">
+              Abrir Admin <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {quickActions.map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                onClick={item.action}
+                className="group rounded-2xl border border-white/10 bg-slate-950/50 p-5 text-left transition hover:border-emerald-400/40 hover:bg-slate-950"
+              >
+                <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                  {item.icon}
+                </div>
+                <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+                <p className="mt-2 text-sm text-slate-300">{item.description}</p>
+                <p className="mt-4 text-xs uppercase tracking-[0.2em] text-emerald-300 group-hover:text-emerald-200">Abrir fluxo</p>
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -274,6 +331,7 @@ const EnterprisePortalPage = () => {
 
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
             <h2 className="text-xl font-semibold">Escolas</h2>
+            <p className="mt-1 text-sm text-slate-300">Escolhe uma escola para abrir o relatório filtrado no Admin.</p>
             <div className="mt-4 space-y-3">
               {loading ? (
                 <p className="text-slate-300">A carregar escolas...</p>
@@ -281,10 +339,20 @@ const EnterprisePortalPage = () => {
                 <p className="text-slate-400">Nenhuma escola encontrada.</p>
               ) : (
                 schools.slice(0, 6).map((school) => (
-                  <div key={school.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="font-semibold">{school.nome}</p>
-                    <p className="text-sm text-slate-400">{school.email || 'Sem email'} · {school.telefone || 'Sem telefone'}</p>
-                  </div>
+                  <button
+                    key={school.id}
+                    type="button"
+                    onClick={() => navigate(`/admin?peopleSchool=${encodeURIComponent(String(school.id))}`)}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-left transition hover:border-sky-400/40 hover:bg-slate-950"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{school.nome}</p>
+                        <p className="text-sm text-slate-400">{school.email || 'Sem email'} · {school.telefone || 'Sem telefone'}</p>
+                      </div>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">Relatório</span>
+                    </div>
+                  </button>
                 ))
               )}
             </div>

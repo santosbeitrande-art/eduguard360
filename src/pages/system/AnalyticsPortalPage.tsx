@@ -30,6 +30,7 @@ const AnalyticsPortalPage = () => {
   const [schools, setSchools] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [courses, setCourses] = useState<any[]>([]);
 
   const loadData = async () => {
     setLoading(true);
@@ -60,6 +61,30 @@ const AnalyticsPortalPage = () => {
         alerts,
       });
       setRecentEntries(entriesData);
+
+      try {
+        const [publishedCoursesRes, draftCoursesRes] = await Promise.all([
+          withTimeout(fetch('/api/courses?status=published'), 12000, 'Analytics published courses timeout'),
+          withTimeout(fetch('/api/courses?status=draft'), 12000, 'Analytics draft courses timeout'),
+        ]);
+
+        const publishedCoursesData = publishedCoursesRes.ok ? await publishedCoursesRes.json() : { courses: [] };
+        const draftCoursesData = draftCoursesRes.ok ? await draftCoursesRes.json() : { courses: [] };
+        const publishedCourses = Array.isArray(publishedCoursesData.courses) ? publishedCoursesData.courses : [];
+        const draftCourses = Array.isArray(draftCoursesData.courses) ? draftCoursesData.courses : [];
+
+        const mergedCourses = [...publishedCourses];
+        for (const course of draftCourses) {
+          if (!mergedCourses.some((item: any) => String(item.id) === String(course.id))) {
+            mergedCourses.push(course);
+          }
+        }
+
+        setCourses(mergedCourses);
+      } catch (courseError) {
+        console.warn('Analytics courses timeout or unavailable:', courseError);
+        setCourses([]);
+      }
     } catch (err: any) {
       console.error('Erro ao carregar Analytics Portal:', err);
       setError('Não foi possível carregar métricas em tempo real. A mostrar dados locais quando disponíveis.');
@@ -78,6 +103,7 @@ const AnalyticsPortalPage = () => {
       });
       setUsers(Array.isArray(users) ? users : []);
       setRecentEntries([]);
+      setCourses([]);
     } finally {
       setLoading(false);
     }
@@ -102,6 +128,76 @@ const AnalyticsPortalPage = () => {
   }, [recentEntries, periodFilter, schoolFilter, students]);
 
   const schoolOptions = useMemo(() => schools.map((school) => ({ id: String(school.id), nome: school.nome })), [schools]);
+
+  const filteredCourses = useMemo(() => {
+    const query = courseFilter.trim().toLowerCase();
+    if (!query) return courses;
+
+    return courses.filter((course) => {
+      const haystack = [course.title, course.description, course.status, course.instructorId, course.category]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [courses, courseFilter]);
+
+  const roleDistribution = useMemo(() => {
+    const counts = {
+      director: 0,
+      teacher: 0,
+      security: 0,
+      parent: 0,
+      other: 0,
+    };
+
+    for (const user of users) {
+      const profile = String(user?.perfil || '').trim().toLowerCase();
+      if (profile === 'director' || profile === 'school_admin') counts.director += 1;
+      else if (profile === 'teacher' || profile === 'professor' || profile === 'docente') counts.teacher += 1;
+      else if (profile === 'scanner' || profile === 'security' || profile === 'seguranca') counts.security += 1;
+      else if (profile === 'pai' || profile === 'parent' || profile === 'encarregado') counts.parent += 1;
+      else counts.other += 1;
+    }
+
+    const total = Math.max(1, users.length);
+    return [
+      { label: 'Diretores', value: counts.director, percent: Math.round((counts.director / total) * 100), color: 'from-indigo-500 to-violet-600' },
+      { label: 'Professores', value: counts.teacher, percent: Math.round((counts.teacher / total) * 100), color: 'from-emerald-500 to-green-600' },
+      { label: 'Seguranças', value: counts.security, percent: Math.round((counts.security / total) * 100), color: 'from-amber-500 to-orange-500' },
+      { label: 'Encarregados', value: counts.parent, percent: Math.round((counts.parent / total) * 100), color: 'from-sky-500 to-blue-600' },
+    ];
+  }, [users]);
+
+  const courseStatusDistribution = useMemo(() => {
+    const counts = filteredCourses.reduce((acc, course) => {
+      const status = String(course?.status || 'draft').toLowerCase();
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const total = Math.max(1, filteredCourses.length);
+    return Object.entries(counts)
+      .map(([status, value]) => ({
+        label: status === 'published' ? 'Publicados' : status === 'draft' ? 'Rascunhos' : status,
+        value,
+        percent: Math.round((value / total) * 100),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredCourses]);
+
+  const topCourses = useMemo(() => {
+    return [...filteredCourses]
+      .sort((a, b) => {
+        const aEnrollments = Array.isArray(a?.students) ? a.students.length : 0;
+        const bEnrollments = Array.isArray(b?.students) ? b.students.length : 0;
+        if (bEnrollments !== aEnrollments) return bEnrollments - aEnrollments;
+        const aRating = Number(a?.rating || 0);
+        const bRating = Number(b?.rating || 0);
+        return bRating - aRating;
+      })
+      .slice(0, 5);
+  }, [filteredCourses]);
 
   const kpis = useMemo(() => {
     const totalStudents = students.length;
@@ -221,11 +317,93 @@ const AnalyticsPortalPage = () => {
           ))}
         </section>
 
+        <section className="grid gap-6 lg:grid-cols-[1.02fr_0.98fr]">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <h2 className="text-xl font-semibold">Distribuição por perfil</h2>
+            <p className="text-sm text-slate-300">Leitura rápida da equipa, famílias e suporte operacional.</p>
+            <div className="mt-6 space-y-4">
+              {roleDistribution.map((item) => (
+                <div key={item.label} className="space-y-2">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-300">{item.label}</span>
+                    <span className="font-semibold text-white">{item.value}</span>
+                  </div>
+                  <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${item.color}`} style={{ width: `${Math.max(8, Math.min(100, item.percent))}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <h2 className="text-xl font-semibold">Estado do catálogo</h2>
+            <p className="text-sm text-slate-300">Cursos carregados do marketplace e rascunhos administrativos.</p>
+            <div className="mt-6 space-y-4">
+              {courseStatusDistribution.length === 0 ? (
+                <p className="text-slate-400">Sem cursos disponíveis para análise.</p>
+              ) : (
+                courseStatusDistribution.map((item) => (
+                  <div key={item.label} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-slate-300">{item.label}</span>
+                      <span className="font-semibold text-white">{item.value}</span>
+                    </div>
+                    <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500" style={{ width: `${Math.max(8, Math.min(100, item.percent))}%` }} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">Tendência de movimentos</h2>
+
+            <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold">Cursos em foco</h2>
+                  <p className="text-sm text-slate-300">Pesquisa pelo nome, estado, categoria ou instrutor e destaque os cursos mais ativos.</p>
+                </div>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">{filteredCourses.length} curso(s)</span>
+              </div>
+              <div className="mt-6 space-y-3">
+                {filteredCourses.length === 0 ? (
+                  <p className="text-slate-400">Nenhum curso corresponde ao filtro atual.</p>
+                ) : (
+                  topCourses.map((course) => {
+                    const enrollments = Array.isArray(course?.students) ? course.students.length : 0;
+                    const rating = Number(course?.rating || 0);
+                    const price = Number(course?.price || 0);
+
+                    return (
+                      <div key={course.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="font-semibold text-white">{course.title || 'Curso sem título'}</p>
+                            <p className="text-sm text-slate-400">Instrutor: {course.instructorId || 'N/A'} · Estado: {String(course.status || 'draft')}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                            <span className="rounded-full bg-white/10 px-3 py-1">MZN {price.toLocaleString('pt-MZ')}</span>
+                            <span className="rounded-full bg-white/10 px-3 py-1">{enrollments} inscrições</span>
+                            <span className="rounded-full bg-white/10 px-3 py-1">Rating {rating.toFixed(1)}</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
+                          <div className="h-2 rounded-full bg-gradient-to-r from-violet-500 via-sky-500 to-emerald-500" style={{ width: `${Math.max(12, Math.min(100, enrollments * 12 || 12))}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
                 <p className="text-sm text-slate-300">Resumo dos registos recentes de entradas e saídas.</p>
               </div>
               <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">Últimos 30 registos</span>

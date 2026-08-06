@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/networkPerformance";
 import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Edit3, Trash2, Mail, Phone, CheckCircle } from "lucide-react";
@@ -149,6 +149,7 @@ const isSecurityProfile = (perfil: unknown) => {
 
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [escolas, setEscolas] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [recentEntries, setRecentEntries] = useState<any[]>([]);
@@ -192,8 +193,14 @@ const AdminGlobalDashboard = () => {
   const [directorsLoading, setDirectorsLoading] = useState(false);
   const [securityUsers, setSecurityUsers] = useState<any[]>([]);
   const [securityUsersLoading, setSecurityUsersLoading] = useState(false);
-  const [peopleProfileFilter, setPeopleProfileFilter] = useState<'all' | 'teacher' | 'director' | 'security'>('all');
-  const [peopleSchoolFilter, setPeopleSchoolFilter] = useState('all');
+  const [peopleProfileFilter, setPeopleProfileFilter] = useState<'all' | 'teacher' | 'director' | 'security'>(() => {
+    const requestedProfile = String(searchParams.get('peopleProfile') || '').trim().toLowerCase();
+    if (requestedProfile === 'teacher' || requestedProfile === 'director' || requestedProfile === 'security') {
+      return requestedProfile;
+    }
+    return 'all';
+  });
+  const [peopleSchoolFilter, setPeopleSchoolFilter] = useState(() => String(searchParams.get('peopleSchool') || 'all').trim() || 'all');
   const [peopleSearch, setPeopleSearch] = useState('');
 
   const readSchoolsCache = (): any[] => {

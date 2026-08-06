@@ -7,6 +7,27 @@ import { Upload, DollarSign, Save, X, AlertCircle } from 'lucide-react';
  */
 
 export const EducatorCreateCourse: React.FC = () => {
+  const resolveStoredInstructorId = () => {
+    const sources = ['eduguard_user', 'currentUser', 'user'];
+
+    for (const key of sources) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+
+        const parsed = JSON.parse(raw);
+        const normalizedType = String(parsed?.type || parsed?.role || parsed?.perfil || '').trim().toLowerCase();
+        if (parsed?.id && normalizedType === 'educator') {
+          return String(parsed.id);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return '';
+  };
+
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [course, setCourse] = useState({
     title: '',
@@ -15,6 +36,7 @@ export const EducatorCreateCourse: React.FC = () => {
     level: 'Iniciante',
     duration: '',
     category: 'tecnologia',
+    instructorId: resolveStoredInstructorId(),
     content: [] as string[],
     image: null as File | null,
   });
@@ -57,6 +79,10 @@ export const EducatorCreateCourse: React.FC = () => {
       }
       if (!course.description || course.description.length < 20) {
         setError('Descrição deve ter pelo menos 20 caracteres');
+        return false;
+      }
+      if (!course.instructorId) {
+        setError('Instrutor é obrigatório. Informe o ID do educador responsável.');
         return false;
       }
     }
@@ -140,6 +166,7 @@ export const EducatorCreateCourse: React.FC = () => {
           level: 'Iniciante',
           duration: '',
           category: 'tecnologia',
+          instructorId: resolveStoredInstructorId(),
           content: [],
           image: null,
         });
@@ -248,6 +275,23 @@ export const EducatorCreateCourse: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {course.description.length}/500 caracteres
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ID do Instrutor
+                </label>
+                <input
+                  type="text"
+                  name="instructorId"
+                  value={course.instructorId}
+                  onChange={handleInputChange}
+                  placeholder="UUID ou ID do educador"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Obrigatório para publicar o curso no backend.
                 </p>
               </div>
 
