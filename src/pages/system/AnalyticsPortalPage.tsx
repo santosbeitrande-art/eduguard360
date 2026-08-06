@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { withTimeout } from '@/lib/networkPerformance';
+import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
 import {
   Activity,
   ArrowDownRight,
@@ -66,22 +67,116 @@ const AnalyticsPortalPage = () => {
   const [students, setStudents] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [accessContext, setAccessContext] = useState<any | null>(null);
+
+  const resolveCurrentUserSnapshot = () => {
+    for (const key of ['currentUser', 'eduguard_user', 'user']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
+  const resolveAccessContext = async (currentUser: any) => {
+    const fallbackRole = normalizeEnterpriseRole(currentUser?.perfil || currentUser?.role);
+    const fallbackSchool = String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || '').trim() || null;
+
+    try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
+        'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
+        'x-school-id': String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
+        'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
+      };
+
+      const response = await withTimeout(
+        fetch('/api/v1/enterprise/rbac/resolve', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            role: currentUser?.perfil || currentUser?.role,
+            userId: currentUser?.id || currentUser?.user_id,
+            schoolId: currentUser?.escola_id || currentUser?.school_id,
+            tenantId: currentUser?.tenant_id,
+          }),
+        }),
+        10000,
+        'Analytics RBAC resolve timeout'
+      );
+
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Use local fallback when backend RBAC endpoint is temporarily unavailable.
+    }
+
+    return {
+      role: fallbackRole,
+      permissions: {},
+      analyticsScope: {
+        level: fallbackRole === 'super_admin' ? 'global' : 'school',
+        canViewAllSchools: fallbackRole === 'super_admin',
+        schoolId: fallbackRole === 'super_admin' ? null : fallbackSchool,
+        modules: ['schools', 'students', 'users', 'entries', 'courses', 'analytics'],
+      },
+    };
+  };
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
+      const currentUser = resolveCurrentUserSnapshot();
+      const resolvedAccess = await resolveAccessContext(currentUser);
+      setAccessContext(resolvedAccess);
+
+      const canReadDomain = (domain: string) => {
+        const actions = resolvedAccess?.permissions?.[domain];
+        if (!Array.isArray(actions)) return true;
+        return actions.includes('read');
+      };
+
+      const scopeSchoolId = String(resolvedAccess?.analyticsScope?.schoolId || '').trim() || null;
+      const canViewAllSchools = Boolean(resolvedAccess?.analyticsScope?.canViewAllSchools);
+
+      let schoolsQuery = supabase.from('escolas').select('id,nome,email,telefone').order('nome');
+      if (!canViewAllSchools && scopeSchoolId) {
+        schoolsQuery = schoolsQuery.eq('id', scopeSchoolId);
+      }
+
+      let studentsQuery = supabase.from('alunos').select('id,nome,classe,escola_id,encarregado_id').limit(5000);
+      if (!canViewAllSchools && scopeSchoolId) {
+        studentsQuery = studentsQuery.eq('escola_id', scopeSchoolId);
+      }
+
+      let usersQuery = supabase.from('utilizadores').select('id,nome,perfil,status,is_active,escola_id').limit(5000);
+      if (!canViewAllSchools && scopeSchoolId) {
+        usersQuery = usersQuery.eq('escola_id', scopeSchoolId);
+      }
+
       const [schoolsRes, studentsRes, usersRes, entriesRes] = await Promise.all([
-        withTimeout(supabase.from('escolas').select('id,nome,email,telefone').order('nome'), 12000, 'Analytics schools timeout'),
-        withTimeout(supabase.from('alunos').select('id,nome,classe,escola_id,encarregado_id').limit(5000), 12000, 'Analytics students timeout'),
-        withTimeout(supabase.from('utilizadores').select('id,nome,perfil,status,is_active,escola_id').limit(5000), 12000, 'Analytics users timeout'),
+        withTimeout(schoolsQuery, 12000, 'Analytics schools timeout'),
+        withTimeout(studentsQuery, 12000, 'Analytics students timeout'),
+        withTimeout(usersQuery, 12000, 'Analytics users timeout'),
         withTimeout(supabase.from('entradas').select('id,tipo,data,aluno_id').order('data', { ascending: false }).limit(120), 12000, 'Analytics entries timeout'),
       ]);
 
-      const schoolsData = Array.isArray(schoolsRes.data) ? schoolsRes.data : [];
-      const studentsData = Array.isArray(studentsRes.data) ? studentsRes.data : [];
-      const usersData = Array.isArray(usersRes.data) ? usersRes.data : [];
-      const entriesData = Array.isArray(entriesRes.data) ? entriesRes.data : [];
+      const schoolsData = canReadDomain('schools') && Array.isArray(schoolsRes.data) ? schoolsRes.data : [];
+      const studentsData = canReadDomain('students') && Array.isArray(studentsRes.data) ? studentsRes.data : [];
+      const usersData = canReadDomain('users') && Array.isArray(usersRes.data) ? usersRes.data : [];
+      const rawEntries = Array.isArray(entriesRes.data) ? entriesRes.data : [];
+      const allowedStudentIds = new Set(studentsData.map((student: any) => String(student.id)));
+      const entriesData = (canReadDomain('attendance') || canReadDomain('analytics'))
+        ? rawEntries.filter((entry: any) => allowedStudentIds.size === 0 || allowedStudentIds.has(String(entry.aluno_id)))
+        : [];
 
       const alerts = usersData.filter((user: any) => user?.status === 'pending' || user?.is_active === false).length;
 
@@ -97,24 +192,32 @@ const AnalyticsPortalPage = () => {
       });
       setRecentEntries(entriesData);
 
+      if (!canViewAllSchools && scopeSchoolId) {
+        setSchoolFilter(scopeSchoolId);
+      }
+
       try {
-        const [publishedCoursesRes, draftCoursesRes] = await Promise.all([
-          withTimeout(fetch('/api/courses?status=published'), 12000, 'Analytics published courses timeout'),
-          withTimeout(fetch('/api/courses?status=draft'), 12000, 'Analytics draft courses timeout'),
-        ]);
+        if (!canReadDomain('courses')) {
+          setCourses([]);
+        } else {
+          const [publishedCoursesRes, draftCoursesRes] = await Promise.all([
+            withTimeout(fetch('/api/courses?status=published'), 12000, 'Analytics published courses timeout'),
+            withTimeout(fetch('/api/courses?status=draft'), 12000, 'Analytics draft courses timeout'),
+          ]);
 
-        const publishedCoursesData = publishedCoursesRes.ok ? await publishedCoursesRes.json() : { courses: [] };
-        const draftCoursesData = draftCoursesRes.ok ? await draftCoursesRes.json() : { courses: [] };
-        const publishedCourses = Array.isArray(publishedCoursesData.courses) ? publishedCoursesData.courses : [];
-        const draftCourses = Array.isArray(draftCoursesData.courses) ? draftCoursesData.courses : [];
+          const publishedCoursesData = publishedCoursesRes.ok ? await publishedCoursesRes.json() : { courses: [] };
+          const draftCoursesData = draftCoursesRes.ok ? await draftCoursesRes.json() : { courses: [] };
+          const publishedCourses = Array.isArray(publishedCoursesData.courses) ? publishedCoursesData.courses : [];
+          const draftCourses = Array.isArray(draftCoursesData.courses) ? draftCoursesData.courses : [];
 
-        const mergedCourses = [...publishedCourses];
-        for (const course of draftCourses) {
-          if (!mergedCourses.some((item: any) => String(item.id) === String(course.id))) {
-            mergedCourses.push(course);
+          const mergedCourses = [...publishedCourses];
+          for (const course of draftCourses) {
+            if (!mergedCourses.some((item: any) => String(item.id) === String(course.id))) {
+              mergedCourses.push(course);
+            }
           }
+          setCourses(mergedCourses);
         }
-        setCourses(mergedCourses);
       } catch (courseError) {
         console.warn('Analytics courses timeout or unavailable:', courseError);
         setCourses([]);
@@ -419,6 +522,11 @@ const AnalyticsPortalPage = () => {
           <div>
             <h1 className="text-2xl font-bold">EduGuard Analytics</h1>
             <p className="text-sm text-slate-300">Decisão orientada por dados, tendência e metas</p>
+            {accessContext && (
+              <p className="text-xs text-slate-400 mt-1">
+                Escopo: {String(accessContext?.analyticsScope?.level || 'global')} · Perfil: {String(accessContext?.role || 'unknown')}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={loadData} className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15">

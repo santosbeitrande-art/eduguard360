@@ -2,6 +2,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 
 @Entity('enterprise_active_sessions')
 @Index(['userId', 'status'])
+@Index(['schoolId'])
+@Index(['tenantId'])
 export class ActiveSession {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -14,6 +16,12 @@ export class ActiveSession {
 
   @Column({ type: 'varchar', length: 64, nullable: true })
   userRole!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  schoolId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  tenantId!: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
   device!: string | null;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
@@ -8,11 +8,20 @@ import { MfaEnrollment } from './entities/mfa-enrollment.entity';
 import { WorkflowProcess } from './entities/workflow-process.entity';
 import { WorkflowStep } from './entities/workflow-step.entity';
 import {
+  EnterpriseRole,
   getAccessMatrix,
   getRolePermissions,
   normalizeEnterpriseRole,
   resolvePortalByRole,
 } from './rbac.matrix';
+
+export type EnterpriseScope = {
+  role: EnterpriseRole;
+  userId: string | null;
+  userName: string | null;
+  schoolId: string | null;
+  tenantId: string | null;
+};
 
 @Injectable()
 export class EnterpriseService {
@@ -30,6 +39,41 @@ export class EnterpriseService {
     @InjectRepository(WorkflowStep)
     private readonly stepRepository: Repository<WorkflowStep>,
   ) {}
+
+  private normalizeScope(input?: Partial<EnterpriseScope>): EnterpriseScope {
+    return {
+      role: normalizeEnterpriseRole(input?.role),
+      userId: input?.userId || null,
+      userName: input?.userName || null,
+      schoolId: input?.schoolId || null,
+      tenantId: input?.tenantId || input?.schoolId || null,
+    };
+  }
+
+  private enforceTenantScope(scope: EnterpriseScope): void {
+    if (scope.role === 'super_admin') return;
+    if (scope.schoolId || scope.tenantId) return;
+    throw new ForbiddenException('school_id or tenant_id is required for this role.');
+  }
+
+  private applyScopedQuery(qb: any, alias: string, scope: EnterpriseScope) {
+    if (scope.role === 'super_admin') return;
+
+    this.enforceTenantScope(scope);
+    const scopeTenant = scope.tenantId || scope.schoolId;
+
+    if (scopeTenant) {
+      qb.andWhere(`(${alias}.tenantId = :tenantId OR ${alias}.schoolId = :schoolId)`, {
+        tenantId: scopeTenant,
+        schoolId: scope.schoolId || scopeTenant,
+      });
+      return;
+    }
+
+    qb.andWhere(`${alias}.schoolId = :schoolId`, {
+      schoolId: scope.schoolId,
+    });
+  }
 
   private async ensureDefaults(): Promise<void> {
     const defaults = [
@@ -79,7 +123,7 @@ export class EnterpriseService {
         owner: 'Secretaria',
         priority: 'high',
         steps: ['Pedido', 'Secretaria', 'Direção', 'Financeiro', 'Concluído'],
-      });
+      }, { role: 'super_admin', userId: null, userName: 'system', schoolId: null, tenantId: null });
 
       await this.createWorkflow({
         title: 'Declaração escolar - emissão',
@@ -88,13 +132,18 @@ export class EnterpriseService {
         owner: 'Direção',
         priority: 'medium',
         steps: ['Pedido', 'Secretaria', 'Direção', 'Concluído'],
-      });
+      }, { role: 'super_admin', userId: null, userName: 'system', schoolId: null, tenantId: null });
     }
   }
 
-  async listAuditLogs(query: { limit?: number; actorId?: string; action?: string }) {
+  async listAuditLogs(
+    query: { limit?: number; actorId?: string; action?: string },
+    scopeInput?: Partial<EnterpriseScope>,
+  ) {
+    const scope = this.normalizeScope(scopeInput);
     await this.ensureDefaults();
     const qb = this.auditRepository.createQueryBuilder('audit').orderBy('audit.createdAt', 'DESC');
+    this.applyScopedQuery(qb, 'audit', scope);
 
     if (query.actorId) qb.andWhere('audit.actorId = :actorId', { actorId: query.actorId });
     if (query.action) qb.andWhere('audit.action = :action', { action: query.action });
@@ -104,14 +153,19 @@ export class EnterpriseService {
     return { data, total };
   }
 
-  async createAuditLog(payload: Partial<AuditLog>) {
+  async createAuditLog(payload: Partial<AuditLog>, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const log = this.auditRepository.create({
       actorId: payload.actorId || null,
-      actorName: payload.actorName || null,
-      actorRole: payload.actorRole || null,
+      actorName: payload.actorName || scope.userName || null,
+      actorRole: payload.actorRole || scope.role,
       action: payload.action || 'unknown_action',
       resourceType: payload.resourceType || 'unknown_resource',
       resourceId: payload.resourceId || null,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
       severity: payload.severity || 'info',
       metadata: payload.metadata || {},
       ipAddress: payload.ipAddress || null,
@@ -120,9 +174,11 @@ export class EnterpriseService {
     return this.auditRepository.save(log);
   }
 
-  async listSessions(query: { userId?: string; status?: string }) {
+  async listSessions(query: { userId?: string; status?: string }, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
     await this.ensureDefaults();
     const qb = this.sessionRepository.createQueryBuilder('session').orderBy('session.lastSeenAt', 'DESC');
+    this.applyScopedQuery(qb, 'session', scope);
     if (query.userId) qb.andWhere('session.userId = :userId', { userId: query.userId });
     if (query.status) qb.andWhere('session.status = :status', { status: query.status });
 
@@ -134,7 +190,13 @@ export class EnterpriseService {
     };
   }
 
-  async upsertSession(payload: Partial<ActiveSession> & { userId: string; userName: string }) {
+  async upsertSession(
+    payload: Partial<ActiveSession> & { userId: string; userName: string },
+    scopeInput?: Partial<EnterpriseScope>,
+  ) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const sessionId = payload.id || null;
     let session: ActiveSession | null = null;
 
@@ -146,7 +208,9 @@ export class EnterpriseService {
       session = this.sessionRepository.create({
         userId: payload.userId,
         userName: payload.userName,
-        userRole: payload.userRole || null,
+        userRole: payload.userRole || scope.role,
+        schoolId: scope.schoolId,
+        tenantId: scope.tenantId,
         device: payload.device || null,
         browser: payload.browser || null,
         location: payload.location || null,
@@ -158,7 +222,9 @@ export class EnterpriseService {
       });
     } else {
       session.userName = payload.userName || session.userName;
-      session.userRole = payload.userRole || session.userRole;
+      session.userRole = payload.userRole || session.userRole || scope.role;
+      session.schoolId = scope.schoolId || session.schoolId;
+      session.tenantId = scope.tenantId || session.tenantId;
       session.device = payload.device || session.device;
       session.browser = payload.browser || session.browser;
       session.location = payload.location || session.location;
@@ -173,19 +239,30 @@ export class EnterpriseService {
     await this.createAuditLog({
       actorId: payload.userId,
       actorName: payload.userName,
-      actorRole: payload.userRole,
+      actorRole: payload.userRole || scope.role,
       action: 'session_heartbeat',
       resourceType: 'session',
       resourceId: saved.id,
       metadata: { trusted: saved.trusted },
-    });
+    }, scope);
 
     return saved;
   }
 
-  async revokeSession(sessionId: string, actorName: string) {
+  async revokeSession(sessionId: string, actorName: string, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const session = await this.sessionRepository.findOne({ where: { id: sessionId } });
     if (!session) return null;
+
+    if (scope.role !== 'super_admin') {
+      const targetScope = session.tenantId || session.schoolId;
+      const viewerScope = scope.tenantId || scope.schoolId;
+      if (targetScope && viewerScope && targetScope !== viewerScope) {
+        throw new ForbiddenException('Cannot revoke session outside your tenant scope.');
+      }
+    }
 
     session.status = 'revoked';
     session.lastSeenAt = new Date();
@@ -200,7 +277,7 @@ export class EnterpriseService {
       resourceId: sessionId,
       metadata: { userId: session.userId },
       severity: 'warn',
-    });
+    }, scope);
 
     return saved;
   }
@@ -242,10 +319,15 @@ export class EnterpriseService {
     return saved;
   }
 
-  async listMfaEnrollments(userId?: string) {
+  async listMfaEnrollments(userId?: string, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     await this.ensureDefaults();
-    const where = userId ? { userId } : {};
-    const data = await this.mfaRepository.find({ where, order: { updatedAt: 'DESC' } });
+    const qb = this.mfaRepository.createQueryBuilder('mfa').orderBy('mfa.updatedAt', 'DESC');
+    this.applyScopedQuery(qb, 'mfa', scope);
+    if (userId) qb.andWhere('mfa.userId = :userId', { userId });
+    const data = await qb.getMany();
     return {
       data,
       total: data.length,
@@ -254,10 +336,18 @@ export class EnterpriseService {
     };
   }
 
-  async enrollMfa(payload: Partial<MfaEnrollment> & { userId: string; userName: string; deviceLabel: string }) {
+  async enrollMfa(
+    payload: Partial<MfaEnrollment> & { userId: string; userName: string; deviceLabel: string },
+    scopeInput?: Partial<EnterpriseScope>,
+  ) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const record = this.mfaRepository.create({
       userId: payload.userId,
       userName: payload.userName,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
       method: payload.method || 'app',
       deviceLabel: payload.deviceLabel,
       trustedDevice: payload.trustedDevice || false,
@@ -274,14 +364,26 @@ export class EnterpriseService {
       resourceType: 'mfa_enrollment',
       resourceId: saved.id,
       metadata: { method: saved.method },
-    });
+    }, scope);
 
     return saved;
   }
 
-  async verifyMfa(enrollmentId: string, verified: boolean) {
+  async verifyMfa(enrollmentId: string, verified: boolean, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const record = await this.mfaRepository.findOne({ where: { id: enrollmentId } });
     if (!record) return null;
+
+    if (scope.role !== 'super_admin') {
+      const targetScope = record.tenantId || record.schoolId;
+      const viewerScope = scope.tenantId || scope.schoolId;
+      if (targetScope && viewerScope && targetScope !== viewerScope) {
+        throw new ForbiddenException('Cannot verify MFA outside your tenant scope.');
+      }
+    }
+
     record.isVerified = verified;
     record.lastUsedAt = new Date();
     const saved = await this.mfaRepository.save(record);
@@ -293,14 +395,18 @@ export class EnterpriseService {
       resourceType: 'mfa_enrollment',
       resourceId: saved.id,
       severity: verified ? 'info' : 'warn',
-    });
+    }, scope);
 
     return saved;
   }
 
-  async listWorkflows(status?: string) {
+  async listWorkflows(status?: string, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     await this.ensureDefaults();
     const qb = this.workflowRepository.createQueryBuilder('workflow').leftJoinAndSelect('workflow.steps', 'step').orderBy('workflow.updatedAt', 'DESC').addOrderBy('step.stepOrder', 'ASC');
+    this.applyScopedQuery(qb, 'workflow', scope);
     if (status) qb.andWhere('workflow.status = :status', { status });
 
     const data = await qb.getMany();
@@ -324,12 +430,17 @@ export class EnterpriseService {
     priority?: 'low' | 'medium' | 'high';
     steps: string[];
     initialStatus?: 'pending' | 'in_review' | 'approved' | 'rejected' | 'completed';
-  }) {
+  }, scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const process = this.workflowRepository.create({
       title: payload.title,
       type: payload.type,
       requester: payload.requester || null,
       owner: payload.owner || null,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
       priority: payload.priority || 'medium',
       status: payload.initialStatus || 'pending',
       currentStep: 0,
@@ -355,14 +466,29 @@ export class EnterpriseService {
       resourceType: 'workflow_process',
       resourceId: savedProcess.id,
       metadata: { title: payload.title, steps: payload.steps.length },
-    });
+    }, scope);
 
     return this.workflowRepository.findOne({ where: { id: savedProcess.id }, relations: ['steps'] });
   }
 
-  async advanceWorkflow(processId: string, payload: { actor?: string; notes?: string; targetStatus?: string }) {
+  async advanceWorkflow(
+    processId: string,
+    payload: { actor?: string; notes?: string; targetStatus?: string },
+    scopeInput?: Partial<EnterpriseScope>,
+  ) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const process = await this.workflowRepository.findOne({ where: { id: processId }, relations: ['steps'] });
     if (!process) return null;
+
+    if (scope.role !== 'super_admin') {
+      const targetScope = process.tenantId || process.schoolId;
+      const viewerScope = scope.tenantId || scope.schoolId;
+      if (targetScope && viewerScope && targetScope !== viewerScope) {
+        throw new ForbiddenException('Cannot advance workflow outside your tenant scope.');
+      }
+    }
 
     const orderedSteps = [...process.steps].sort((a, b) => a.stepOrder - b.stepOrder);
     const current = orderedSteps.find((step) => step.status === 'active') || null;
@@ -398,20 +524,23 @@ export class EnterpriseService {
       resourceId: processId,
       metadata: { status: saved.status, step: saved.currentStep },
       severity: saved.status === 'rejected' ? 'warn' : 'info',
-    });
+    }, scope);
 
     return this.workflowRepository.findOne({ where: { id: processId }, relations: ['steps'] });
   }
 
-  async getOverview() {
+  async getOverview(scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     await this.ensureDefaults();
 
     const [audit, sessions, workflows, policies, mfa] = await Promise.all([
-      this.listAuditLogs({ limit: 40 }),
-      this.listSessions({ status: 'active' }),
-      this.listWorkflows(),
+      this.listAuditLogs({ limit: 40 }, scope),
+      this.listSessions({ status: 'active' }, scope),
+      this.listWorkflows(undefined, scope),
       this.listPolicies(),
-      this.listMfaEnrollments(),
+      this.listMfaEnrollments(undefined, scope),
     ]);
 
     const today = new Date().toDateString();
@@ -445,6 +574,11 @@ export class EnterpriseService {
         summary: workflows.summary,
         latest: workflows.data.slice(0, 10),
       },
+      scope: {
+        role: scope.role,
+        schoolId: scope.schoolId,
+        tenantId: scope.tenantId,
+      },
     };
   }
 
@@ -473,11 +607,18 @@ export class EnterpriseService {
     };
 
     const analyticsScope = isGlobalRole
-      ? { level: 'global', canViewAllSchools: true }
+      ? {
+          level: 'global',
+          canViewAllSchools: true,
+          modules: ['schools', 'students', 'users', 'entries', 'courses', 'payments', 'analytics'],
+        }
       : {
           level: 'school',
           canViewAllSchools: false,
           schoolId: payload.schoolId || null,
+          modules: Object.entries(permissions)
+            .filter(([, actions]) => Array.isArray(actions) && actions.includes('read'))
+            .map(([domain]) => domain),
         };
 
     return {

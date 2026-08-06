@@ -111,6 +111,15 @@ const EnterprisePortalPage = () => {
     return null;
   };
 
+  const buildEnterpriseHeaders = (currentUser: any): HeadersInit => ({
+    'Content-Type': 'application/json',
+    'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
+    'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
+    'x-user-name': String(currentUser?.nome || currentUser?.name || currentUser?.email || ''),
+    'x-school-id': String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
+    'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
+  });
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -150,13 +159,21 @@ const EnterprisePortalPage = () => {
       });
 
       try {
-        const overviewRes = await withTimeout(fetch('/api/v1/enterprise/overview'), 10000, 'Enterprise overview timeout');
+        const currentUser = resolveCurrentUserSnapshot();
+        const enterpriseHeaders = currentUser ? buildEnterpriseHeaders(currentUser) : undefined;
+
+        const overviewRes = await withTimeout(
+          fetch('/api/v1/enterprise/overview', {
+            headers: enterpriseHeaders,
+          }),
+          10000,
+          'Enterprise overview timeout'
+        );
         if (overviewRes.ok) {
           const overviewData = await overviewRes.json();
           setEnterpriseOverview(overviewData);
         }
 
-        const currentUser = resolveCurrentUserSnapshot();
         if (currentUser) {
           const heartbeatBody = {
             userId: String(currentUser.id || currentUser.user_id || 'guest-user'),
@@ -171,7 +188,7 @@ const EnterprisePortalPage = () => {
           const heartbeatRes = await withTimeout(
             fetch('/api/v1/enterprise/sessions', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: enterpriseHeaders,
               body: JSON.stringify(heartbeatBody),
             }),
             8000,
@@ -188,7 +205,7 @@ const EnterprisePortalPage = () => {
           await withTimeout(
             fetch('/api/v1/enterprise/audit', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: enterpriseHeaders,
               body: JSON.stringify({
                 actorId: heartbeatBody.userId,
                 actorName: heartbeatBody.userName,

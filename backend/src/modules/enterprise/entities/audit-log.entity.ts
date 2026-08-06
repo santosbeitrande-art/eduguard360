@@ -3,6 +3,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
 @Entity('enterprise_audit_logs')
 @Index(['actorId', 'createdAt'])
 @Index(['resourceType', 'resourceId'])
+@Index(['schoolId'])
+@Index(['tenantId'])
 export class AuditLog {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -24,6 +26,12 @@ export class AuditLog {
 
   @Column({ type: 'varchar', length: 80, nullable: true })
   resourceId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  schoolId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  tenantId!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'info' })
   severity!: 'info' | 'warn' | 'error';

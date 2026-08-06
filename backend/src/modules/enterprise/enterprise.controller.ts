@@ -1,5 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { EnterpriseService } from './enterprise.service';
+import { RequireEnterprisePermission } from './decorators/enterprise-permission.decorator';
+import { EnterpriseRbacGuard } from './guards/enterprise-rbac.guard';
+
+const scopeFromRequest = (req: any) => req?.enterprisePrincipal || {};
 
 @Controller('enterprise')
 export class EnterpriseController {
@@ -21,12 +25,17 @@ export class EnterpriseController {
   }
 
   @Get('overview')
-  async overview() {
-    return this.enterpriseService.getOverview();
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('analytics', 'read')
+  async overview(@Req() req: any) {
+    return this.enterpriseService.getOverview(scopeFromRequest(req));
   }
 
   @Get('audit')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'read')
   async listAudit(
+    @Req() req: any,
     @Query('limit') limit?: number,
     @Query('actorId') actorId?: string,
     @Query('action') action?: string,
@@ -35,64 +44,87 @@ export class EnterpriseController {
       limit: limit ? Number(limit) : 50,
       actorId,
       action,
-    });
+    }, scopeFromRequest(req));
   }
 
   @Post('audit')
-  async createAudit(@Body() body: any) {
-    return this.enterpriseService.createAuditLog(body);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'create')
+  async createAudit(@Req() req: any, @Body() body: any) {
+    return this.enterpriseService.createAuditLog(body, scopeFromRequest(req));
   }
 
   @Get('sessions')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'read')
   async listSessions(
+    @Req() req: any,
     @Query('userId') userId?: string,
     @Query('status') status?: string,
   ) {
-    return this.enterpriseService.listSessions({ userId, status });
+    return this.enterpriseService.listSessions({ userId, status }, scopeFromRequest(req));
   }
 
   @Post('sessions')
-  async upsertSession(@Body() body: any) {
-    return this.enterpriseService.upsertSession(body);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'update')
+  async upsertSession(@Req() req: any, @Body() body: any) {
+    return this.enterpriseService.upsertSession(body, scopeFromRequest(req));
   }
 
   @Patch('sessions/:id/revoke')
-  async revokeSession(@Param('id') id: string, @Body('actorName') actorName?: string) {
-    return this.enterpriseService.revokeSession(id, actorName || 'system');
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'approve')
+  async revokeSession(@Req() req: any, @Param('id') id: string, @Body('actorName') actorName?: string) {
+    return this.enterpriseService.revokeSession(id, actorName || 'system', scopeFromRequest(req));
   }
 
   @Get('security/policies')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'read')
   async listPolicies() {
     return this.enterpriseService.listPolicies();
   }
 
   @Put('security/policies/:key')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'update')
   async updatePolicy(@Param('key') key: string, @Body() body: any) {
     return this.enterpriseService.updatePolicy(key, body?.value || {}, body?.updatedBy || 'system');
   }
 
   @Get('security/mfa')
-  async listMfa(@Query('userId') userId?: string) {
-    return this.enterpriseService.listMfaEnrollments(userId);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'read')
+  async listMfa(@Req() req: any, @Query('userId') userId?: string) {
+    return this.enterpriseService.listMfaEnrollments(userId, scopeFromRequest(req));
   }
 
   @Post('security/mfa')
-  async createMfa(@Body() body: any) {
-    return this.enterpriseService.enrollMfa(body);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'create')
+  async createMfa(@Req() req: any, @Body() body: any) {
+    return this.enterpriseService.enrollMfa(body, scopeFromRequest(req));
   }
 
   @Patch('security/mfa/:id/verify')
-  async verifyMfa(@Param('id') id: string, @Body('verified') verified?: boolean) {
-    return this.enterpriseService.verifyMfa(id, verified !== false);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('security', 'approve')
+  async verifyMfa(@Req() req: any, @Param('id') id: string, @Body('verified') verified?: boolean) {
+    return this.enterpriseService.verifyMfa(id, verified !== false, scopeFromRequest(req));
   }
 
   @Get('workflows')
-  async listWorkflows(@Query('status') status?: string) {
-    return this.enterpriseService.listWorkflows(status);
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('workflow', 'read')
+  async listWorkflows(@Req() req: any, @Query('status') status?: string) {
+    return this.enterpriseService.listWorkflows(status, scopeFromRequest(req));
   }
 
   @Post('workflows')
-  async createWorkflow(@Body() body: any) {
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('workflow', 'create')
+  async createWorkflow(@Req() req: any, @Body() body: any) {
     return this.enterpriseService.createWorkflow({
       title: body?.title,
       type: body?.type || 'generic',
@@ -101,15 +133,17 @@ export class EnterpriseController {
       priority: body?.priority || 'medium',
       steps: Array.isArray(body?.steps) ? body.steps : ['Pedido', 'Secretaria', 'Direção', 'Concluído'],
       initialStatus: body?.initialStatus,
-    });
+    }, scopeFromRequest(req));
   }
 
   @Patch('workflows/:id/advance')
-  async advanceWorkflow(@Param('id') id: string, @Body() body: any) {
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('workflow', 'update')
+  async advanceWorkflow(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     return this.enterpriseService.advanceWorkflow(id, {
       actor: body?.actor,
       notes: body?.notes,
       targetStatus: body?.targetStatus,
-    });
+    }, scopeFromRequest(req));
   }
 }

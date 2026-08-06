@@ -3,6 +3,8 @@ import { WorkflowStep } from './workflow-step.entity';
 
 @Entity('enterprise_workflow_processes')
 @Index(['status', 'priority'])
+@Index(['schoolId'])
+@Index(['tenantId'])
 export class WorkflowProcess {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -18,6 +20,12 @@ export class WorkflowProcess {
 
   @Column({ type: 'varchar', length: 120, nullable: true })
   owner!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  schoolId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  tenantId!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'pending' })
   status!: 'pending' | 'in_review' | 'approved' | 'rejected' | 'completed';

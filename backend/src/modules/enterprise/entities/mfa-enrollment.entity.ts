@@ -2,6 +2,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 
 @Entity('enterprise_mfa_enrollments')
 @Index(['userId'])
+@Index(['schoolId'])
+@Index(['tenantId'])
 export class MfaEnrollment {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -11,6 +13,12 @@ export class MfaEnrollment {
 
   @Column({ type: 'varchar', length: 255 })
   userName!: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  schoolId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  tenantId!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'app' })
   method!: 'app' | 'sms' | 'email';
