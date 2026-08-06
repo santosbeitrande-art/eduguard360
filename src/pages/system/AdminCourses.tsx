@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Eye } from 'lucide-react';
+import { fetchWithTimeout } from '@/lib/networkPerformance';
 
 const AdminCourses: React.FC = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publishingCourseId, setPublishingCourseId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const loadDrafts = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/courses?status=draft');
+      const res = await fetchWithTimeout('/api/courses?status=draft', undefined, 12000);
       if (!res.ok) throw new Error('Falha ao buscar cursos');
       const data = await res.json();
       setCourses(data.courses || []);
@@ -27,17 +29,21 @@ const AdminCourses: React.FC = () => {
 
   const publishCourse = async (courseId: string) => {
     if (!window.confirm('Publicar este curso?')) return;
+    if (publishingCourseId) return;
+    setPublishingCourseId(courseId);
     try {
-      const res = await fetch(`/api/courses/${courseId}`, {
+      const res = await fetchWithTimeout(`/api/courses/${courseId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'published' }),
-      });
+      }, 12000);
       if (!res.ok) throw new Error('Falha ao publicar');
       await loadDrafts();
       alert('Curso publicado com sucesso');
     } catch (err: any) {
       alert(err.message || 'Erro ao publicar curso');
+    } finally {
+      setPublishingCourseId(null);
     }
   };
 
@@ -47,7 +53,7 @@ const AdminCourses: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Gerir Cursos (EduMarket)</h1>
           <div className="flex gap-2">
-            <button onClick={loadDrafts} className="btn">Atualizar</button>
+            <button onClick={loadDrafts} className="btn" disabled={loading}>Atualizar</button>
             <button onClick={() => navigate('/sistema')} className="btn">Voltar</button>
           </div>
         </div>
@@ -68,7 +74,7 @@ const AdminCourses: React.FC = () => {
                 <button onClick={() => navigate(`/edumarket/curso/${c.id}`)} className="inline-flex items-center gap-2 px-3 py-2 bg-slate-700 text-white rounded">
                   <Eye className="w-4 h-4" /> Ver
                 </button>
-                <button onClick={() => publishCourse(c.id)} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded">
+                <button onClick={() => publishCourse(c.id)} disabled={publishingCourseId === c.id} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded disabled:opacity-60 disabled:cursor-not-allowed">
                   <CheckCircle className="w-4 h-4" /> Publicar
                 </button>
               </div>

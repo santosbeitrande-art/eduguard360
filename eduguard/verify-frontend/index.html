@@ -28,6 +28,11 @@
         color: #07231d;
         cursor: pointer;
       }
+      .btn[disabled],
+      .ghost[disabled] {
+        opacity: .65;
+        cursor: not-allowed;
+      }
       .ghost {
         border: 1px solid rgba(255,255,255,.2);
         background: rgba(255,255,255,.1);
@@ -291,9 +296,12 @@
     <script>
       const QUERY_API_BASE = new URLSearchParams(window.location.search).get("apiBase") || "";
       const CANONICAL_API_BASE = "https://api.eduguard360.co.mz";
+      const LAST_OK_API_KEY = "eduguard_verify_last_ok_api_base";
+      const persistedApiBase = String(localStorage.getItem(LAST_OK_API_KEY) || "").replace(/\/+$/, "");
       const API_CANDIDATES = Array.from(new Set([
         QUERY_API_BASE,
         window.EDUGUARD_VERIFY_API_BASE || "",
+        persistedApiBase,
         localStorage.getItem("eduguard_verify_api_base") || "",
         CANONICAL_API_BASE,
         `${window.location.origin}/verify-api`,
@@ -307,7 +315,9 @@
       if (apiBaseFromQuery && !API_CANDIDATES.includes(apiBaseFromQuery)) {
         API_CANDIDATES.unshift(apiBaseFromQuery);
       }
-      let API_BASE = API_CANDIDATES[0];
+      let API_BASE = persistedApiBase || API_CANDIDATES[0];
+      const REQUEST_TIMEOUT_MS = 12000;
+      const HEALTH_TIMEOUT_MS = 4500;
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
       const LANG_KEY = "eduguard_verify_lang";
@@ -321,6 +331,8 @@
       const quotaEl = document.getElementById("quotaStatus");
       const planSelect = document.getElementById("planSelect");
       const providerSelect = document.getElementById("providerSelect");
+      const verifyButton = document.getElementById("btnVerify");
+      const checkoutButton = document.getElementById("btnCheckout");
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
@@ -447,6 +459,30 @@
         }
       }
 
+      function setButtonBusy(buttonOrId, busy, busyLabel) {
+        const button = typeof buttonOrId === "string"
+          ? document.getElementById(buttonOrId)
+          : buttonOrId;
+        if (!button) return;
+
+        if (!button.dataset.defaultLabel) {
+          button.dataset.defaultLabel = button.textContent || "";
+        }
+
+        button.disabled = Boolean(busy);
+        button.textContent = busy ? busyLabel : button.dataset.defaultLabel;
+      }
+
+      async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeoutHandle);
+        }
+      }
+
       function isLikelyHtmlResponse(response) {
         const contentType = String(response?.headers?.get("content-type") || "").toLowerCase();
         return contentType.includes("text/html");
@@ -455,11 +491,12 @@
       async function resolveApiBase() {
         for (const candidate of API_CANDIDATES) {
           try {
-            const res = await fetch(`${candidate}/health`, { method: "GET" });
+            const res = await fetchWithTimeout(`${candidate}/health`, { method: "GET" }, HEALTH_TIMEOUT_MS);
             const data = await safeJson(res);
             if (res.ok && data?.ok === true && String(data?.service || "").includes("verify-api")) {
               API_BASE = candidate;
               localStorage.setItem("eduguard_verify_api_base", API_BASE);
+              localStorage.setItem(LAST_OK_API_KEY, API_BASE);
               return true;
             }
           } catch {}
@@ -472,12 +509,17 @@
         const headers = Object.assign({}, options.headers || {});
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        const candidates = [API_BASE, ...API_CANDIDATES.filter((candidate) => candidate !== API_BASE)];
+        const lastOkCandidate = String(localStorage.getItem(LAST_OK_API_KEY) || "").replace(/\/+$/, "");
+        const candidates = Array.from(new Set([
+          API_BASE,
+          lastOkCandidate,
+          ...API_CANDIDATES
+        ].filter(Boolean)));
         let lastError = null;
 
         for (const candidate of candidates) {
           try {
-            const response = await fetch(`${candidate}${path}`, { ...options, headers });
+            const response = await fetchWithTimeout(`${candidate}${path}`, { ...options, headers }, REQUEST_TIMEOUT_MS);
 
             if (isLikelyHtmlResponse(response) && response.status < 500) {
               continue;
@@ -485,6 +527,7 @@
 
             API_BASE = candidate;
             localStorage.setItem("eduguard_verify_api_base", API_BASE);
+            localStorage.setItem(LAST_OK_API_KEY, API_BASE);
             return response;
           } catch (error) {
             lastError = error;
@@ -1242,11 +1285,11 @@
         const refresh = localStorage.getItem(REFRESH_KEY);
         if (!refresh) return false;
         try {
-          const res = await fetch(`${API_BASE}/auth/token/refresh`, {
+          const res = await fetchWithTimeout(`${API_BASE}/auth/token/refresh`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refreshToken: refresh })
-          });
+          }, REQUEST_TIMEOUT_MS);
           const data = await safeJson(res);
           if (!res.ok) return false;
           localStorage.setItem(TOKEN_KEY, data.accessToken || "");
@@ -1284,8 +1327,10 @@
 
       uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
+        setButtonBusy(verifyButton, true, lang === "pt" ? "A verificar..." : "Verifying...");
         if (!fileInput.files.length) {
           setResult(lang === "pt" ? "Escolha um ficheiro." : "Please choose a file.");
+          setButtonBusy(verifyButton, false);
           return;
         }
         if (offlineMode) {
@@ -1305,6 +1350,7 @@
         const sessionOk = await ensureSession();
         if (!sessionOk) {
           setResult(lang === "pt" ? "Sessao expirada. Entre novamente." : "Session expired. Please sign in again.");
+          setButtonBusy(verifyButton, false);
           return;
         }
 
@@ -1358,14 +1404,18 @@
           await loadSubscriptionStatus();
         } catch {
           setResult(lang === "pt" ? "Falha de ligacao ao servidor." : "Server connection failed.");
+        } finally {
+          setButtonBusy(verifyButton, false);
         }
       });
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
+        setButtonBusy(checkoutButton, true, lang === "pt" ? "A processar..." : "Processing...");
         if (offlineMode) {
           setResult(lang === "pt"
             ? "Pagamento indisponivel sem API externa. Restabeleca ligacao ao backend."
             : "Payment unavailable without external API. Restore backend connectivity.");
+          setButtonBusy(checkoutButton, false);
           return;
         }
         setResult(lang === "pt" ? "A iniciar pagamento..." : "Starting checkout...");
@@ -1394,6 +1444,8 @@
           await loadSubscriptionStatus();
         } catch {
           setResult(lang === "pt" ? "Erro de ligacao no checkout." : "Checkout connection error.");
+        } finally {
+          setButtonBusy(checkoutButton, false);
         }
       });
 

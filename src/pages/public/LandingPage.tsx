@@ -2,6 +2,7 @@ import { useState, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Eye, MapPin, Users, Mail, Phone, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { fetchWithTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
 
 // Novos componentes dos portais
 import EducuardNavigation from "@/components/EducuardNavigation";
@@ -42,14 +43,14 @@ const LandingPage = () => {
     };
 
     try {
-      const response = await fetch("https://formsubmit.co/ajax/admin@eduguard360.co.mz", {
+      const response = await fetchWithTimeout("https://formsubmit.co/ajax/admin@eduguard360.co.mz", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
         body: JSON.stringify(formBody),
-      });
+      }, 12000);
 
       const result = await response.json();
       if (!response.ok || result.success === false) {
@@ -65,6 +66,15 @@ const LandingPage = () => {
       setSchoolName("");
       setContactEmail("");
     } catch (error) {
+      if (error instanceof NetworkTimeoutError) {
+        setFeedback({
+          type: "error",
+          message: language === "pt"
+            ? "A ligação está lenta. Tente novamente em alguns segundos."
+            : "Connection is slow. Please try again in a few seconds."
+        });
+        return;
+      }
       const mailBody = encodeURIComponent(`Pedido de simulação gratuita para a escola ${schoolName}.\nE-mail de contacto: ${contactEmail}`);
       const mailto = `mailto:admin@eduguard360.co.mz?subject=${encodeURIComponent("Pedido de Simulação Gratuita EduGuard360")}&body=${mailBody}`;
       window.location.href = mailto;

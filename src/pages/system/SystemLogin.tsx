@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
+import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -205,7 +206,11 @@ const SystemLoginContent = () => {
     const loadSchools = async () => {
       setLoadingSchools(true);
       try {
-        const { data, error } = await supabase.from("escolas").select("id,nome").order("nome");
+        const { data, error } = await withTimeout(
+          supabase.from("escolas").select("id,nome").order("nome"),
+          10000,
+          'Schools load timeout'
+        );
         if (!error && Array.isArray(data) && data.length > 0) {
           const fetchedSchools = (data || []) as Array<{ id: string; nome: string }>;
           setSchools(fetchedSchools);
@@ -367,7 +372,11 @@ const SystemLoginContent = () => {
 
     try {
       const edgeUserType = accessProfile === 'parent' ? 'parent' : 'system';
-      const edgeResult = await edgeLogin(normalizedEmail, normalizedPassword, edgeUserType);
+      const edgeResult = await withTimeout(
+        edgeLogin(normalizedEmail, normalizedPassword, edgeUserType),
+        12000,
+        'Edge login timeout'
+      );
       if (edgeResult.success) {
         const edgeUserRaw = localStorage.getItem('eduguard_user');
         if (edgeUserRaw) {
@@ -396,10 +405,10 @@ const SystemLoginContent = () => {
       let authData: any = null;
       let authError: any = null;
 
-      const firstSignIn = await supabase.auth.signInWithPassword({
+      const firstSignIn = await withTimeout(supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: normalizedPassword,
-      });
+      }), 12000, 'Sign-in timeout');
 
       authData = firstSignIn.data;
       authError = firstSignIn.error;
@@ -415,18 +424,18 @@ const SystemLoginContent = () => {
         const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
 
         if (canAutoProvisionAuth) {
-          const signUpAttempt = await supabase.auth.signUp({
+          const signUpAttempt = await withTimeout(supabase.auth.signUp({
             email: normalizedEmail,
             password: normalizedPassword,
             options: { data: { source: 'system-login-autoprovision' } }
-          });
+          }), 12000, 'Auto-provision timeout');
 
           const signUpErrorMessage = String(signUpAttempt.error?.message || '');
           if (!signUpAttempt.error || isAlreadyRegisteredError(signUpErrorMessage)) {
-            const retrySignIn = await supabase.auth.signInWithPassword({
+            const retrySignIn = await withTimeout(supabase.auth.signInWithPassword({
               email: normalizedEmail,
               password: normalizedPassword,
-            });
+            }), 12000, 'Retry sign-in timeout');
 
             authData = retrySignIn.data;
             authError = retrySignIn.error;
@@ -442,10 +451,10 @@ const SystemLoginContent = () => {
         // Autonomous recovery path: if account exists in domain table but has no password yet,
         // bootstrap it with the entered password and allow access for approved users.
         if ((!authData?.user || authError) && hasDomainUser && !hasStoredPassword) {
-          const { error: setPasswordError } = await supabase
+          const { error: setPasswordError } = await withTimeout(supabase
             .from('utilizadores')
             .update({ senha: normalizedPassword })
-            .eq('id', domainUserByEmail.id);
+            .eq('id', domainUserByEmail.id), 12000, 'Password bootstrap timeout');
 
           if (!setPasswordError) {
             const didLogin = completeLogin({ ...domainUserByEmail, senha: normalizedPassword }, true);
@@ -483,29 +492,29 @@ const SystemLoginContent = () => {
       const userId = authData.user.id;
       
       // Buscar utilizador na tabela "utilizadores". Em bases antigas, auth_id pode estar vazio.
-      const { data: userByAuth } = await supabase
+      const { data: userByAuth } = await withTimeout(supabase
         .from("utilizadores")
         .select("*")
         .eq("auth_id", userId)
-        .maybeSingle();
+        .maybeSingle(), 12000, 'User lookup timeout');
 
       let user = userByAuth;
 
       if (!user) {
-        const { data: userByEmail } = await supabase
+        const { data: userByEmail } = await withTimeout(supabase
           .from("utilizadores")
           .select("*")
           .eq("email", normalizedEmail)
-          .maybeSingle();
+          .maybeSingle(), 12000, 'User email lookup timeout');
 
         user = userByEmail;
 
         if (user?.id && !user?.auth_id) {
           // Melhor esforço para vincular o auth user à conta de domínio.
-          await supabase
+          await withTimeout(supabase
             .from("utilizadores")
             .update({ auth_id: userId })
-            .eq("id", user.id);
+            .eq("id", user.id), 12000, 'User link timeout');
 
           user = { ...user, auth_id: userId };
         }
@@ -523,6 +532,10 @@ const SystemLoginContent = () => {
 
       completeLogin(user);
     } catch (err) {
+      if (err instanceof NetworkTimeoutError) {
+        setErrorMessage('Tempo excedido ao ligar ao servidor. Tente novamente.');
+        return;
+      }
       console.error(err);
       setErrorMessage(t('mensagens.erro_generico'));
     } finally {
@@ -543,9 +556,9 @@ const SystemLoginContent = () => {
     }
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      const { error } = await withTimeout(supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/sistema`
-      });
+      }), 12000, 'Password recovery timeout');
 
       if (error) {
         setErrorMessage(error.message || t('mensagens.erro_generico'));
@@ -554,6 +567,10 @@ const SystemLoginContent = () => {
         setRecoveryMode(false);
       }
     } catch (err: any) {
+      if (err instanceof NetworkTimeoutError) {
+        setErrorMessage('Tempo excedido ao ligar ao servidor. Tente novamente.');
+        return;
+      }
       console.error(err);
       setErrorMessage(err?.message || t('mensagens.erro_generico'));
     } finally {
@@ -585,11 +602,11 @@ const SystemLoginContent = () => {
     ensureSchoolTrial(selectedSchoolId);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await withTimeout(supabase.auth.signUp({
         email: normalizedEmail,
         password: normalizedPassword,
         options: { data: { full_name: normalizedName } }
-      });
+      }), 12000, 'Self-register timeout');
 
       if (error) {
         setErrorMessage(error.message || t('mensagens.erro_generico'));
@@ -611,7 +628,7 @@ const SystemLoginContent = () => {
         source: 'supabase'
       };
 
-      const { error: insertError } = await supabase.from('utilizadores').insert({
+      const { error: insertError } = await withTimeout(supabase.from('utilizadores').insert({
         auth_id: data?.user?.id || null,
         nome: pendingUser.nome,
         email: pendingUser.email,
@@ -619,7 +636,7 @@ const SystemLoginContent = () => {
         escola_id: pendingUser.escola_id,
         telefone: null,
         senha: normalizedPassword
-      });
+      }), 12000, 'Registration profile timeout');
 
       const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
       existingPending.push({ ...pendingUser, source: insertError ? 'local' : 'supabase' });
@@ -635,6 +652,10 @@ const SystemLoginContent = () => {
       setPaymentDone(false);
       setPaymentSummary(null);
     } catch (err: any) {
+      if (err instanceof NetworkTimeoutError) {
+        setErrorMessage('Tempo excedido ao ligar ao servidor. Tente novamente.');
+        return;
+      }
       console.error(err);
       setErrorMessage(err?.message || t('mensagens.erro_generico'));
     } finally {

@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { withTimeout, NetworkTimeoutError } from '@/lib/networkPerformance';
 
 interface Student {
   id: string;
@@ -114,9 +115,9 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
     // Try edge function first (production)
     try {
       const { supabase } = await import('@/lib/supabase');
-      const { data, error } = await supabase.functions.invoke('eduguard-auth', {
+      const { data, error } = await withTimeout(supabase.functions.invoke('eduguard-auth', {
         body: { action: 'login', email: cleanEmail, password, user_type: userType, ip_address: 'web-client', user_agent: navigator.userAgent }
-      });
+      }), 12000, 'Login timeout');
 
       if (data) {
         if (data.success && data.user) {
@@ -137,7 +138,11 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
         }
       }
     } catch (err: any) {
-      console.warn('Edge function unavailable:', err.message);
+      if (err instanceof NetworkTimeoutError) {
+        console.warn('Edge function timeout');
+      } else {
+        console.warn('Edge function unavailable:', err.message);
+      }
     }
 
     // Demo fallback - only when edge function is unreachable
@@ -167,9 +172,9 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Não autenticado' };
     try {
       const { supabase } = await import('@/lib/supabase');
-      const { data, error } = await supabase.functions.invoke('eduguard-auth', {
+      const { data, error } = await withTimeout(supabase.functions.invoke('eduguard-auth', {
         body: { action: 'change_password', user_id: user.id, user_type: user.type, current_password: currentPassword, new_password: newPassword, operator_name: user.name }
-      });
+      }), 12000, 'Password change timeout');
       if (error) {
         console.error('Change password invoke error:', error);
         return { success: false, error: 'Erro de ligação ao servidor. Tente novamente.' };
@@ -178,6 +183,9 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
       if (data?.error) return { success: false, error: data.error };
       return { success: false, error: 'Resposta inesperada do servidor' };
     } catch (err: any) {
+      if (err instanceof NetworkTimeoutError) {
+        return { success: false, error: 'Tempo excedido ao ligar ao servidor. Tente novamente.' };
+      }
       console.error('Change password exception:', err);
       return { success: false, error: 'Erro de ligação. Verifique a sua conexão.' };
     }
