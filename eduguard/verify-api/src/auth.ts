@@ -2005,11 +2005,13 @@ export function registerAuthRoutes(app: any) {
     const resetToken = issuePasswordResetToken(store, credential);
     let delivery: 'sent' | 'not-configured' | 'failed' = 'not-configured';
     let deliveryProvider = 'none';
+    let deliveryDetail = '';
 
     try {
       const deliveryResult = await sendPasswordRecoveryEmail(email, resetToken, expiresInMinutes);
       delivery = deliveryResult.delivered ? 'sent' : 'not-configured';
       deliveryProvider = String(deliveryResult.provider || 'none');
+      deliveryDetail = String(deliveryResult.reason || '');
       if (!deliveryResult.delivered && String(deliveryResult.reason || '').includes('failed')) {
         delivery = 'failed';
       }
@@ -2024,7 +2026,8 @@ export function registerAuthRoutes(app: any) {
     appendAuditEvent(store, 'public', email, 'auth.password_recovery.requested', credential.companyId, {
       credentialId: credential.id,
       delivery,
-      deliveryProvider
+      deliveryProvider,
+      deliveryDetail
     });
     saveStore(store);
 
@@ -2034,7 +2037,8 @@ export function registerAuthRoutes(app: any) {
       recoveryToken: (!isProduction || allowTokenEcho || (allowManualTokenFallback && !recoveryEmailRuntime.configured)) ? resetToken : undefined,
       expiresInMinutes,
       delivery,
-      channel: deliveryProvider
+      channel: deliveryProvider,
+      deliveryDetail: delivery === 'failed' ? deliveryDetail : undefined
     });
   });
 
