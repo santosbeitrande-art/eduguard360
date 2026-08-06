@@ -241,6 +241,13 @@ const AdminGlobalDashboard = () => {
     }
   }, [selectedSchoolId]);
 
+  useEffect(() => {
+    setStats((currentStats) => ({
+      ...currentStats,
+      totalEscolas: escolas.length,
+    }));
+  }, [escolas.length]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -273,9 +280,11 @@ const AdminGlobalDashboard = () => {
         });
       }
 
+      let effectiveSchoolsCount = 0;
       if (escolasData && escolasData.length > 0) {
         setEscolas(escolasData);
         writeSchoolsCache(escolasData);
+        effectiveSchoolsCount = escolasData.length;
         if (!selectedSchoolId && escolasData.length) {
           setSelectedSchoolId(escolasData[0].id);
         }
@@ -283,21 +292,23 @@ const AdminGlobalDashboard = () => {
         const cachedSchools = readSchoolsCache();
         if (cachedSchools.length > 0) {
           setEscolas(cachedSchools);
+          effectiveSchoolsCount = cachedSchools.length;
           if (!selectedSchoolId) {
             setSelectedSchoolId(cachedSchools[0].id);
           }
         } else if (escolasData && escolasData.length === 0 && !escolasError) {
           setEscolas([]);
+          effectiveSchoolsCount = 0;
+        } else {
+          effectiveSchoolsCount = escolas.length;
         }
       }
 
-      if (alunosData || entradasData) {
-        setStats((currentStats) => ({
-          totalEscolas: escolasData?.length ?? currentStats.totalEscolas,
-          totalAlunos: alunosData?.length ?? currentStats.totalAlunos,
-          totalEntradas: entradasData?.length ?? currentStats.totalEntradas
-        }));
-      }
+      setStats((currentStats) => ({
+        totalEscolas: effectiveSchoolsCount,
+        totalAlunos: alunosData?.length ?? currentStats.totalAlunos,
+        totalEntradas: entradasData?.length ?? currentStats.totalEntradas,
+      }));
 
       if (recentEntriesData) {
         setRecentEntries(enrichedRecentEntries);

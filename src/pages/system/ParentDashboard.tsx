@@ -53,6 +53,7 @@ const requestStatusStyle = (status: string) => {
 const buildRequestNotifications = (viewerEmail: string) => {
   return readParentStudentRequests()
     .filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail)
+    .filter((entry) => !entry?.parent_seen_at)
     .filter((entry) => ['approved', 'rejected', 'standby'].includes(String(entry?.status || '').toLowerCase()))
     .map((entry) => {
       const normalizedStatus = String(entry?.status || '').toLowerCase();
@@ -185,6 +186,44 @@ const ParentDashboardContent: React.FC = () => {
 
     setStudentRequests(mine);
   }, [user?.email]);
+
+  useEffect(() => {
+    if (activeTab !== 'notifications') return;
+
+    const viewerEmail = String(user?.email || '').trim().toLowerCase();
+    if (!viewerEmail) return;
+
+    const allRequests = readParentStudentRequests();
+    const now = new Date().toISOString();
+    let changed = false;
+
+    const nextRequests = allRequests.map((entry) => {
+      const isMine = String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail;
+      const status = String(entry?.status || '').toLowerCase();
+      const isFinalStatus = status === 'approved' || status === 'rejected' || status === 'standby';
+
+      if (isMine && isFinalStatus && !entry?.parent_seen_at) {
+        changed = true;
+        return {
+          ...entry,
+          parent_seen_at: now,
+          updated_at: entry?.updated_at || now,
+        };
+      }
+
+      return entry;
+    });
+
+    if (!changed) return;
+
+    writeParentStudentRequests(nextRequests);
+    const mine = nextRequests
+      .filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail)
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+
+    setStudentRequests(mine);
+    loadNotifications();
+  }, [activeTab, user?.email]);
 
   const loadStudentStatuses = async () => {
     setLoading(true);
