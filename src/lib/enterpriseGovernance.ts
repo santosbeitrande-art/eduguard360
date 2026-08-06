@@ -68,15 +68,15 @@ export const resolvePortalRouteByRole = (roleValue: unknown): string => {
 export const getRoleLabel = (roleValue: unknown): string => {
   const role = normalizeEnterpriseRole(roleValue);
 
-  if (role === 'super_admin') return 'Super Administrador';
-  if (role === 'director') return 'Diretor';
-  if (role === 'administrator') return 'Administrador';
-  if (role === 'secretaria') return 'Secretaria';
-  if (role === 'coordenador') return 'Coordenador';
+  if (role === 'super_admin') return 'Administração Geral';
+  if (role === 'director') return 'Direção';
+  if (role === 'administrator') return 'Administração Escolar';
+  if (role === 'secretaria') return 'Secretaria Académica';
+  if (role === 'coordenador') return 'Coordenação Académica';
   if (role === 'professor') return 'Professor';
-  if (role === 'financeiro') return 'Financeiro';
-  if (role === 'rh') return 'RH';
-  if (role === 'seguranca') return 'Seguranca';
+  if (role === 'financeiro') return 'Gestão Financeira';
+  if (role === 'rh') return 'Recursos Humanos';
+  if (role === 'seguranca') return 'Segurança Operacional';
   if (role === 'parent') return 'Encarregado';
   if (role === 'student') return 'Aluno';
   return 'Utilizador';

@@ -86,15 +86,15 @@ const getRoleLabel = (perfil: unknown): EnterpriseRole => {
 };
 
 const getRoleDisplayLabel = (role: EnterpriseRole): string => {
-  if (role === 'super_admin') return 'Super Administrador';
-  if (role === 'director') return 'Diretor';
-  if (role === 'administrator') return 'Administrador';
-  if (role === 'secretaria') return 'Secretaria';
-  if (role === 'coordenador') return 'Coordenador';
+  if (role === 'super_admin') return 'Administração Geral';
+  if (role === 'director') return 'Direção';
+  if (role === 'administrator') return 'Administração Escolar';
+  if (role === 'secretaria') return 'Secretaria Académica';
+  if (role === 'coordenador') return 'Coordenação Académica';
   if (role === 'professor') return 'Professor';
-  if (role === 'financeiro') return 'Financeiro';
-  if (role === 'rh') return 'RH';
-  if (role === 'seguranca') return 'Segurança';
+  if (role === 'financeiro') return 'Gestão Financeira';
+  if (role === 'rh') return 'Recursos Humanos';
+  if (role === 'seguranca') return 'Segurança Operacional';
   if (role === 'parent') return 'Encarregado';
   if (role === 'student') return 'Aluno';
   return 'Outro';
@@ -320,14 +320,14 @@ const EnterprisePortalPage = () => {
 
   const cards: EnterpriseCard[] = [
     { title: 'Escolas ativas', value: String(stats.schools), subtitle: 'Instituições geridas no sistema', accent: 'from-blue-600 to-cyan-600', icon: <Building2 className="w-6 h-6" /> },
-    { title: 'Equipa escolar', value: String(stats.staff), subtitle: 'Diretores, professores e seguranças', accent: 'from-emerald-600 to-green-600', icon: <Users className="w-6 h-6" /> },
-    { title: 'Diretores', value: String(stats.directors), subtitle: 'Gestão académica e operacional', accent: 'from-indigo-600 to-violet-600', icon: <GraduationCap className="w-6 h-6" /> },
+    { title: 'Equipa escolar', value: String(stats.staff), subtitle: 'Direção, Docência e Segurança Operacional', accent: 'from-emerald-600 to-green-600', icon: <Users className="w-6 h-6" /> },
+    { title: 'Direção', value: String(stats.directors), subtitle: 'Liderança académica e operacional', accent: 'from-indigo-600 to-violet-600', icon: <GraduationCap className="w-6 h-6" /> },
     { title: 'Professores', value: String(stats.teachers), subtitle: 'Docência e acompanhamento de turmas', accent: 'from-amber-500 to-orange-500', icon: <ClipboardList className="w-6 h-6" /> },
-    { title: 'Seguranças', value: String(stats.security), subtitle: 'Controlo de entradas e QR', accent: 'from-red-500 to-rose-600', icon: <ShieldCheck className="w-6 h-6" /> },
+    { title: 'Segurança Operacional', value: String(stats.security), subtitle: 'Controlo de entradas e QR', accent: 'from-red-500 to-rose-600', icon: <ShieldCheck className="w-6 h-6" /> },
     { title: 'Encarregados', value: String(stats.parents), subtitle: 'Famílias ligadas ao ecossistema', accent: 'from-sky-600 to-blue-700', icon: <Bell className="w-6 h-6" /> },
   ];
 
-  const audienceTags = ['Diretores', 'Administradores', 'Secretarias', 'Coordenadores', 'Professores', 'Financeiro', 'RH'];
+  const audienceTags = ['Direção', 'Administração Escolar', 'Secretaria Académica', 'Coordenação Académica', 'Professores', 'Gestão Financeira', 'Recursos Humanos'];
 
   const quickActions = [
     {
@@ -344,13 +344,13 @@ const EnterprisePortalPage = () => {
     },
     {
       title: 'Relatório de Professores',
-      description: 'Admin filtrado para docentes por escola.',
+      description: 'Gestão institucional filtrada para docentes por escola.',
       icon: <Users className="w-5 h-5" />,
-      action: () => navigate('/admin?peopleProfile=teacher'),
+      action: () => navigate('/admin?peopleProfile=professor'),
     },
     {
-      title: 'Relatório de Diretores',
-      description: 'Admin filtrado para direção escolar.',
+      title: 'Relatório de Direção',
+      description: 'Gestão institucional filtrada para direção escolar.',
       icon: <Building2 className="w-5 h-5" />,
       action: () => navigate('/admin?peopleProfile=director'),
     },
@@ -370,9 +370,9 @@ const EnterprisePortalPage = () => {
     const workflowSummary = enterpriseOverview?.workflows?.summary || {};
 
     return [
-      { id: 'enrollment', title: 'Matrículas por aprovar', owner: 'Secretaria', count: pendingRequests, tone: 'amber' },
+      { id: 'enrollment', title: 'Matrículas por aprovar', owner: 'Secretaria Académica', count: pendingRequests, tone: 'amber' },
       { id: 'teacher-schedule', title: 'Professores sem escola atribuída', owner: 'Direção', count: Math.max(teachersWithoutSchoolByRole, Number(workflowSummary.in_review || 0)), tone: 'sky' },
-      { id: 'accounts', title: 'Contas pendentes/inativas', owner: 'Admin', count: Math.max(pendingUsers, Number(workflowSummary.pending || 0)), tone: 'rose' },
+      { id: 'accounts', title: 'Contas pendentes/inativas', owner: 'Administração Escolar', count: Math.max(pendingUsers, Number(workflowSummary.pending || 0)), tone: 'rose' },
       { id: 'classroom', title: 'Alunos sem turma definida', owner: 'Gestão Académica', count: Math.max(studentsWithoutClass, Number(workflowSummary.approved || 0)), tone: 'emerald' },
     ];
   }, [users, staff, students, enterpriseOverview]);
@@ -439,9 +439,9 @@ const EnterprisePortalPage = () => {
     const summary = enterpriseOverview?.workflows?.summary || {};
     return [
       { id: 'wf-1', label: 'Pedido', count: Math.max(pendingItems[0]?.count || 0, Number(summary.pending || 0)) },
-      { id: 'wf-2', label: 'Secretaria', count: Math.max(1, Number(summary.in_review || Math.round((pendingItems[0]?.count || 0) * 0.6))) },
+      { id: 'wf-2', label: 'Secretaria Académica', count: Math.max(1, Number(summary.in_review || Math.round((pendingItems[0]?.count || 0) * 0.6))) },
       { id: 'wf-3', label: 'Direção', count: Math.max(1, Number(summary.approved || Math.round((pendingItems[2]?.count || 0) * 0.4))) },
-      { id: 'wf-4', label: 'Financeiro', count: Math.max(1, Number(summary.rejected || Math.round((pendingItems[1]?.count || 0) * 0.5))) },
+      { id: 'wf-4', label: 'Gestão Financeira', count: Math.max(1, Number(summary.rejected || Math.round((pendingItems[1]?.count || 0) * 0.5))) },
       { id: 'wf-5', label: 'Concluído', count: Math.max(1, Number(summary.completed || stats.schools)) },
     ];
   }, [enterpriseOverview, pendingItems, stats.schools]);
@@ -716,10 +716,10 @@ const EnterprisePortalPage = () => {
               <p className="text-sm text-slate-300">Altere a lente e veja os widgets mais relevantes para cada função.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => setDashboardLens('director')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'director' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Diretor</button>
+              <button onClick={() => setDashboardLens('director')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'director' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Direção</button>
               <button onClick={() => setDashboardLens('teacher')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'teacher' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Professor</button>
-              <button onClick={() => setDashboardLens('secretaria')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'secretaria' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Secretaria</button>
-              <button onClick={() => setDashboardLens('financeiro')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'financeiro' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Financeiro</button>
+              <button onClick={() => setDashboardLens('secretaria')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'secretaria' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Secretaria Académica</button>
+              <button onClick={() => setDashboardLens('financeiro')} className={`rounded-xl px-3 py-2 text-sm ${dashboardLens === 'financeiro' ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 hover:bg-white/15'}`}>Gestão Financeira</button>
             </div>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-3">

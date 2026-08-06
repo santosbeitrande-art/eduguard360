@@ -56,30 +56,30 @@ type PeopleRoleKey =
 type PeopleProfileFilter = 'all' | PeopleRoleKey;
 
 const peopleRoleLabelMap: Record<PeopleRoleKey, string> = {
-  super_admin: 'Super Administrador',
-  director: 'Diretor',
-  administrator: 'Administrador',
-  secretaria: 'Secretaria',
-  coordenador: 'Coordenador',
+  super_admin: 'Administração Geral',
+  director: 'Direção',
+  administrator: 'Administração Escolar',
+  secretaria: 'Secretaria Académica',
+  coordenador: 'Coordenação Académica',
   professor: 'Professor',
-  financeiro: 'Financeiro',
-  rh: 'RH',
-  seguranca: 'Segurança',
+  financeiro: 'Gestão Financeira',
+  rh: 'Recursos Humanos',
+  seguranca: 'Segurança Operacional',
   parent: 'Encarregado',
   student: 'Aluno',
 };
 
 const peopleRoleFilterOptions: Array<{ value: PeopleProfileFilter; label: string }> = [
   { value: 'all', label: 'Todos os perfis' },
-  { value: 'super_admin', label: 'Super Administrador' },
-  { value: 'director', label: 'Diretores' },
-  { value: 'administrator', label: 'Administradores' },
-  { value: 'secretaria', label: 'Secretarias' },
-  { value: 'coordenador', label: 'Coordenadores' },
+  { value: 'super_admin', label: 'Administração Geral' },
+  { value: 'director', label: 'Direção' },
+  { value: 'administrator', label: 'Administração Escolar' },
+  { value: 'secretaria', label: 'Secretaria Académica' },
+  { value: 'coordenador', label: 'Coordenação Académica' },
   { value: 'professor', label: 'Professores' },
-  { value: 'financeiro', label: 'Financeiro' },
-  { value: 'rh', label: 'RH' },
-  { value: 'seguranca', label: 'Segurança' },
+  { value: 'financeiro', label: 'Gestão Financeira' },
+  { value: 'rh', label: 'Recursos Humanos' },
+  { value: 'seguranca', label: 'Segurança Operacional' },
   { value: 'parent', label: 'Encarregados' },
   { value: 'student', label: 'Alunos' },
 ];
@@ -234,8 +234,13 @@ const AdminGlobalDashboard = () => {
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [peopleProfileFilter, setPeopleProfileFilter] = useState<PeopleProfileFilter>(() => {
     const requestedProfile = String(searchParams.get('peopleProfile') || '').trim().toLowerCase();
-    if (peopleRoleFilterOptions.some((option) => option.value === requestedProfile)) {
-      return requestedProfile as PeopleProfileFilter;
+    const normalizedRequestedProfile = requestedProfile === 'teacher'
+      ? 'professor'
+      : requestedProfile === 'security' || requestedProfile === 'scanner'
+        ? 'seguranca'
+        : requestedProfile;
+    if (peopleRoleFilterOptions.some((option) => option.value === normalizedRequestedProfile)) {
+      return normalizedRequestedProfile as PeopleProfileFilter;
     }
     return 'all';
   });
@@ -2065,11 +2070,11 @@ const AdminGlobalDashboard = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
                   <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1"><Users className="w-4 h-4" /> {filteredPeopleRows.length} registo(s)</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Diretores: {peopleSummary.counts.director}</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Administradores: {peopleSummary.counts.administrator}</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Secretarias: {peopleSummary.counts.secretaria}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Direção: {peopleSummary.counts.director}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Administração Escolar: {peopleSummary.counts.administrator}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Secretaria Académica: {peopleSummary.counts.secretaria}</span>
                   <span className="rounded-full bg-white/5 px-3 py-1">Professores: {peopleSummary.counts.professor}</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Segurança: {peopleSummary.counts.seguranca}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Segurança Operacional: {peopleSummary.counts.seguranca}</span>
                   <span className="rounded-full bg-white/5 px-3 py-1">Escolas: {peopleSummary.schools.size}</span>
                 </div>
               </div>

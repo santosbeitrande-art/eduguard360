@@ -55,15 +55,15 @@ type AccessProfile =
   | 'student';
 
 const accessProfileOptions: Array<{ value: AccessProfile; label: string }> = [
-  { value: 'super_admin', label: 'Super Administrador' },
-  { value: 'director', label: 'Diretor' },
-  { value: 'administrator', label: 'Administrador' },
-  { value: 'secretaria', label: 'Secretaria' },
-  { value: 'coordenador', label: 'Coordenador' },
+  { value: 'super_admin', label: 'Administração Geral' },
+  { value: 'director', label: 'Direção' },
+  { value: 'administrator', label: 'Administração Escolar' },
+  { value: 'secretaria', label: 'Secretaria Académica' },
+  { value: 'coordenador', label: 'Coordenação Académica' },
   { value: 'professor', label: 'Professor' },
-  { value: 'financeiro', label: 'Financeiro' },
-  { value: 'rh', label: 'RH' },
-  { value: 'seguranca', label: 'Seguranca / QR Code' },
+  { value: 'financeiro', label: 'Gestão Financeira' },
+  { value: 'rh', label: 'Recursos Humanos' },
+  { value: 'seguranca', label: 'Segurança Operacional / QR Code' },
   { value: 'parent', label: 'Encarregado' },
   { value: 'student', label: 'Aluno' },
 ];
@@ -219,15 +219,15 @@ const mapEdgeUserToLegacyProfile = (edgeUser: any): string => {
 };
 
 const getAccessProfileLabel = (accessProfile: string): string => {
-  if (accessProfile === 'super_admin') return 'Super Administrador';
-  if (accessProfile === 'director') return 'Diretor';
-  if (accessProfile === 'administrator') return 'Administrador';
-  if (accessProfile === 'secretaria') return 'Secretaria';
-  if (accessProfile === 'coordenador') return 'Coordenador';
+  if (accessProfile === 'super_admin') return 'Administração Geral';
+  if (accessProfile === 'director') return 'Direção';
+  if (accessProfile === 'administrator') return 'Administração Escolar';
+  if (accessProfile === 'secretaria') return 'Secretaria Académica';
+  if (accessProfile === 'coordenador') return 'Coordenação Académica';
   if (accessProfile === 'professor') return 'Professor';
-  if (accessProfile === 'financeiro') return 'Financeiro';
-  if (accessProfile === 'rh') return 'RH';
-  if (accessProfile === 'seguranca') return 'Seguranca / QR Code';
+  if (accessProfile === 'financeiro') return 'Gestão Financeira';
+  if (accessProfile === 'rh') return 'Recursos Humanos';
+  if (accessProfile === 'seguranca') return 'Segurança Operacional / QR Code';
   if (accessProfile === 'parent') return 'Encarregado';
   if (accessProfile === 'student') return 'Aluno';
   return accessProfile;
@@ -272,15 +272,15 @@ const normalizeKnownAdminUser = (user: any): any => {
 
 const getLegacyProfileLabel = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
-  if (normalized === 'super_admin') return 'Super Administrador';
-  if (normalized === 'director') return 'Diretor';
-  if (normalized === 'administrator') return 'Administrador';
-  if (normalized === 'secretaria') return 'Secretaria';
-  if (normalized === 'coordenador') return 'Coordenador';
+  if (normalized === 'super_admin') return 'Administração Geral';
+  if (normalized === 'director') return 'Direção';
+  if (normalized === 'administrator') return 'Administração Escolar';
+  if (normalized === 'secretaria') return 'Secretaria Académica';
+  if (normalized === 'coordenador') return 'Coordenação Académica';
   if (normalized === 'professor') return 'Professor';
-  if (normalized === 'financeiro') return 'Financeiro';
-  if (normalized === 'rh') return 'RH';
-  if (normalized === 'seguranca') return 'Seguranca QR Code';
+  if (normalized === 'financeiro') return 'Gestão Financeira';
+  if (normalized === 'rh') return 'Recursos Humanos';
+  if (normalized === 'seguranca') return 'Segurança Operacional QR Code';
   if (normalized === 'parent') return 'Encarregado';
   if (normalized === 'student') return 'Aluno';
   return normalized || 'Utilizador';
