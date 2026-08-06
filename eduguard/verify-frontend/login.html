@@ -257,6 +257,8 @@
             <input id="signupPassword" type="password" minlength="8" required />
 
             <button class="btn" type="submit" id="btnSignup">Criar conta</button>
+            <p class="muted panel-gap" id="signupPasswordRule">Use pelo menos 8 caracteres, com letra maiúscula, minúscula e número.</p>
+            <div class="status panel-gap hidden" id="signupInlineMsg"></div>
           </form>
         </article>
       </section>
@@ -510,6 +512,7 @@
       const recoveryEmail = document.getElementById("recoveryEmail");
       const recoveryToken = document.getElementById("recoveryToken");
       const recoveryPassword = document.getElementById("recoveryPassword");
+      const signupInlineMsg = document.getElementById("signupInlineMsg");
 
       let lang = localStorage.getItem(LANG_KEY) || "pt";
       let offlineMode = false;
@@ -540,6 +543,7 @@
           lblSignupWebsite: "Website da empresa (opcional)",
           lblSignupEmail: "Email",
           lblSignupPassword: "Password (min 8)",
+          signupPasswordRule: "Use pelo menos 8 caracteres, com letra maiúscula, minúscula e número.",
           btnLogin: "Entrar",
           btnLogout: "Sair",
           btnRecoveryRequest: "Pedir token de recuperação",
@@ -595,6 +599,7 @@
           lblSignupWebsite: "Company website (optional)",
           lblSignupEmail: "Email",
           lblSignupPassword: "Password (min 8)",
+          signupPasswordRule: "Use at least 8 characters with uppercase, lowercase and one number.",
           btnLogin: "Sign in",
           btnLogout: "Logout",
           btnRecoveryRequest: "Request recovery token",
@@ -1165,6 +1170,27 @@
         msg.textContent = text;
       }
 
+      function setSignupMessage(text) {
+        setMessage(text);
+        if (!signupInlineMsg) return;
+        signupInlineMsg.textContent = text;
+        signupInlineMsg.classList.remove("hidden");
+      }
+
+      function clearSignupMessage() {
+        if (!signupInlineMsg) return;
+        signupInlineMsg.textContent = "";
+        signupInlineMsg.classList.add("hidden");
+      }
+
+      function isStrongSignupPassword(password) {
+        const value = String(password || "");
+        return value.length >= 8
+          && /[A-Z]/.test(value)
+          && /[a-z]/.test(value)
+          && /\d/.test(value);
+      }
+
       function setButtonBusy(buttonOrId, busy, busyLabel) {
         const btn = typeof buttonOrId === "string"
           ? document.getElementById(buttonOrId)
@@ -1656,7 +1682,8 @@
 
       document.getElementById("signupForm").addEventListener("submit", async (event) => {
         event.preventDefault();
-        setMessage(lang === "pt" ? "A criar conta..." : "Creating account...");
+        clearSignupMessage();
+        setSignupMessage(lang === "pt" ? "A criar conta..." : "Creating account...");
         setButtonBusy("btnSignup", true, lang === "pt" ? "A criar..." : "Creating...");
 
         const payload = {
@@ -1668,12 +1695,14 @@
         };
 
         if (!payload.fullName || !payload.email || !payload.password) {
-          setMessage(lang === "pt" ? "Preencha nome, email e password." : "Fill in name, email and password.");
+          setSignupMessage(lang === "pt" ? "Preencha nome, email e password." : "Fill in name, email and password.");
           setButtonBusy("btnSignup", false);
           return;
         }
-        if (payload.password.length < 8) {
-          setMessage(lang === "pt" ? "A password deve ter pelo menos 8 caracteres." : "Password must have at least 8 characters.");
+        if (!isStrongSignupPassword(payload.password)) {
+          setSignupMessage(lang === "pt"
+            ? "Password fraca. Use 8+ caracteres com maiúscula, minúscula e número."
+            : "Weak password. Use 8+ chars with uppercase, lowercase and a number.");
           setButtonBusy("btnSignup", false);
           return;
         }
@@ -1681,7 +1710,7 @@
         if (normalizeEmail(payload.email) === INTERNAL_ADMIN_EMAIL) {
           document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
           document.getElementById("loginPassword").focus();
-          setMessage(lang === "pt"
+          setSignupMessage(lang === "pt"
             ? "Este email é reservado para uso interno da plataforma."
             : "This email is reserved for internal platform use.");
           setButtonBusy("btnSignup", false);
@@ -1698,19 +1727,36 @@
 
           if (!res.ok) {
             if (data?.error === "email-already-registered") {
-              setMessage(lang === "pt"
-                ? "Este email já existe. Entre no painel com as mesmas credenciais."
-                : "This email is already registered. Sign in with existing credentials.");
+              // If the email already exists, try immediate login with provided credentials.
+              const existingLoginRes = await api("/auth/login/jwt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: payload.email, password: payload.password })
+              });
+              const existingLoginData = await safeJson(existingLoginRes);
+              if (existingLoginRes.ok && existingLoginData?.accessToken) {
+                setTokens(existingLoginData.accessToken, existingLoginData.refreshToken || "");
+                setSignupMessage(lang === "pt"
+                  ? "Email já existia. Sessão iniciada automaticamente."
+                  : "Email already existed. Session started automatically.");
+                window.location.href = "/public";
+                return;
+              }
+
+              setSignupMessage(lang === "pt"
+                ? "Este email já existe. Use a palavra-passe correta para entrar ou recupere a conta."
+                : "This email already exists. Use the correct password to sign in or recover the account.");
               document.getElementById("loginEmail").value = payload.email;
+              document.getElementById("loginPassword").value = payload.password;
               document.getElementById("loginPassword").focus();
               return;
             }
 
-            setMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(data?.error || "unknown"));
+            setSignupMessage((lang === "pt" ? "Falha no cadastro: " : "Signup failed: ") + describeAuthError(data?.error || "unknown"));
             return;
           }
 
-          setMessage(lang === "pt"
+          setSignupMessage(lang === "pt"
             ? `Conta criada com sucesso. Tem ${data.trial.remaining} consultas grátis.`
             : `Account created successfully. You have ${data.trial.remaining} free checks.`);
           document.getElementById("loginEmail").value = payload.email;
@@ -1727,7 +1773,7 @@
             const authData = await safeJson(authRes);
             if (authRes.ok && authData?.accessToken) {
               setTokens(authData.accessToken, authData.refreshToken || "");
-              setMessage(lang === "pt" ? "Conta criada e sessão iniciada. A entrar no portal..." : "Account created and signed in. Opening portal...");
+              setSignupMessage(lang === "pt" ? "Conta criada e sessão iniciada. A entrar no portal..." : "Account created and signed in. Opening portal...");
               window.location.href = "/public";
               autoLoginSucceeded = true;
               break;
@@ -1739,12 +1785,12 @@
             return;
           }
 
-          setMessage(lang === "pt"
+          setSignupMessage(lang === "pt"
             ? "Conta criada. Use as credenciais para entrar no portal."
             : "Account created. Use your credentials to sign in.");
         } catch {
           clearLocalOfflineArtifacts();
-          setMessage(externalApiUnavailableMessage());
+          setSignupMessage(externalApiUnavailableMessage());
         } finally {
           setButtonBusy("btnSignup", false);
         }
