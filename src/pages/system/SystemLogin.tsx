@@ -196,12 +196,34 @@ const getAccessProfileLabel = (accessProfile: string): string => {
   return accessProfile;
 };
 
+const getAccessProfileLabelFromLegacyProfile = (perfil: string): string => {
+  const normalized = normalizeLegacyProfile(perfil);
+  if (normalized === 'director' || normalized === 'admin') return getAccessProfileLabel('director');
+  if (normalized === 'pai') return getAccessProfileLabel('parent');
+  if (normalized === 'professor') return getAccessProfileLabel('teacher');
+  if (normalized === 'scanner') return getAccessProfileLabel('scanner');
+  return 'perfil correto';
+};
+
 const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
   if (accessProfile === 'director') return 'director';
   if (accessProfile === 'parent') return 'pai';
   if (accessProfile === 'teacher') return 'professor';
   if (accessProfile === 'scanner') return 'scanner';
   return accessProfile;
+};
+
+const normalizeKnownAdminUser = (user: any): any => {
+  if (!user) return user;
+  const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+  if (normalizedEmail !== KNOWN_ADMIN_EMAIL) return user;
+  return {
+    ...user,
+    perfil: 'admin',
+    role: 'admin',
+    status: 'active',
+    is_active: true,
+  };
 };
 
 const getLegacyProfileLabel = (perfil: string): string => {
@@ -414,23 +436,25 @@ const SystemLoginContent = () => {
   };
 
   const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
-    if (!user) {
+    const normalizedUser = normalizeKnownAdminUser(user);
+
+    if (!normalizedUser) {
       setErrorMessage(t('sistema.erro_login'));
       return false;
     }
 
-    if (isPendingUser(user)) {
+    if (isPendingUser(normalizedUser)) {
       setErrorMessage(t('sistema.registo_pendente'));
       return false;
     }
 
-    const perfil = normalizeLegacyProfile(user?.perfil || user?.role);
+    const perfil = normalizeLegacyProfile(normalizedUser?.perfil || normalizedUser?.role);
     if (!isProfileAllowed(perfil)) {
-      setErrorMessage(`Este utilizador esta registado como ${getLegacyProfileLabel(perfil)}. No topo, selecione o perfil ${getAccessProfileLabel(accessProfile)} para entrar.`);
+      setErrorMessage(`Este utilizador esta registado como ${getLegacyProfileLabel(perfil)}. No topo, selecione o perfil ${getAccessProfileLabelFromLegacyProfile(perfil)} para entrar.`);
       return false;
     }
 
-    const schoolId = user.escola_id || null;
+    const schoolId = normalizedUser.escola_id || null;
     if (schoolId && perfil !== 'admin') {
       const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
       const subscription = getSchoolSubscription(schoolId);
@@ -453,9 +477,9 @@ const SystemLoginContent = () => {
     }
 
     localStorage.setItem('currentUser', JSON.stringify({
-      ...user,
+      ...normalizedUser,
       perfil,
-      email: String(user?.email || '').trim().toLowerCase(),
+      email: String(normalizedUser?.email || '').trim().toLowerCase(),
     }));
     redirectByProfile(perfil);
     return true;
