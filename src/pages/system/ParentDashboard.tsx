@@ -8,6 +8,15 @@ import ChangePasswordModal from '@/components/eduguard/ChangePasswordModal';
 
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
+const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
+
+const emitGlobalSync = (reason: string) => {
+  try {
+    localStorage.setItem(GLOBAL_SYNC_KEY, JSON.stringify({ reason, at: new Date().toISOString() }));
+  } catch {
+    // Ignore localStorage failures in offline/private mode.
+  }
+};
 
 const readParentStudentRequests = (): any[] => {
   try {
@@ -21,6 +30,7 @@ const readParentStudentRequests = (): any[] => {
 
 const writeParentStudentRequests = (items: any[]) => {
   localStorage.setItem(PARENT_STUDENT_REQUESTS_KEY, JSON.stringify(items));
+  emitGlobalSync('parent-student-requests-updated');
 };
 
 const readStudentsCache = (): Record<string, any[]> => {
@@ -186,6 +196,61 @@ const ParentDashboardContent: React.FC = () => {
 
     setStudentRequests(mine);
   }, [user?.email]);
+
+  useEffect(() => {
+    const refreshParentData = () => {
+      loadStudentStatuses();
+      loadNotifications();
+
+      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+      if (viewerEmail) {
+        const mine = readParentStudentRequests()
+          .filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail)
+          .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+        setStudentRequests(mine);
+      }
+
+      if (selectedStudent) {
+        loadAttendanceHistory(selectedStudent);
+      }
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (!event.key) return;
+      if (
+        event.key === GLOBAL_SYNC_KEY ||
+        event.key === PARENT_STUDENT_REQUESTS_KEY ||
+        event.key === STUDENTS_CACHE_KEY ||
+        event.key === 'currentUser'
+      ) {
+        refreshParentData();
+      }
+    };
+
+    const handleFocus = () => refreshParentData();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshParentData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshParentData();
+      }
+    }, 20000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [user?.email, selectedStudent]);
 
   useEffect(() => {
     if (activeTab !== 'notifications') return;

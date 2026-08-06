@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 
+const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
+
 type EntryRecord = {
   id: string;
   tipo: string;
@@ -29,17 +31,16 @@ const SchoolDashboard = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // Ler o utilizador autenticado
-  let currentUser: any = null;
-  try {
-    currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
-  } catch (e) {
-    console.error("Failed to parse currentUser from localStorage");
-  }
-
   const fetchData = async () => {
     setLoading(true);
     try {
+      let currentUser: any = null;
+      try {
+        currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+      } catch {
+        currentUser = null;
+      }
+
       // Bloquear acesso se não houver utilizador ou se não for admin/director
       if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
         setData([]);
@@ -179,6 +180,48 @@ const SchoolDashboard = () => {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    const refreshSchoolData = () => {
+      fetchData();
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (!event.key) return;
+      if (
+        event.key === GLOBAL_SYNC_KEY ||
+        event.key === 'eduguard_admin_students_cache' ||
+        event.key === 'eduguard_parent_student_requests' ||
+        event.key === 'currentUser'
+      ) {
+        refreshSchoolData();
+      }
+    };
+
+    const handleFocus = () => refreshSchoolData();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSchoolData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshSchoolData();
+      }
+    }, 20000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   return (

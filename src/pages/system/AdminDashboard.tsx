@@ -11,6 +11,15 @@ const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
 const REPAIR_WORKFLOW_KEY = 'eduguard_repair_workflow';
+const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
+
+const emitGlobalSync = (reason: string) => {
+  try {
+    localStorage.setItem(GLOBAL_SYNC_KEY, JSON.stringify({ reason, at: new Date().toISOString() }));
+  } catch {
+    // Ignore localStorage failures in offline/private mode.
+  }
+};
 
 const isPermissionError = (error: any) => {
   const code = String(error?.code || '');
@@ -52,6 +61,7 @@ const readLocalApprovedUsers = (): any[] => {
 
 const writeLocalApprovedUsers = (items: any[]) => {
   localStorage.setItem(LOCAL_APPROVED_USERS_KEY, JSON.stringify(items));
+  emitGlobalSync('local-approved-users-updated');
 };
 
 const readGeneratedCredentialsLog = (): any[] => {
@@ -66,6 +76,7 @@ const readGeneratedCredentialsLog = (): any[] => {
 
 const writeGeneratedCredentialsLog = (items: any[]) => {
   localStorage.setItem(GENERATED_CREDENTIALS_LOG_KEY, JSON.stringify(items));
+  emitGlobalSync('generated-credentials-updated');
 };
 
 const mapPendingRoleToEdgeRole = (perfil: string) => {
@@ -88,6 +99,7 @@ const readParentStudentRequests = (): any[] => {
 
 const writeParentStudentRequests = (items: any[]) => {
   localStorage.setItem(PARENT_STUDENT_REQUESTS_KEY, JSON.stringify(items));
+  emitGlobalSync('parent-student-requests-updated');
 };
 
 const getStudentRequestStatusLabel = (status: string) => {
@@ -117,6 +129,12 @@ const readRepairWorkflow = (): Record<string, { status: string; note?: string; u
 
 const writeRepairWorkflow = (items: Record<string, { status: string; note?: string; updated_at: string }>) => {
   localStorage.setItem(REPAIR_WORKFLOW_KEY, JSON.stringify(items));
+  emitGlobalSync('repair-workflow-updated');
+};
+
+const isTeacherProfile = (perfil: unknown) => {
+  const normalized = String(perfil || '').trim().toLowerCase();
+  return normalized === 'professor' || normalized === 'teacher' || normalized === 'docente';
 };
 
 const AdminGlobalDashboard = () => {
@@ -158,6 +176,8 @@ const AdminGlobalDashboard = () => {
   const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | 'entrada' | 'saida'>('all');
   const [movementDateFrom, setMovementDateFrom] = useState('');
   const [movementDateTo, setMovementDateTo] = useState('');
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [teachersLoading, setTeachersLoading] = useState(false);
 
   const readSchoolsCache = (): any[] => {
     try {
@@ -171,6 +191,7 @@ const AdminGlobalDashboard = () => {
 
   const writeSchoolsCache = (nextSchools: any[]) => {
     localStorage.setItem(SCHOOLS_CACHE_KEY, JSON.stringify(nextSchools));
+    emitGlobalSync('schools-cache-updated');
   };
 
   const readStudentsCache = (): Record<string, any[]> => {
@@ -185,6 +206,7 @@ const AdminGlobalDashboard = () => {
 
   const writeStudentsCache = (cache: Record<string, any[]>) => {
     localStorage.setItem(STUDENTS_CACHE_KEY, JSON.stringify(cache));
+    emitGlobalSync('students-cache-updated');
   };
 
   const cacheStudentsForSchool = (schoolId: string, schoolStudents: any[]) => {
@@ -233,12 +255,65 @@ const AdminGlobalDashboard = () => {
     loadParentStudentRequests();
     loadRepairCandidates();
     setRecentCredentials(readGeneratedCredentialsLog());
+    loadTeachers();
   }, []);
 
   useEffect(() => {
     if (selectedSchoolId) {
       loadStudents(selectedSchoolId);
     }
+  }, [selectedSchoolId]);
+
+  useEffect(() => {
+    const refreshAll = () => {
+      loadData();
+      loadPendingRegistrations();
+      loadParentStudentRequests();
+      loadRepairCandidates();
+      setRecentCredentials(readGeneratedCredentialsLog());
+      loadTeachers();
+      if (selectedSchoolId) {
+        loadStudents(selectedSchoolId);
+      }
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (!event.key) return;
+      if (
+        event.key === GLOBAL_SYNC_KEY ||
+        event.key === SCHOOLS_CACHE_KEY ||
+        event.key === STUDENTS_CACHE_KEY ||
+        event.key === PARENT_STUDENT_REQUESTS_KEY ||
+        event.key === LOCAL_APPROVED_USERS_KEY ||
+        event.key === 'eduguard_pending_registrations'
+      ) {
+        refreshAll();
+      }
+    };
+
+    const handleFocus = () => refreshAll();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAll();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshAll();
+      }
+    }, 20000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(intervalId);
+    };
   }, [selectedSchoolId]);
 
   useEffect(() => {
@@ -318,6 +393,106 @@ const AdminGlobalDashboard = () => {
       setNotification({ type: 'error', message: 'A ligação está lenta. Atualize em alguns segundos.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTeachers = async () => {
+    setTeachersLoading(true);
+    try {
+      const schoolSource = escolas.length > 0 ? escolas : readSchoolsCache();
+      const schoolsById = new Map(
+        (schoolSource || []).map((school: any) => [String(school?.id || ''), String(school?.nome || 'Escola sem nome')])
+      );
+
+      const { data: remoteUsers, error } = await withTimeout(
+        supabase
+          .from('utilizadores')
+          .select('id,nome,email,telefone,perfil,escola_id,status,is_active')
+          .in('perfil', ['professor', 'teacher', 'docente'])
+          .order('nome'),
+        12000,
+        'Admin teachers timeout'
+      );
+
+      if (error) {
+        console.warn('Falha ao carregar professores remotos:', error);
+      }
+
+      const remoteList = (remoteUsers || []).map((teacher: any) => ({
+        id: teacher.id || `teacher-${teacher.email || Math.random()}`,
+        nome: teacher.nome || 'Sem nome',
+        email: String(teacher.email || '').trim().toLowerCase(),
+        telefone: teacher.telefone || null,
+        perfil: teacher.perfil || 'professor',
+        escola_id: teacher.escola_id || null,
+        status: teacher.status || null,
+        is_active: teacher.is_active,
+        source: 'remote',
+      }));
+
+      const localList = readLocalApprovedUsers()
+        .filter((user) => isTeacherProfile(user?.perfil))
+        .map((teacher) => ({
+          id: teacher.id || `local-teacher-${teacher.email || Date.now()}`,
+          nome: teacher.nome || 'Sem nome',
+          email: String(teacher.email || '').trim().toLowerCase(),
+          telefone: teacher.telefone || null,
+          perfil: teacher.perfil || 'professor',
+          escola_id: teacher.escola_id || null,
+          status: teacher.status || 'active',
+          is_active: teacher.is_active ?? true,
+          source: 'local',
+        }));
+
+      const mergedByEmail = new Map<string, any>();
+      for (const item of localList) {
+        if (item.email) mergedByEmail.set(item.email, item);
+      }
+      for (const item of remoteList) {
+        if (item.email) mergedByEmail.set(item.email, item);
+      }
+
+      const merged = Array.from(mergedByEmail.values()).map((teacher) => {
+        const schoolId = String(teacher.escola_id || '').trim();
+        return {
+          ...teacher,
+          schoolName: schoolId
+            ? (schoolsById.get(schoolId) || `Escola ${schoolId.slice(0, 8)}`)
+            : 'Sem escola associada',
+        };
+      });
+
+      merged.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+      setTeachers(merged);
+    } catch (error) {
+      console.error('Falha ao carregar professores:', error);
+      const fallbackTeachers = readLocalApprovedUsers()
+        .filter((user) => isTeacherProfile(user?.perfil))
+        .map((teacher) => ({
+          id: teacher.id || `local-teacher-${teacher.email || Date.now()}`,
+          nome: teacher.nome || 'Sem nome',
+          email: String(teacher.email || '').trim().toLowerCase(),
+          telefone: teacher.telefone || null,
+          perfil: teacher.perfil || 'professor',
+          escola_id: teacher.escola_id || null,
+          schoolName: teacher.escola_id ? `Escola ${String(teacher.escola_id).slice(0, 8)}` : 'Sem escola associada',
+          source: 'local',
+        }));
+      setTeachers(fallbackTeachers);
+    } finally {
+      setTeachersLoading(false);
+    }
+  };
+
+  const handleRefreshAllData = () => {
+    loadData();
+    loadPendingRegistrations();
+    loadParentStudentRequests();
+    loadRepairCandidates();
+    setRecentCredentials(readGeneratedCredentialsLog());
+    loadTeachers();
+    if (selectedSchoolId) {
+      loadStudents(selectedSchoolId);
     }
   };
 
@@ -1718,7 +1893,7 @@ const AdminGlobalDashboard = () => {
             <p className="mt-1 text-gray-400">Gestão de escolas, alunos e contactos de encarregados.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={loadData} className="btn inline-flex items-center justify-center px-4 py-2 shadow-sm">Atualizar Dados</button>
+            <button onClick={handleRefreshAllData} className="btn inline-flex items-center justify-center px-4 py-2 shadow-sm">Atualizar Dados</button>
             <button onClick={() => navigate('/sistema/admin/edumarket')} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-colors">
               <GraduationCap className="w-4 h-4" /> Gerir Cursos
             </button>
@@ -1745,6 +1920,35 @@ const AdminGlobalDashboard = () => {
 
         <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-6">
           <div className="space-y-6">
+            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Professores Registados</h2>
+                  <p className="text-gray-400 text-sm">Lista de professores com a respetiva escola e estado da conta.</p>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
+                  <Users className="w-4 h-4" /> {teachers.length} registo(s)
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                <button onClick={loadTeachers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Professores</button>
+                {teachersLoading ? (
+                  <div className="text-gray-400">A carregar professores...</div>
+                ) : teachers.length === 0 ? (
+                  <div className="text-gray-400">Nenhum professor registado encontrado.</div>
+                ) : (
+                  teachers.map((teacher) => (
+                    <div key={teacher.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <p className="font-semibold text-white">{teacher.nome}</p>
+                      <p className="text-sm text-gray-300">{teacher.email || 'Sem email'} · {teacher.telefone || 'Sem telefone'}</p>
+                      <p className="text-sm text-gray-400">Escola: {teacher.schoolName}</p>
+                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(teacher.perfil)} · Fonte: {teacher.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <div className="card bg-[#081825] border border-white/10 p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
