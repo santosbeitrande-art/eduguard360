@@ -17,53 +17,61 @@ import { User } from '../../users/entities/user.entity';
 @Index(['sellerId'])
 @Index(['status'])
 @Index(['expiresAt'])
+@Index(['schoolId'])
+@Index(['tenantId'])
 export class Reservation {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  listingId: string;
+  listingId!: string;
 
   @Column({ type: 'uuid' })
-  buyerId: string;
+  buyerId!: string;
 
   @Column({ type: 'uuid' })
-  sellerId: string;
+  sellerId!: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  schoolId!: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  tenantId!: string | null;
 
   @Column({ type: 'varchar', length: 50, default: 'active' })
   // 'active', 'completed', 'cancelled', 'expired'
-  status: string;
+  status!: string;
 
   @CreateDateColumn()
-  reservedAt: Date;
+  reservedAt!: Date;
 
   @Column({ type: 'timestamp' })
-  expiresAt: Date;
+  expiresAt!: Date;
 
   @Column({ type: 'timestamp', nullable: true })
-  completedAt: Date;
+  completedAt!: Date;
 
   @Column({ type: 'timestamp', nullable: true })
-  cancelledAt: Date;
+  cancelledAt!: Date;
 
   @Column({ type: 'text', nullable: true })
-  cancellationReason: string;
+  cancellationReason!: string;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 
-  @ManyToOne(() => Listing, (listing) => listing.reservations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Listing, (listing: Listing) => listing.reservations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'listingId' })
-  listing: Listing;
+  listing!: Listing;
 
-  @ManyToOne(() => User, (user) => user.purchases, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user: User) => user.purchases, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'buyerId' })
-  buyer: User;
+  buyer!: User;
 
-  @ManyToOne(() => User, (user) => user.sales, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user: User) => user.sales, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'sellerId' })
-  seller: User;
+  seller!: User;
 }

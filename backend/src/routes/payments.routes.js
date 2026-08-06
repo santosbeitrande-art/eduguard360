@@ -17,6 +17,62 @@
 // 1. ENDPOINTS DE PAGAMENTO
 // ============================================
 
+const normalizeEnterpriseRole = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unknown';
+  if (normalized === 'admin') return 'super_admin';
+  if (normalized === 'school_admin' || normalized === 'diretor') return 'director';
+  if (normalized === 'teacher') return 'professor';
+  if (normalized === 'security' || normalized === 'scanner') return 'seguranca';
+  if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado') return 'parent';
+  if (normalized === 'student' || normalized === 'aluno') return 'student';
+  return normalized;
+};
+
+const resolveScopeFromRequest = (req) => {
+  const role = normalizeEnterpriseRole(
+    req?.headers?.['x-enterprise-role'] || req?.user?.role || req?.body?.role || req?.query?.role
+  );
+
+  const schoolId = String(
+    req?.headers?.['x-school-id'] || req?.user?.schoolId || req?.body?.schoolId || req?.query?.schoolId || ''
+  ).trim() || null;
+
+  const tenantId = String(
+    req?.headers?.['x-tenant-id'] || req?.user?.tenantId || req?.body?.tenantId || req?.query?.tenantId || schoolId || ''
+  ).trim() || null;
+
+  req.enterprisePrincipal = {
+    role,
+    schoolId,
+    tenantId,
+    userId: String(req?.user?.id || req?.headers?.['x-user-id'] || '').trim() || null,
+  };
+};
+
+const requireEnterpriseScope = (req, res, next) => {
+  resolveScopeFromRequest(req);
+
+  const { role, schoolId, tenantId } = req.enterprisePrincipal;
+  if (role === 'unknown') {
+    return res.status(403).json({ error: 'enterprise-role-required' });
+  }
+
+  if (role !== 'super_admin' && !schoolId && !tenantId) {
+    return res.status(403).json({ error: 'tenant-scope-required' });
+  }
+
+  return next();
+};
+
+const requireEnterprisePermission = (allowedRoles) => (req, res, next) => {
+  const role = req?.enterprisePrincipal?.role || 'unknown';
+  if (!allowedRoles.includes(role)) {
+    return res.status(403).json({ error: 'forbidden-by-role', role });
+  }
+  return next();
+};
+
 /**
  * POST /api/payments/create
  * Criar uma transação de pagamento
@@ -32,7 +88,12 @@
  * 
  * Response: { transactionId, sessionUrl?, mpesaRequestId? }
  */
-router.post('/payments/create', auth, async (req, res) => {
+router.post(
+  '/payments/create',
+  auth,
+  requireEnterpriseScope,
+  requireEnterprisePermission(['super_admin', 'director', 'administrator', 'financeiro', 'secretaria', 'parent', 'student']),
+  async (req, res) => {
   try {
     const { courseId, amount, paymentMethod, mpesaPhone, voucherCode } = req.body;
     const userId = req.user.id;
@@ -240,7 +301,12 @@ const handleStripePayment = async (res, userId, courseId, amount) => {
  * Verificar Status de Pagamento Stripe
  * GET /api/payments/stripe-status/:sessionId
  */
-router.get('/payments/stripe-status/:sessionId', async (req, res) => {
+router.get(
+  '/payments/stripe-status/:sessionId',
+  auth,
+  requireEnterpriseScope,
+  requireEnterprisePermission(['super_admin', 'director', 'administrator', 'financeiro', 'secretaria', 'parent', 'student']),
+  async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
     
@@ -404,7 +470,12 @@ const handleVoucherPayment = async (res, userId, courseId, voucherCode) => {
  * POST /api/payouts/request
  * Educador requisita saque de ganhos
  */
-router.post('/payouts/request', auth, async (req, res) => {
+router.post(
+  '/payouts/request',
+  auth,
+  requireEnterpriseScope,
+  requireEnterprisePermission(['super_admin', 'director', 'administrator', 'financeiro', 'rh', 'professor']),
+  async (req, res) => {
   try {
     const { amount_mzn, bankAccountNumber, bankName } = req.body;
     const educatorId = req.user.id;
@@ -460,7 +531,12 @@ router.post('/payouts/request', auth, async (req, res) => {
  * GET /api/payouts/earnings
  * Ver ganhos do educador
  */
-router.get('/payouts/earnings', auth, async (req, res) => {
+router.get(
+  '/payouts/earnings',
+  auth,
+  requireEnterpriseScope,
+  requireEnterprisePermission(['super_admin', 'director', 'administrator', 'financeiro', 'rh', 'professor']),
+  async (req, res) => {
   try {
     const earnings = await getEducatorEarnings(req.user.id);
     

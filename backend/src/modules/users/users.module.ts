@@ -4,10 +4,11 @@ import { User } from './entities/user.entity';
 import { Rating } from './entities/rating.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { EnterpriseRbacGuard } from '../enterprise/guards/enterprise-rbac.guard';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, Rating])],
-  providers: [UsersService],
+  providers: [UsersService, EnterpriseRbacGuard],
   controllers: [UsersController],
   exports: [UsersService],
 })

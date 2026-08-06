@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Listing } from './entities/listing.entity';
 import { Image } from './entities/image.entity';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
+import { EnterpriseScope } from '../enterprise/enterprise.service';
+import { normalizeEnterpriseRole } from '../enterprise/rbac.matrix';
 
 @Injectable()
 export class ListingsService {
@@ -15,10 +17,44 @@ export class ListingsService {
     private imagesRepository: Repository<Image>,
   ) {}
 
-  async createListing(userId: string, createListingDto: CreateListingDto): Promise<any> {
+  private normalizeScope(input?: Partial<EnterpriseScope>): EnterpriseScope {
+    return {
+      role: normalizeEnterpriseRole(input?.role),
+      userId: input?.userId || null,
+      userName: input?.userName || null,
+      schoolId: input?.schoolId || null,
+      tenantId: input?.tenantId || input?.schoolId || null,
+    };
+  }
+
+  private enforceTenantScope(scope: EnterpriseScope): void {
+    if (scope.role === 'super_admin') return;
+    if (scope.schoolId || scope.tenantId) return;
+    throw new ForbiddenException('school_id or tenant_id is required for this role.');
+  }
+
+  private assertListingInScope(scope: EnterpriseScope, listing: Listing): void {
+    if (scope.role === 'super_admin') return;
+    const listingScope = String(listing.tenantId || listing.schoolId || '').trim();
+    const viewerScope = String(scope.tenantId || scope.schoolId || '').trim();
+    if (listingScope && viewerScope && listingScope !== viewerScope) {
+      throw new ForbiddenException('Cannot access listings outside your tenant scope.');
+    }
+  }
+
+  async createListing(
+    userId: string,
+    createListingDto: CreateListingDto,
+    scopeInput?: Partial<EnterpriseScope>,
+  ): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const listing = this.listingsRepository.create({
       ...createListingDto,
       userId,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
       status: 'available',
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 dias
     });
@@ -46,8 +82,20 @@ export class ListingsService {
     filters: any,
     page: number = 1,
     limit: number = 20,
+    scopeInput?: Partial<EnterpriseScope>,
   ): Promise<{ data: any[]; pagination: any }> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     let query = this.listingsRepository.createQueryBuilder('listing');
+
+    if (scope.role !== 'super_admin') {
+      const scopedTenant = scope.tenantId || scope.schoolId;
+      query = query.andWhere('(listing.tenantId = :tenantId OR listing.schoolId = :schoolId)', {
+        tenantId: scopedTenant,
+        schoolId: scope.schoolId || scopedTenant,
+      });
+    }
 
     // Filtros
     if (filters.type) {
@@ -109,7 +157,7 @@ export class ListingsService {
       .getManyAndCount();
 
     return {
-      data: listings.map((listing) => this.formatListing(listing)),
+      data: listings.map((listing: Listing) => this.formatListing(listing)),
       pagination: {
         page,
         limit,
@@ -119,7 +167,10 @@ export class ListingsService {
     };
   }
 
-  async getListingById(id: string): Promise<any> {
+  async getListingById(id: string, scopeInput?: Partial<EnterpriseScope>): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const listing = await this.listingsRepository.findOne({
       where: { id },
       relations: ['user', 'images', 'reservations'],
@@ -129,6 +180,8 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
+    this.assertListingInScope(scope, listing);
+
     // Incrementar view count
     listing.viewCount++;
     await this.listingsRepository.save(listing);
@@ -136,12 +189,22 @@ export class ListingsService {
     return this.formatListing(listing);
   }
 
-  async updateListing(userId: string, id: string, updateListingDto: UpdateListingDto): Promise<any> {
+  async updateListing(
+    userId: string,
+    id: string,
+    updateListingDto: UpdateListingDto,
+    scopeInput?: Partial<EnterpriseScope>,
+  ): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const listing = await this.listingsRepository.findOne({ where: { id } });
 
     if (!listing) {
       throw new NotFoundException('Listing not found');
     }
+
+    this.assertListingInScope(scope, listing);
 
     if (listing.userId !== userId) {
       throw new BadRequestException('You can only update your own listings');
@@ -153,12 +216,17 @@ export class ListingsService {
     return this.formatListing(updated);
   }
 
-  async deleteListing(userId: string, id: string): Promise<void> {
+  async deleteListing(userId: string, id: string, scopeInput?: Partial<EnterpriseScope>): Promise<void> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const listing = await this.listingsRepository.findOne({ where: { id } });
 
     if (!listing) {
       throw new NotFoundException('Listing not found');
     }
+
+    this.assertListingInScope(scope, listing);
 
     if (listing.userId !== userId) {
       throw new BadRequestException('You can only delete your own listings');

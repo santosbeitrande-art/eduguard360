@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Reservation } from './entities/reservation.entity';
 import { Listing } from '../listings/entities/listing.entity';
+import { EnterpriseScope } from '../enterprise/enterprise.service';
+import { normalizeEnterpriseRole } from '../enterprise/rbac.matrix';
 
 @Injectable()
 export class ReservationsService {
@@ -13,13 +15,53 @@ export class ReservationsService {
     private listingsRepository: Repository<Listing>,
   ) {}
 
-  async createReservation(listingId: string, buyerId: string): Promise<any> {
+  private normalizeScope(input?: Partial<EnterpriseScope>): EnterpriseScope {
+    return {
+      role: normalizeEnterpriseRole(input?.role),
+      userId: input?.userId || null,
+      userName: input?.userName || null,
+      schoolId: input?.schoolId || null,
+      tenantId: input?.tenantId || input?.schoolId || null,
+    };
+  }
+
+  private enforceTenantScope(scope: EnterpriseScope): void {
+    if (scope.role === 'super_admin') return;
+    if (scope.schoolId || scope.tenantId) return;
+    throw new ForbiddenException('school_id or tenant_id is required for this role.');
+  }
+
+  private assertReservationInScope(scope: EnterpriseScope, reservation: Reservation): void {
+    if (scope.role === 'super_admin') return;
+    const reservationScope = String(reservation.tenantId || reservation.schoolId || '').trim();
+    const viewerScope = String(scope.tenantId || scope.schoolId || '').trim();
+    if (reservationScope && viewerScope && reservationScope !== viewerScope) {
+      throw new ForbiddenException('Cannot access reservations outside your tenant scope.');
+    }
+  }
+
+  async createReservation(
+    listingId: string,
+    buyerId: string,
+    scopeInput?: Partial<EnterpriseScope>,
+  ): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const listing = await this.listingsRepository.findOne({
       where: { id: listingId },
     });
 
     if (!listing) {
       throw new NotFoundException('Listing not found');
+    }
+
+    if (scope.role !== 'super_admin') {
+      const listingScope = String(listing.tenantId || listing.schoolId || '').trim();
+      const viewerScope = String(scope.tenantId || scope.schoolId || '').trim();
+      if (listingScope && viewerScope && listingScope !== viewerScope) {
+        throw new ForbiddenException('Cannot reserve listings outside your tenant scope.');
+      }
     }
 
     if (listing.status !== 'available') {
@@ -49,6 +91,8 @@ export class ReservationsService {
       listingId,
       buyerId,
       sellerId: listing.userId,
+      schoolId: listing.schoolId || scope.schoolId,
+      tenantId: listing.tenantId || scope.tenantId,
       expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 horas
       status: 'active',
     });
@@ -69,7 +113,14 @@ export class ReservationsService {
     };
   }
 
-  async cancelReservation(reservationId: string, userId: string): Promise<any> {
+  async cancelReservation(
+    reservationId: string,
+    userId: string,
+    scopeInput?: Partial<EnterpriseScope>,
+  ): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const reservation = await this.reservationsRepository.findOne({
       where: { id: reservationId },
       relations: ['listing'],
@@ -78,6 +129,8 @@ export class ReservationsService {
     if (!reservation) {
       throw new NotFoundException('Reservation not found');
     }
+
+    this.assertReservationInScope(scope, reservation);
 
     if (reservation.buyerId !== userId && reservation.sellerId !== userId) {
       throw new ConflictException('You can only cancel your own reservations');
@@ -98,7 +151,14 @@ export class ReservationsService {
     };
   }
 
-  async completeReservation(reservationId: string, userId: string): Promise<any> {
+  async completeReservation(
+    reservationId: string,
+    userId: string,
+    scopeInput?: Partial<EnterpriseScope>,
+  ): Promise<any> {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     const reservation = await this.reservationsRepository.findOne({
       where: { id: reservationId },
       relations: ['listing'],
@@ -107,6 +167,8 @@ export class ReservationsService {
     if (!reservation) {
       throw new NotFoundException('Reservation not found');
     }
+
+    this.assertReservationInScope(scope, reservation);
 
     if (reservation.sellerId !== userId && reservation.buyerId !== userId) {
       throw new ConflictException('You can only complete your own reservations');
@@ -128,8 +190,25 @@ export class ReservationsService {
     };
   }
 
-  async getReservations(userId: string, role: string, page: number = 1, limit: number = 10) {
+  async getReservations(
+    userId: string,
+    role: string,
+    page: number = 1,
+    limit: number = 10,
+    scopeInput?: Partial<EnterpriseScope>,
+  ) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
     let query = this.reservationsRepository.createQueryBuilder('reservation');
+
+    if (scope.role !== 'super_admin') {
+      const scopedTenant = scope.tenantId || scope.schoolId;
+      query = query.andWhere('(reservation.tenantId = :tenantId OR reservation.schoolId = :schoolId)', {
+        tenantId: scopedTenant,
+        schoolId: scope.schoolId || scopedTenant,
+      });
+    }
 
     if (role === 'buyer') {
       query = query.where('reservation.buyerId = :userId', { userId });
