@@ -10,7 +10,7 @@ export class WorkflowStep {
   @Column({ type: 'uuid' })
   processId!: string;
 
-  @ManyToOne(() => WorkflowProcess, (process) => process.steps, { onDelete: 'CASCADE' })
+  @ManyToOne(() => WorkflowProcess, (process: WorkflowProcess) => process.steps, { onDelete: 'CASCADE' })
   process!: WorkflowProcess;
 
   @Column({ type: 'int' })

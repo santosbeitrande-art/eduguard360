@@ -130,7 +130,7 @@ export class EnterpriseService {
     return {
       data: sessions,
       total: sessions.length,
-      active: sessions.filter((item) => item.status === 'active').length,
+      active: sessions.filter((item: ActiveSession) => item.status === 'active').length,
     };
   }
 
@@ -249,8 +249,8 @@ export class EnterpriseService {
     return {
       data,
       total: data.length,
-      verified: data.filter((item) => item.isVerified).length,
-      trustedDevices: data.filter((item) => item.trustedDevice).length,
+      verified: data.filter((item: MfaEnrollment) => item.isVerified).length,
+      trustedDevices: data.filter((item: MfaEnrollment) => item.trustedDevice).length,
     };
   }
 
@@ -305,11 +305,11 @@ export class EnterpriseService {
 
     const data = await qb.getMany();
     const summary = {
-      pending: data.filter((item) => item.status === 'pending').length,
-      in_review: data.filter((item) => item.status === 'in_review').length,
-      approved: data.filter((item) => item.status === 'approved').length,
-      rejected: data.filter((item) => item.status === 'rejected').length,
-      completed: data.filter((item) => item.status === 'completed').length,
+      pending: data.filter((item: WorkflowProcess) => item.status === 'pending').length,
+      in_review: data.filter((item: WorkflowProcess) => item.status === 'in_review').length,
+      approved: data.filter((item: WorkflowProcess) => item.status === 'approved').length,
+      rejected: data.filter((item: WorkflowProcess) => item.status === 'rejected').length,
+      completed: data.filter((item: WorkflowProcess) => item.status === 'completed').length,
       total: data.length,
     };
 
@@ -415,13 +415,13 @@ export class EnterpriseService {
     ]);
 
     const today = new Date().toDateString();
-    const todayLogs = audit.data.filter((item) => new Date(item.createdAt).toDateString() === today);
+    const todayLogs = audit.data.filter((item: AuditLog) => new Date(item.createdAt).toDateString() === today);
 
     const auditSummary = {
       totalToday: todayLogs.length,
-      logins: todayLogs.filter((item) => item.action.includes('login') || item.action.includes('session')).length,
-      edits: todayLogs.filter((item) => item.action.includes('updated') || item.action.includes('advanced')).length,
-      exports: todayLogs.filter((item) => item.action.includes('export')).length,
+      logins: todayLogs.filter((item: AuditLog) => item.action.includes('login') || item.action.includes('session')).length,
+      edits: todayLogs.filter((item: AuditLog) => item.action.includes('updated') || item.action.includes('advanced')).length,
+      exports: todayLogs.filter((item: AuditLog) => item.action.includes('export')).length,
       latest: audit.data.slice(0, 10),
     };
 

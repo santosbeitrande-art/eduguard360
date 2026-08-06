@@ -31,7 +31,7 @@ export class WorkflowProcess {
   @Column({ type: 'jsonb', default: {} })
   payload!: Record<string, any>;
 
-  @OneToMany(() => WorkflowStep, (step) => step.process, { cascade: true })
+  @OneToMany(() => WorkflowStep, (step: WorkflowStep) => step.process, { cascade: true })
   steps!: WorkflowStep[];
 
   @CreateDateColumn()
