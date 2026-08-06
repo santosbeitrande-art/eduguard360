@@ -159,6 +159,75 @@ const normalizeLegacyProfile = (perfil: unknown): string => {
   return normalized;
 };
 
+const mapEdgeUserToLegacyProfile = (edgeUser: any): string => {
+  const role = String(edgeUser?.role || '').trim().toLowerCase();
+  const type = String(edgeUser?.type || '').trim().toLowerCase();
+
+  if (role === 'super_admin' || role === 'admin') return 'admin';
+  if (role === 'school_admin' || role === 'director' || role === 'diretor') return 'director';
+  if (role === 'scanner' || role === 'security' || role === 'seguranca') return 'scanner';
+  if (role === 'teacher' || role === 'professor' || role === 'docente') return 'professor';
+  if (type === 'parent' || role === 'parent' || role === 'guardian' || role === 'encarregado' || role === 'pai') return 'pai';
+
+  return normalizeLegacyProfile(role || type || 'director') || 'director';
+};
+
+const getAccessProfileLabel = (accessProfile: string): string => {
+  if (accessProfile === 'director') return 'Diretor / Escola';
+  if (accessProfile === 'parent') return 'Encarregado';
+  if (accessProfile === 'teacher') return 'Professor';
+  if (accessProfile === 'scanner') return 'Seguranca QR Code';
+  return accessProfile;
+};
+
+const getLegacyProfileLabel = (perfil: string): string => {
+  const normalized = normalizeLegacyProfile(perfil);
+  if (normalized === 'admin') return 'Administrador';
+  if (normalized === 'director') return 'Diretor / Escola';
+  if (normalized === 'pai') return 'Encarregado';
+  if (normalized === 'professor') return 'Professor';
+  if (normalized === 'scanner') return 'Seguranca QR Code';
+  return normalized || 'Utilizador';
+};
+
+const resolveLoginErrorMessage = (params: {
+  authError: any;
+  edgeError?: string;
+  hasDomainUser?: boolean;
+}): string => {
+  const authMessage = String(params.authError?.message || '').trim();
+  const edgeMessage = String(params.edgeError || '').trim();
+  const merged = `${authMessage} ${edgeMessage}`.toLowerCase();
+
+  if (merged.includes('email not confirmed') || merged.includes('ainda nao confirmado') || merged.includes('not confirmed')) {
+    return 'Email ainda nao confirmado. Verifique a sua caixa de entrada para ativar a conta.';
+  }
+
+  if (merged.includes('invalid login credentials') || merged.includes('invalid credentials') || merged.includes('credenciais invalidas') || merged.includes('email ou senha')) {
+    return 'Email ou senha incorretos. Verifique os dados e tente novamente.';
+  }
+
+  if (merged.includes('too many requests') || merged.includes('rate limit')) {
+    return 'Muitas tentativas de login em pouco tempo. Aguarde alguns minutos e tente novamente.';
+  }
+
+  if (merged.includes('network') || merged.includes('failed to fetch') || merged.includes('timeout') || merged.includes('timed out')) {
+    return 'Falha de ligacao ao servidor. Verifique a internet e tente novamente.';
+  }
+
+  if (merged.includes('pending') || merged.includes('pendente') || merged.includes('inactive') || merged.includes('inativo')) {
+    return 'Conta ainda pendente/inativa. Aguarde aprovacao do administrador.';
+  }
+
+  if (authMessage) return authMessage;
+  if (edgeMessage) return edgeMessage;
+  if (params.hasDomainUser) {
+    return 'Conta encontrada, mas a autenticacao falhou. Tente recuperar a senha em "Esqueceu a senha?".';
+  }
+
+  return 'Nao foi possivel iniciar sessao. Verifique email, senha e perfil de acesso.';
+};
+
 const buildFallbackSchoolsFromLocalSources = (): Array<{ id: string; nome: string }> => {
   const fromCache = readSchoolsCache();
   if (fromCache.length > 0) return fromCache;
@@ -300,17 +369,7 @@ const SystemLoginContent = () => {
   const persistLegacyUserFromEdgeAuth = (edgeUser: any) => {
     if (!edgeUser) return;
 
-    const legacyPerfil = edgeUser.role === 'super_admin'
-      ? 'admin'
-      : edgeUser.role === 'school_admin'
-        ? 'director'
-        : edgeUser.role === 'scanner' || edgeUser.role === 'security'
-          ? 'scanner'
-          : edgeUser.type === 'parent'
-            ? 'pai'
-            : edgeUser.role === 'teacher'
-              ? 'professor'
-              : 'director';
+    const legacyPerfil = mapEdgeUserToLegacyProfile(edgeUser);
 
     localStorage.setItem('currentUser', JSON.stringify({
       id: edgeUser.id,
@@ -336,7 +395,7 @@ const SystemLoginContent = () => {
 
     const perfil = normalizeLegacyProfile(user?.perfil || user?.role);
     if (!isProfileAllowed(perfil)) {
-      setErrorMessage(t('sistema.perfil_nao_autorizado'));
+      setErrorMessage(`Este utilizador esta registado como ${getLegacyProfileLabel(perfil)}. No topo, selecione o perfil ${getAccessProfileLabel(accessProfile)} para entrar.`);
       return false;
     }
 
@@ -411,6 +470,15 @@ const SystemLoginContent = () => {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
+    if (!normalizedEmail || !normalizedPassword) {
+      setLoading(false);
+      setErrorMessage('Informe email e senha para entrar.');
+      return;
+    }
+
+    let edgeErrorMessage = '';
+    let domainUserByEmail: any = null;
+
     try {
       const edgeUserType = accessProfile === 'parent' ? 'parent' : 'system';
       const edgeResult = await withTimeout(
@@ -418,23 +486,14 @@ const SystemLoginContent = () => {
         12000,
         'Edge login timeout'
       );
+      edgeErrorMessage = String(edgeResult?.error || '');
       if (edgeResult.success) {
         const edgeUserRaw = localStorage.getItem('eduguard_user');
         if (edgeUserRaw) {
           try {
             const edgeUser = JSON.parse(edgeUserRaw);
             persistLegacyUserFromEdgeAuth(edgeUser);
-            const perfil = edgeUser.role === 'super_admin'
-              ? 'admin'
-              : edgeUser.role === 'school_admin'
-                ? 'director'
-                : edgeUser.role === 'scanner' || edgeUser.role === 'security'
-                  ? 'scanner'
-                  : edgeUser.type === 'parent'
-                    ? 'pai'
-                    : edgeUser.role === 'teacher'
-                      ? 'professor'
-                      : 'director';
+            const perfil = mapEdgeUserToLegacyProfile(edgeUser);
             redirectByProfile(perfil);
             return;
           } catch (parseError) {
@@ -455,11 +514,12 @@ const SystemLoginContent = () => {
       authError = firstSignIn.error;
 
       if (authError || !authData?.user) {
-        const { data: domainUserByEmail } = await supabase
+        const { data: domainUser } = await supabase
           .from("utilizadores")
           .select("*")
           .eq("email", normalizedEmail)
           .maybeSingle();
+        domainUserByEmail = domainUser;
         const localApprovedUser = resolveLocalFallbackUser(normalizedEmail, normalizedPassword);
 
         const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
@@ -521,12 +581,11 @@ const SystemLoginContent = () => {
       }
 
       if (authError || !authData?.user) {
-        const authMessage = String(authError?.message || '').toLowerCase();
-        if (authMessage.includes('email not confirmed')) {
-          setErrorMessage('Email ainda não confirmado. Verifique a sua caixa de entrada para ativar a conta.');
-          return;
-        }
-        setErrorMessage(t('sistema.erro_login'));
+        setErrorMessage(resolveLoginErrorMessage({
+          authError,
+          edgeError: edgeErrorMessage,
+          hasDomainUser: Boolean(domainUserByEmail?.id),
+        }));
         return;
       }
 

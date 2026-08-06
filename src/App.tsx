@@ -83,6 +83,7 @@ function App() {
 
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
+        <Route path="/sistema/login" element={<SystemLogin />} />
         <Route path="/sistema/pais" element={<ParentDashboard />} />
         <Route path="/sistema/admin" element={<AdminDashboard />} />
         <Route path="/sistema/admin/edumarket" element={<AdminCourses />} />
