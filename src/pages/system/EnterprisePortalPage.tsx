@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { withTimeout } from '@/lib/networkPerformance';
-import { Building2, Users, GraduationCap, ShieldCheck, Bell, ClipboardList, ArrowRight, Search, RefreshCw } from 'lucide-react';
+import { Building2, Users, GraduationCap, ShieldCheck, Bell, ClipboardList, ArrowRight, Search, RefreshCw, FileText, CalendarDays, Layers3, MessagesSquare, WalletCards, FileSignature, KeyRound } from 'lucide-react';
 
 type EnterpriseRole = 'director' | 'teacher' | 'security' | 'parent' | 'admin';
 
@@ -106,6 +106,59 @@ const EnterprisePortalPage = () => {
     { title: 'Encarregados', value: String(stats.parents), subtitle: 'Famílias ligadas ao ecossistema', accent: 'from-sky-600 to-blue-700', icon: <Bell className="w-6 h-6" /> },
   ];
 
+  const institutionalModules = [
+    {
+      title: 'Gestão Académica',
+      description: 'Cursos, disciplinas, turmas, calendário, matrículas e histórico escolar numa única camada operacional.',
+      icon: <CalendarDays className="w-5 h-5" />,
+      items: ['Cursos', 'Disciplinas', 'Turmas', 'Calendário letivo', 'Matrículas', 'Histórico escolar'],
+    },
+    {
+      title: 'Gestão de Alunos',
+      description: 'Cadastro completo, documentos, frequência, notas, ocorrências e acompanhamento pedagógico.',
+      icon: <Users className="w-5 h-5" />,
+      items: ['Cadastro completo', 'Documentação', 'Frequência', 'Notas', 'Ocorrências', 'Responsáveis'],
+    },
+    {
+      title: 'Gestão de Professores',
+      description: 'Perfis, disciplinas atribuídas, horários, comunicação e avaliação de desempenho.',
+      icon: <ClipboardList className="w-5 h-5" />,
+      items: ['Cadastro', 'Disciplinas', 'Horários', 'Avaliações', 'Comunicação', 'Relatórios'],
+    },
+    {
+      title: 'Comunicação',
+      description: 'Mensagens, notificações, avisos, e-mails e portais do aluno e do responsável.',
+      icon: <MessagesSquare className="w-5 h-5" />,
+      items: ['Mensagens', 'Notificações', 'Avisos', 'E-mails', 'Portal do aluno', 'Portal dos responsáveis'],
+    },
+    {
+      title: 'Fluxos Administrativos',
+      description: 'Aprovações, solicitações, declarações, certificados e processos internos rastreáveis.',
+      icon: <FileText className="w-5 h-5" />,
+      items: ['Aprovação de matrículas', 'Solicitações', 'Declarações', 'Certificados', 'Processos internos', 'Auditoria'],
+    },
+    {
+      title: 'Financeiro e Documentos',
+      description: 'Mensalidades, pagamentos, faturas, bolsas, arquivos digitais e assinaturas.',
+      icon: <WalletCards className="w-5 h-5" />,
+      items: ['Propinas', 'Pagamentos', 'Faturas', 'Bolsas', 'Upload', 'Assinatura digital'],
+    },
+    {
+      title: 'Permissões e Segurança',
+      description: 'Controlo por função, auditoria, logs e proteção institucional por nível de acesso.',
+      icon: <KeyRound className="w-5 h-5" />,
+      items: ['Perfis de acesso', 'Controle por função', 'Auditoria', 'Logs', 'Segurança de dados', 'Escalabilidade'],
+    },
+    {
+      title: 'Arquivos e Arquivo Digital',
+      description: 'Organização documental para consultas, emissão e preservação institucional.',
+      icon: <FileSignature className="w-5 h-5" />,
+      items: ['Upload', 'Arquivo digital', 'Emissão automática', 'Consulta rápida', 'Repositório central', 'Rastreabilidade'],
+    },
+  ];
+
+  const audienceTags = ['Diretores', 'Administradores', 'Secretarias', 'Coordenadores', 'Professores', 'Financeiro', 'RH'];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
       <header className="border-b border-white/10 bg-white/5 backdrop-blur-xl sticky top-0 z-20">
@@ -126,6 +179,25 @@ const EnterprisePortalPage = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+        <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-3xl space-y-3">
+              <p className="inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Enterprise online</p>
+              <h2 className="text-2xl md:text-3xl font-bold">O núcleo operacional da instituição</h2>
+              <p className="text-slate-300 leading-relaxed">
+                Centralize operação académica, administrativa e documental num único sistema. O objetivo é eliminar planilhas, reduzir burocracia e dar visibilidade em tempo real para todas as equipas.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:min-w-[280px]">
+              {audienceTags.map((tag) => (
+                <span key={tag} className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-center text-sm text-slate-200">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => (
             <div key={card.title} className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/10">
@@ -139,6 +211,35 @@ const EnterprisePortalPage = () => {
           ))}
         </section>
 
+        <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Módulos do Enterprise</h2>
+              <p className="text-sm text-slate-300">Cada área crítica da instituição concentrada num único sistema.</p>
+            </div>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-300">{institutionalModules.length} módulos</span>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {institutionalModules.map((module) => (
+              <div key={module.title} className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
+                <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                  {module.icon}
+                </div>
+                <h3 className="text-lg font-semibold">{module.title}</h3>
+                <p className="mt-2 text-sm text-slate-300">{module.description}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {module.items.map((item) => (
+                    <span key={item} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -146,9 +247,14 @@ const EnterprisePortalPage = () => {
                 <h2 className="text-xl font-semibold">Gestão estratégica</h2>
                 <p className="text-sm text-slate-300">Acesso rápido às áreas administrativas já disponíveis.</p>
               </div>
-              <button onClick={() => navigate('/admin')} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-                Abrir Admin
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => navigate('/admin')} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+                  Abrir Admin
+                </button>
+                <button onClick={() => navigate('/school')} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15">
+                  Abrir Escola
+                </button>
+              </div>
             </div>
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               <button onClick={() => navigate('/school')} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left hover:bg-slate-900">
