@@ -493,59 +493,62 @@ const AdminGlobalDashboard = () => {
           setSelectedSchoolId(LOCAL_SCHOOL_ID);
         }
 
-        let guardianId: string | null = null;
-        let localOnlyMode = false;
+        const remoteSchoolId = isLikelyUuid(activeSchoolId) ? activeSchoolId : null;
+        let guardianId: string | null = isLikelyUuid(normalizedRequest.parent_user_id) ? normalizedRequest.parent_user_id : null;
+        let localOnlyMode = !remoteSchoolId;
 
-        try {
-          const { data: existingGuardian, error: guardianLookupError } = await supabase
-            .from('utilizadores')
-            .select('*')
-            .eq('email', normalizedRequest.guardianEmail)
-            .maybeSingle();
-
-          if (guardianLookupError) {
-            throw guardianLookupError;
-          }
-
-          if (existingGuardian) {
-            guardianId = existingGuardian.id;
-            const { error: updateGuardianError } = await supabase
+        if (remoteSchoolId) {
+          try {
+            const { data: existingGuardian, error: guardianLookupError } = await supabase
               .from('utilizadores')
-              .update({
-                nome: normalizedRequest.guardianName,
-                telefone: normalizedRequest.telefone,
-                perfil: 'pai',
-                escola_id: activeSchoolId,
-              })
-              .eq('id', guardianId);
+              .select('*')
+              .eq('email', normalizedRequest.guardianEmail)
+              .maybeSingle();
 
-            if (updateGuardianError) {
-              throw updateGuardianError;
-            }
-          } else {
-            const { data: createdGuardian, error: createGuardianError } = await supabase
-              .from('utilizadores')
-              .insert({
-                nome: normalizedRequest.guardianName,
-                email: normalizedRequest.guardianEmail,
-                telefone: normalizedRequest.telefone,
-                perfil: 'pai',
-                escola_id: activeSchoolId,
-              })
-              .select('id')
-              .single();
-
-            if (createGuardianError) {
-              throw createGuardianError;
+            if (guardianLookupError) {
+              throw guardianLookupError;
             }
 
-            guardianId = createdGuardian?.id || null;
-          }
-        } catch (guardianError) {
-          if (isPermissionError(guardianError)) {
-            localOnlyMode = true;
-          } else {
-            throw guardianError;
+            if (existingGuardian) {
+              guardianId = existingGuardian.id;
+              const { error: updateGuardianError } = await supabase
+                .from('utilizadores')
+                .update({
+                  nome: normalizedRequest.guardianName,
+                  telefone: normalizedRequest.telefone,
+                  perfil: 'pai',
+                  escola_id: remoteSchoolId,
+                })
+                .eq('id', guardianId);
+
+              if (updateGuardianError) {
+                throw updateGuardianError;
+              }
+            } else {
+              const { data: createdGuardian, error: createGuardianError } = await supabase
+                .from('utilizadores')
+                .insert({
+                  nome: normalizedRequest.guardianName,
+                  email: normalizedRequest.guardianEmail,
+                  telefone: normalizedRequest.telefone,
+                  perfil: 'pai',
+                  escola_id: remoteSchoolId,
+                })
+                .select('id')
+                .single();
+
+              if (createGuardianError) {
+                throw createGuardianError;
+              }
+
+              guardianId = createdGuardian?.id || null;
+            }
+          } catch (guardianError) {
+            if (isPermissionError(guardianError)) {
+              localOnlyMode = true;
+            } else {
+              throw guardianError;
+            }
           }
         }
 
@@ -553,19 +556,25 @@ const AdminGlobalDashboard = () => {
         const payload = {
           nome: normalizedRequest.studentName,
           classe: normalizedRequest.classe,
-          escola_id: activeSchoolId,
+          escola_id: remoteSchoolId,
           encarregado_id: guardianId,
           qrcode_id: qrcodeId,
         };
 
-        const { data: insertedStudent, error: insertError } = await supabase
-          .from('alunos')
-          .insert(payload)
-          .select('*')
-          .single();
+        let insertedStudent: any = null;
+        let insertError: any = null;
+        if (!localOnlyMode && remoteSchoolId) {
+          const insertResult = await supabase
+            .from('alunos')
+            .insert(payload)
+            .select('*')
+            .single();
+          insertedStudent = insertResult.data;
+          insertError = insertResult.error;
+        }
 
-        if (insertError) {
-          if (!isPermissionError(insertError)) {
+        if (localOnlyMode || insertError) {
+          if (insertError && !isPermissionError(insertError)) {
             throw insertError;
           }
 
@@ -573,6 +582,7 @@ const AdminGlobalDashboard = () => {
           const localStudent = {
             id: `local-${Date.now()}`,
             ...payload,
+            escola_id: activeSchoolId,
             guardian: {
               id: guardianId,
               nome: normalizedRequest.guardianName,
