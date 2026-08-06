@@ -137,6 +137,16 @@ const isTeacherProfile = (perfil: unknown) => {
   return normalized === 'professor' || normalized === 'teacher' || normalized === 'docente';
 };
 
+const isDirectorProfile = (perfil: unknown) => {
+  const normalized = String(perfil || '').trim().toLowerCase();
+  return normalized === 'director' || normalized === 'school_admin' || normalized === 'diretor';
+};
+
+const isSecurityProfile = (perfil: unknown) => {
+  const normalized = String(perfil || '').trim().toLowerCase();
+  return normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca';
+};
+
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [escolas, setEscolas] = useState<any[]>([]);
@@ -178,6 +188,10 @@ const AdminGlobalDashboard = () => {
   const [movementDateTo, setMovementDateTo] = useState('');
   const [teachers, setTeachers] = useState<any[]>([]);
   const [teachersLoading, setTeachersLoading] = useState(false);
+  const [directors, setDirectors] = useState<any[]>([]);
+  const [directorsLoading, setDirectorsLoading] = useState(false);
+  const [securityUsers, setSecurityUsers] = useState<any[]>([]);
+  const [securityUsersLoading, setSecurityUsersLoading] = useState(false);
 
   const readSchoolsCache = (): any[] => {
     try {
@@ -255,7 +269,7 @@ const AdminGlobalDashboard = () => {
     loadParentStudentRequests();
     loadRepairCandidates();
     setRecentCredentials(readGeneratedCredentialsLog());
-    loadTeachers();
+    loadAllRoleUsers();
   }, []);
 
   useEffect(() => {
@@ -271,7 +285,7 @@ const AdminGlobalDashboard = () => {
       loadParentStudentRequests();
       loadRepairCandidates();
       setRecentCredentials(readGeneratedCredentialsLog());
-      loadTeachers();
+      loadAllRoleUsers();
       if (selectedSchoolId) {
         loadStudents(selectedSchoolId);
       }
@@ -396,8 +410,17 @@ const AdminGlobalDashboard = () => {
     }
   };
 
-  const loadTeachers = async () => {
-    setTeachersLoading(true);
+  const loadRoleUsers = async (params: {
+    remoteProfiles: string[];
+    localProfileFilter: (perfil: unknown) => boolean;
+    setItems: (items: any[]) => void;
+    setLoading: (loading: boolean) => void;
+    timeoutLabel: string;
+    logLabel: string;
+    fallbackPrefix: string;
+    defaultProfile: string;
+  }) => {
+    params.setLoading(true);
     try {
       const schoolSource = escolas.length > 0 ? escolas : readSchoolsCache();
       const schoolsById = new Map(
@@ -408,39 +431,39 @@ const AdminGlobalDashboard = () => {
         supabase
           .from('utilizadores')
           .select('id,nome,email,telefone,perfil,escola_id,status,is_active')
-          .in('perfil', ['professor', 'teacher', 'docente'])
+          .in('perfil', params.remoteProfiles)
           .order('nome'),
         12000,
-        'Admin teachers timeout'
+        params.timeoutLabel
       );
 
       if (error) {
-        console.warn('Falha ao carregar professores remotos:', error);
+        console.warn(`Falha ao carregar ${params.logLabel} remotos:`, error);
       }
 
-      const remoteList = (remoteUsers || []).map((teacher: any) => ({
-        id: teacher.id || `teacher-${teacher.email || Math.random()}`,
-        nome: teacher.nome || 'Sem nome',
-        email: String(teacher.email || '').trim().toLowerCase(),
-        telefone: teacher.telefone || null,
-        perfil: teacher.perfil || 'professor',
-        escola_id: teacher.escola_id || null,
-        status: teacher.status || null,
-        is_active: teacher.is_active,
+      const remoteList = (remoteUsers || []).map((entry: any) => ({
+        id: entry.id || `${params.fallbackPrefix}-${entry.email || Math.random()}`,
+        nome: entry.nome || 'Sem nome',
+        email: String(entry.email || '').trim().toLowerCase(),
+        telefone: entry.telefone || null,
+        perfil: entry.perfil || params.defaultProfile,
+        escola_id: entry.escola_id || null,
+        status: entry.status || null,
+        is_active: entry.is_active,
         source: 'remote',
       }));
 
       const localList = readLocalApprovedUsers()
-        .filter((user) => isTeacherProfile(user?.perfil))
-        .map((teacher) => ({
-          id: teacher.id || `local-teacher-${teacher.email || Date.now()}`,
-          nome: teacher.nome || 'Sem nome',
-          email: String(teacher.email || '').trim().toLowerCase(),
-          telefone: teacher.telefone || null,
-          perfil: teacher.perfil || 'professor',
-          escola_id: teacher.escola_id || null,
-          status: teacher.status || 'active',
-          is_active: teacher.is_active ?? true,
+        .filter((user) => params.localProfileFilter(user?.perfil))
+        .map((entry) => ({
+          id: entry.id || `local-${params.fallbackPrefix}-${entry.email || Date.now()}`,
+          nome: entry.nome || 'Sem nome',
+          email: String(entry.email || '').trim().toLowerCase(),
+          telefone: entry.telefone || null,
+          perfil: entry.perfil || params.defaultProfile,
+          escola_id: entry.escola_id || null,
+          status: entry.status || 'active',
+          is_active: entry.is_active ?? true,
           source: 'local',
         }));
 
@@ -463,25 +486,70 @@ const AdminGlobalDashboard = () => {
       });
 
       merged.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
-      setTeachers(merged);
+      params.setItems(merged);
     } catch (error) {
-      console.error('Falha ao carregar professores:', error);
-      const fallbackTeachers = readLocalApprovedUsers()
-        .filter((user) => isTeacherProfile(user?.perfil))
-        .map((teacher) => ({
-          id: teacher.id || `local-teacher-${teacher.email || Date.now()}`,
-          nome: teacher.nome || 'Sem nome',
-          email: String(teacher.email || '').trim().toLowerCase(),
-          telefone: teacher.telefone || null,
-          perfil: teacher.perfil || 'professor',
-          escola_id: teacher.escola_id || null,
-          schoolName: teacher.escola_id ? `Escola ${String(teacher.escola_id).slice(0, 8)}` : 'Sem escola associada',
+      console.error(`Falha ao carregar ${params.logLabel}:`, error);
+      const fallbackItems = readLocalApprovedUsers()
+        .filter((user) => params.localProfileFilter(user?.perfil))
+        .map((entry) => ({
+          id: entry.id || `local-${params.fallbackPrefix}-${entry.email || Date.now()}`,
+          nome: entry.nome || 'Sem nome',
+          email: String(entry.email || '').trim().toLowerCase(),
+          telefone: entry.telefone || null,
+          perfil: entry.perfil || params.defaultProfile,
+          escola_id: entry.escola_id || null,
+          schoolName: entry.escola_id ? `Escola ${String(entry.escola_id).slice(0, 8)}` : 'Sem escola associada',
           source: 'local',
         }));
-      setTeachers(fallbackTeachers);
+      params.setItems(fallbackItems);
     } finally {
-      setTeachersLoading(false);
+      params.setLoading(false);
     }
+  };
+
+  const loadTeachers = async () => {
+    await loadRoleUsers({
+      remoteProfiles: ['professor', 'teacher', 'docente'],
+      localProfileFilter: isTeacherProfile,
+      setItems: setTeachers,
+      setLoading: setTeachersLoading,
+      timeoutLabel: 'Admin teachers timeout',
+      logLabel: 'professores',
+      fallbackPrefix: 'teacher',
+      defaultProfile: 'professor',
+    });
+  };
+
+  const loadDirectors = async () => {
+    await loadRoleUsers({
+      remoteProfiles: ['director', 'school_admin', 'diretor'],
+      localProfileFilter: isDirectorProfile,
+      setItems: setDirectors,
+      setLoading: setDirectorsLoading,
+      timeoutLabel: 'Admin directors timeout',
+      logLabel: 'diretores',
+      fallbackPrefix: 'director',
+      defaultProfile: 'director',
+    });
+  };
+
+  const loadSecurityUsers = async () => {
+    await loadRoleUsers({
+      remoteProfiles: ['scanner', 'security', 'seguranca'],
+      localProfileFilter: isSecurityProfile,
+      setItems: setSecurityUsers,
+      setLoading: setSecurityUsersLoading,
+      timeoutLabel: 'Admin security timeout',
+      logLabel: 'segurancas',
+      fallbackPrefix: 'security',
+      defaultProfile: 'scanner',
+    });
+  };
+
+  const loadAllRoleUsers = () => {
+    loadTeachers();
+    loadDirectors();
+    loadSecurityUsers();
   };
 
   const handleRefreshAllData = () => {
@@ -490,7 +558,7 @@ const AdminGlobalDashboard = () => {
     loadParentStudentRequests();
     loadRepairCandidates();
     setRecentCredentials(readGeneratedCredentialsLog());
-    loadTeachers();
+    loadAllRoleUsers();
     if (selectedSchoolId) {
       loadStudents(selectedSchoolId);
     }
@@ -1943,6 +2011,64 @@ const AdminGlobalDashboard = () => {
                       <p className="text-sm text-gray-300">{teacher.email || 'Sem email'} · {teacher.telefone || 'Sem telefone'}</p>
                       <p className="text-sm text-gray-400">Escola: {teacher.schoolName}</p>
                       <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(teacher.perfil)} · Fonte: {teacher.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Diretores Registados</h2>
+                  <p className="text-gray-400 text-sm">Lista de diretores e a escola que representam.</p>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
+                  <Users className="w-4 h-4" /> {directors.length} registo(s)
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                <button onClick={loadDirectors} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Diretores</button>
+                {directorsLoading ? (
+                  <div className="text-gray-400">A carregar diretores...</div>
+                ) : directors.length === 0 ? (
+                  <div className="text-gray-400">Nenhum diretor registado encontrado.</div>
+                ) : (
+                  directors.map((director) => (
+                    <div key={director.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <p className="font-semibold text-white">{director.nome}</p>
+                      <p className="text-sm text-gray-300">{director.email || 'Sem email'} · {director.telefone || 'Sem telefone'}</p>
+                      <p className="text-sm text-gray-400">Escola: {director.schoolName}</p>
+                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(director.perfil)} · Fonte: {director.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="card bg-[#081825] border border-white/10 overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Seguranças Registados</h2>
+                  <p className="text-gray-400 text-sm">Lista de seguranças QR e as escolas onde operam.</p>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-sm text-gray-300">
+                  <Users className="w-4 h-4" /> {securityUsers.length} registo(s)
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                <button onClick={loadSecurityUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Seguranças</button>
+                {securityUsersLoading ? (
+                  <div className="text-gray-400">A carregar seguranças...</div>
+                ) : securityUsers.length === 0 ? (
+                  <div className="text-gray-400">Nenhum segurança registado encontrado.</div>
+                ) : (
+                  securityUsers.map((security) => (
+                    <div key={security.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <p className="font-semibold text-white">{security.nome}</p>
+                      <p className="text-sm text-gray-300">{security.email || 'Sem email'} · {security.telefone || 'Sem telefone'}</p>
+                      <p className="text-sm text-gray-400">Escola: {security.schoolName}</p>
+                      <p className="text-xs text-gray-500">Perfil: {getPendingRoleLabel(security.perfil)} · Fonte: {security.source === 'remote' ? 'Servidor' : 'Cache local'}</p>
                     </div>
                   ))
                 )}
