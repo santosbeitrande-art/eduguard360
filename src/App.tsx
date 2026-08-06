@@ -6,6 +6,8 @@ import GlobalFloatingActions from "@/components/GlobalFloatingActions";
 import SystemLogin from "@/pages/system/SystemLogin";
 import AdminDashboard from "@/pages/system/AdminDashboard";
 import AdminCourses from "@/pages/system/AdminCourses";
+import EnterprisePortalPage from "@/pages/system/EnterprisePortalPage";
+import AnalyticsPortalPage from "@/pages/system/AnalyticsPortalPage";
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import AdminExecutiveDashboard from "@/pages/system/AdminExecutiveDashboard";
@@ -87,6 +89,8 @@ function App() {
         <Route path="/sistema/pais" element={<ParentDashboard />} />
         <Route path="/sistema/admin" element={<AdminDashboard />} />
         <Route path="/sistema/admin/edumarket" element={<AdminCourses />} />
+        <Route path="/enterprise" element={<EnterprisePortalPage />} />
+        <Route path="/analytics" element={<AnalyticsPortalPage />} />
         <Route path="/sistema/escola" element={<SchoolDashboard />} />
         <Route path="/sistema/scanner" element={<QRScannerPro />} />
 
@@ -95,6 +99,7 @@ function App() {
 
         {/* Dashboards */}
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/analytics-portal" element={<AnalyticsPortalPage />} />
 
         <Route path="/parent" element={<ParentDashboard />} />
 

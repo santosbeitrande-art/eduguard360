@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BookOpen, Lock, Shield, Zap, Users } from 'lucide-react';
+import { ArrowRight, BookOpen, Lock, Shield, Zap, Users, BarChart3 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
 export const PortalsPromoSection: React.FC = () => {
@@ -49,6 +49,24 @@ export const PortalsPromoSection: React.FC = () => {
       color: 'from-cyan-600 to-sky-700',
       route: '/public/login',
       external: true,
+    },
+    {
+      icon: <Users className="w-8 h-8" />,
+      title: 'Enterprise',
+      description: language === 'pt'
+        ? 'Portal executivo para gestão académica, escolar e administrativa'
+        : 'Executive portal for academic, school and administrative management',
+      color: 'from-emerald-600 to-green-600',
+      route: '/enterprise',
+    },
+    {
+      icon: <BarChart3 className="w-8 h-8" />,
+      title: 'Analytics',
+      description: language === 'pt'
+        ? 'Métricas e tendências para direção e equipas de monitorização'
+        : 'Metrics and trends for leadership and monitoring teams',
+      color: 'from-orange-600 to-red-600',
+      route: '/analytics',
     },
   ];
 

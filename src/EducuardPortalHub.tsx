@@ -136,8 +136,9 @@ const EducuardPortalHub: React.FC = () => {
       description: language === 'pt' ? 'Solucao completa para gestao administrativa e academica de instituicoes' : 'Complete solution for administrative and academic management',
       icon: <Users className="w-12 h-12" />,
       color: 'from-green-600 to-emerald-600',
-      route: '#',
-      status: 'coming-soon',
+      route: '/enterprise',
+      status: 'available',
+      badge: 'Novo',
       features: [
         'Gestão de notas e currículos',
         'Planejamento académico',
@@ -154,8 +155,9 @@ const EducuardPortalHub: React.FC = () => {
       description: language === 'pt' ? 'Analise avancada de dados educacionais e insights inteligentes' : 'Advanced educational analytics and insights',
       icon: <TrendingUp className="w-12 h-12" />,
       color: 'from-orange-600 to-red-600',
-      route: '#',
-      status: 'coming-soon',
+      route: '/analytics',
+      status: 'available',
+      badge: 'Novo',
       features: [
         'Análise de desempenho',
         'Tendências de segurança',

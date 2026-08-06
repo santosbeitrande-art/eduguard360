@@ -30,8 +30,8 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
     { label: '📚 EduMarket', href: '/edumarket' },
     { label: language === 'pt' ? '📖 Literatura Aberta' : '📖 Open Literature', href: '/literatura' },
     { label: '🔐 EduGuard Verify AI', href: '/public/login', external: true },
-    { label: language === 'pt' ? '🏢 Enterprise (Em breve)' : '🏢 Enterprise (Coming soon)', href: '#' },
-    { label: language === 'pt' ? '📊 Analytics (Em breve)' : '📊 Analytics (Coming soon)', href: '#' },
+    { label: '🏢 Enterprise', href: '/enterprise' },
+    { label: '📊 Analytics', href: '/analytics' },
   ];
 
   return (
