@@ -228,7 +228,7 @@
 
             <form id="passwordRecoveryConfirmForm" class="panel-gap-top">
               <label for="recoveryToken" id="lblRecoveryToken">Token de recuperação</label>
-              <input id="recoveryToken" required minlength="20" />
+              <input id="recoveryToken" required minlength="20" placeholder="Cole aqui o token recebido por email" />
 
               <label for="recoveryPassword" id="lblRecoveryPassword">Nova palavra-passe (mín. 8)</label>
               <input id="recoveryPassword" type="password" required minlength="8" />
@@ -529,14 +529,14 @@
           loginTitle: "Entrar",
           signupTitle: "Cadastrar nova conta",
           passwordRecoveryTitle: "Recuperar palavra-passe",
-          passwordRecoveryHint: "Peça um token de recuperação e defina uma nova palavra-passe.",
+          passwordRecoveryHint: "Peça um token por email, copie o token recebido e defina uma nova palavra-passe.",
           plansTitle: "Planos e pagamento",
           plansHint: "Ao esgotar as 10 consultas grátis, escolha um plano e pague para renovar o acesso.",
           mobilePayHint: "Pagamento móvel seguro. Introduza o número e confirme com PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblRecoveryEmail: "Email da conta",
-          lblRecoveryToken: "Token de recuperação",
+          lblRecoveryToken: "Token de recuperação (copiado do email)",
           lblRecoveryPassword: "Nova palavra-passe (mín. 8)",
           lblSignupName: "Nome completo",
           lblSignupCompany: "Nome da empresa (opcional)",
@@ -585,14 +585,14 @@
           loginTitle: "Sign in",
           signupTitle: "Create account",
           passwordRecoveryTitle: "Recover password",
-          passwordRecoveryHint: "Request a recovery token and set a new password.",
+          passwordRecoveryHint: "Request a token by email, copy it from your inbox, then set a new password.",
           plansTitle: "Plans and payment",
           plansHint: "After the 10 free checks are used, select a paid plan to renew access.",
           mobilePayHint: "Secure mobile payment. Enter your phone and confirm with PIN.",
           lblLoginEmail: "Email",
           lblLoginPassword: "Password",
           lblRecoveryEmail: "Account email",
-          lblRecoveryToken: "Recovery token",
+          lblRecoveryToken: "Recovery token (copied from email)",
           lblRecoveryPassword: "New password (min 8)",
           lblSignupName: "Full name",
           lblSignupCompany: "Company name (optional)",
@@ -1843,8 +1843,8 @@
             return;
           }
           setMessage(lang === "pt"
-            ? "Se a conta existir, o token de recuperação foi emitido. Introduza o token e a nova palavra-passe."
-            : "If the account exists, a recovery token has been issued. Enter the token and the new password.");
+            ? "Se a conta existir, enviámos o token por email. Verifique caixa de entrada/spam, copie o token e introduza abaixo com a nova palavra-passe."
+            : "If the account exists, we sent the token by email. Check inbox/spam, copy the token, then enter it below with your new password.");
         } catch {
           setMessage(externalApiUnavailableMessage());
         } finally {
