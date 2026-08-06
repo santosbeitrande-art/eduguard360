@@ -74,7 +74,7 @@ const buildRequestNotifications = (viewerEmail: string) => {
         title: `Cadastro ${statusLabel.toLowerCase()}`,
         message: entry?.admin_note
           ? `${studentName}: ${entry.admin_note}`
-          : `${studentName}: o administrador marcou o cadastro como ${statusLabel.toLowerCase()}.`,
+          : `${studentName}: a Administração Escolar marcou o cadastro como ${statusLabel.toLowerCase()}.`,
         type: normalizedStatus === 'approved' ? 'APPROVED' : normalizedStatus === 'rejected' ? 'REJECTED' : 'STANDBY',
         created_at: entry.updated_at || entry.created_at || new Date().toISOString(),
         channel: 'app',
@@ -579,7 +579,7 @@ const ParentDashboardContent: React.FC = () => {
 
   const handleCreateStudentRequest = () => {
     if (isDemoAccount) {
-      setSettingsMessage('Conta demo não pode enviar pedidos de cadastro para validação do admin.');
+      setSettingsMessage('Conta demo não pode enviar pedidos de cadastro para validação da Administração Escolar.');
       return;
     }
 
@@ -626,7 +626,7 @@ const ParentDashboardContent: React.FC = () => {
     writeParentStudentRequests(next);
     setStudentRequests(next.filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail));
     setRequestForm({ nome: '', classe: '', email: viewerEmail, telefone: '', qrcode_id: '' });
-    setSettingsMessage('Solicitação enviada ao administrador para validação.');
+    setSettingsMessage('Solicitação enviada à Administração Escolar para validação.');
     setTimeout(() => setSettingsMessage(''), 4000);
   };
 
@@ -810,7 +810,7 @@ const ParentDashboardContent: React.FC = () => {
           <div className="space-y-6">
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
               <h3 className="text-lg font-semibold text-white mb-1">Cadastrar Novo Educando</h3>
-              <p className="text-sm text-gray-400 mb-4">O administrador vai validar, rejeitar, modificar ou deixar em stand by o pedido.</p>
+              <p className="text-sm text-gray-400 mb-4">A Administração Escolar vai validar, rejeitar, modificar ou deixar em stand by o pedido.</p>
               {isDemoAccount && (
                 <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                   Conta demo: este formulário é apenas ilustrativo e não envia pedidos reais.
@@ -906,7 +906,7 @@ const ParentDashboardContent: React.FC = () => {
                       <p className="mt-1 text-sm text-gray-300">{entry.classe || 'Sem classe'}</p>
                       <p className="mt-1 text-xs text-gray-500">Atualizado: {new Date(entry.updated_at || entry.created_at).toLocaleString('pt-MZ')}</p>
                       {entry.admin_note && (
-                        <p className="mt-2 text-xs text-amber-200">Nota do Admin: {entry.admin_note}</p>
+                        <p className="mt-2 text-xs text-amber-200">Nota da Administração Escolar: {entry.admin_note}</p>
                       )}
                     </div>
                   ))}
@@ -1011,7 +1011,7 @@ const ParentDashboardContent: React.FC = () => {
                       <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
                         <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                       </div>
-                      <div><p className="text-white font-medium">SMS</p><p className="text-gray-400 text-sm">Requer autorização do administrador</p></div>
+                      <div><p className="text-white font-medium">SMS</p><p className="text-gray-400 text-sm">Requer autorização da Administração Escolar</p></div>
                     </div>
                     <button onClick={() => !isDemoAccount && setSmsEnabled(!smsEnabled)} disabled={isDemoAccount} title="Ativar ou desativar notificações por SMS"
                       className={`relative w-14 h-7 rounded-full transition-colors ${smsEnabled ? 'bg-[#2ecc71]' : 'bg-gray-600'}`}>
@@ -1023,7 +1023,7 @@ const ParentDashboardContent: React.FC = () => {
                       <label className="block text-sm text-gray-300 mb-1">Número para SMS</label>
                       <input type="tel" value={smsPhone} onChange={(e) => setSmsPhone(e.target.value)} disabled={isDemoAccount} placeholder="+258 84 XXX XXXX"
                         className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]" />
-                      <p className="text-yellow-400/80 text-xs mt-1">Nota: O SMS só será enviado quando o administrador activar este serviço globalmente.</p>
+                      <p className="text-yellow-400/80 text-xs mt-1">Nota: O SMS só será enviado quando a Administração Escolar activar este serviço globalmente.</p>
                     </div>
                   )}
                 </div>

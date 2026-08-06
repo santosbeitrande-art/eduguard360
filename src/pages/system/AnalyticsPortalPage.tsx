@@ -479,7 +479,7 @@ const AnalyticsPortalPage = () => {
     { key: 'users', title: 'Utilizadores', value: String(metrics.users), hint: 'Contas totais', icon: <Activity className="h-6 w-6" />, color: 'from-violet-600 to-fuchsia-600' },
     { key: 'entries', title: 'Movimentos', value: String(metrics.entries), hint: 'Entradas recentes', icon: <BarChart3 className="h-6 w-6" />, color: 'from-orange-500 to-red-600' },
     { key: 'alerts', title: 'Alertas', value: String(metrics.alerts), hint: 'Pendências e contas inativas', icon: <Bell className="h-6 w-6" />, color: 'from-amber-500 to-yellow-600' },
-    { key: 'security', title: 'Segurança', value: `${securityScore}%`, hint: 'Pontuação operacional estimada', icon: <ShieldCheck className="h-6 w-6" />, color: 'from-sky-600 to-blue-700' },
+    { key: 'security', title: 'Segurança Operacional', value: `${securityScore}%`, hint: 'Pontuação operacional estimada', icon: <ShieldCheck className="h-6 w-6" />, color: 'from-sky-600 to-blue-700' },
   ];
 
   const saveCustomKpi = () => {
@@ -731,7 +731,7 @@ const AnalyticsPortalPage = () => {
 
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
             <h2 className="text-xl font-semibold">KPIs configuráveis</h2>
-            <p className="text-sm text-slate-300">O administrador pode definir indicadores adicionais sem alterar código.</p>
+            <p className="text-sm text-slate-300">A administração institucional pode definir indicadores adicionais sem alterar código.</p>
             <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr_auto]">
               <input
                 value={kpiForm.name}
@@ -779,7 +779,7 @@ const AnalyticsPortalPage = () => {
               <p className="text-sm text-slate-300">Leitura executiva para decisão.</p>
             </div>
             <button onClick={() => navigate('/admin')} className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-              Abrir Admin <ArrowRight className="h-4 w-4" />
+              Abrir Gestão Institucional <ArrowRight className="h-4 w-4" />
             </button>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

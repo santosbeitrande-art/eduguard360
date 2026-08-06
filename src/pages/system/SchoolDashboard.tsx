@@ -41,7 +41,7 @@ const SchoolDashboard = () => {
         currentUser = null;
       }
 
-      // Bloquear acesso se não houver utilizador ou se não for admin/director
+      // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
       if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
         setData([]);
         return;
@@ -49,7 +49,7 @@ const SchoolDashboard = () => {
 
       let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
 
-      // Se não for admin global, restringe à sua própria escola
+      // Se não for Administração Geral (global), restringe à sua própria escola
       if (currentUser.perfil !== 'admin') {
         if (!currentUser.escola_id) {
           console.error("Utilizador não tem escola associada.");
