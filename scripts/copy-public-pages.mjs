@@ -16,3 +16,8 @@ for (const fileName of ['index.html', 'login.html']) {
   const targetFile = path.join(outputDir, fileName);
   fs.copyFileSync(sourceFile, targetFile);
 }
+
+// Filesystem alias for clean URL /public/login.
+const loginAliasDir = path.join(outputDir, 'login');
+fs.mkdirSync(loginAliasDir, { recursive: true });
+fs.copyFileSync(path.join(sourceDir, 'login.html'), path.join(loginAliasDir, 'index.html'));
