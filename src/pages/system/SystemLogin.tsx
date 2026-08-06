@@ -692,45 +692,60 @@ const SystemLoginContent = () => {
       const localPending = readPendingRegistrations().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
       const localApproved = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
 
-      const { data: domainUser, error } = await withTimeout(
-        supabase
-          .from('utilizadores')
-          .select('id,email,perfil,status,is_active,auth_id')
-          .eq('email', normalizedEmail)
-          .maybeSingle(),
-        12000,
-        'Account status check timeout'
+      const localGenerated = readGeneratedCredentialsLog().find((item) =>
+        String(item?.email || '').trim().toLowerCase() === normalizedEmail
       );
 
-      if (error) {
+      let domainUser: any = null;
+      let serverIssue = false;
+      try {
+        const { data, error } = await withTimeout(
+          supabase
+            .from('utilizadores')
+            .select('id,email,perfil,status,is_active,auth_id')
+            .eq('email', normalizedEmail)
+            .maybeSingle(),
+          12000,
+          'Account status check timeout'
+        );
+        if (error) {
+          serverIssue = true;
+        } else {
+          domainUser = data;
+        }
+      } catch {
+        serverIssue = true;
+      }
+
+      const localFallbackUser = localApproved || localPending || (localGenerated
+        ? {
+            email: localGenerated.email,
+            perfil: localGenerated.perfil || localGenerated.role,
+            status: 'active',
+            is_active: true,
+            auth_id: null,
+          }
+        : null);
+
+      if (!domainUser && !localFallbackUser) {
         setAccountStatusPanel({
           title: 'Estado da conta',
-          summary: 'Nao foi possivel verificar o estado agora. Tente novamente em alguns segundos.',
-          tone: 'warn',
+          summary: serverIssue
+            ? 'Servidor indisponivel. Nao encontramos este email no cache local.'
+            : 'Nao encontramos este email no sistema. Faca o cadastro primeiro.',
+          tone: serverIssue ? 'warn' : 'error',
           items: [
             { label: 'Email', value: normalizedEmail, tone: 'info' },
             { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
-            { label: 'Verificacao', value: 'Falha de ligacao com o servidor', tone: 'warn' },
+            { label: 'Fonte de dados', value: serverIssue ? 'Cache local (modo offline)' : 'Servidor', tone: serverIssue ? 'warn' : 'info' },
+            { label: 'Cadastro', value: 'Conta nao encontrada', tone: serverIssue ? 'warn' : 'error' },
           ],
         });
         return;
       }
 
-      if (!domainUser && !localPending && !localApproved) {
-        setAccountStatusPanel({
-          title: 'Estado da conta',
-          summary: 'Nao encontramos este email no sistema. Faca o cadastro primeiro.',
-          tone: 'error',
-          items: [
-            { label: 'Email', value: normalizedEmail, tone: 'info' },
-            { label: 'Cadastro', value: 'Conta nao encontrada', tone: 'error' },
-            { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
-          ],
-        });
-        return;
-      }
-
-      const profileSource = domainUser?.perfil || localPending?.perfil || localApproved?.perfil || '';
+      const sourceUser = domainUser || localFallbackUser;
+      const profileSource = sourceUser?.perfil || '';
       const normalizedProfile = normalizeLegacyProfile(profileSource);
       const profileMatches = normalizedProfile === expectedLegacyProfile || normalizedProfile === 'admin';
       const profileTone: AccountStatusTone = profileMatches ? 'ok' : 'warn';
@@ -738,28 +753,33 @@ const SystemLoginContent = () => {
         ? `${getLegacyProfileLabel(normalizedProfile)} (ok para este acesso)`
         : `${getLegacyProfileLabel(normalizedProfile)}. Troque o perfil no topo para ${getLegacyProfileLabel(normalizedProfile)}.`;
 
-      const isPending = domainUser?.status === 'pending' || domainUser?.status === 'inactive' || domainUser?.is_active === false || Boolean(localPending && !localApproved);
+      const isPending = sourceUser?.status === 'pending' || sourceUser?.status === 'inactive' || sourceUser?.is_active === false || Boolean(localPending && !localApproved);
       const approvalTone: AccountStatusTone = isPending ? 'warn' : 'ok';
       const approvalValue = isPending
         ? 'Aprovacao pendente/inativa. Aguarde validacao do administrador.'
         : 'Aprovada para acesso.';
 
-      const hasAuthLink = Boolean(domainUser?.auth_id || localPending?.auth_id || localApproved?.auth_id);
-      const emailConfirmTone: AccountStatusTone = hasAuthLink ? 'info' : 'warn';
-      const emailConfirmValue = hasAuthLink
-        ? 'Conta vinculada ao login. Se falhar ao entrar, confirme o email e redefina a senha.'
-        : 'Cadastro sem vinculacao completa de login. Aguarde aprovacao/reparacao do admin.';
+      const hasAuthLink = Boolean(sourceUser?.auth_id || localPending?.auth_id || localApproved?.auth_id);
+      const emailConfirmTone: AccountStatusTone = serverIssue ? 'warn' : hasAuthLink ? 'info' : 'warn';
+      const emailConfirmValue = serverIssue
+        ? 'Nao foi possivel confirmar no servidor. Mostrando estado a partir do cache local.'
+        : hasAuthLink
+          ? 'Conta vinculada ao login. Se falhar ao entrar, confirme o email e redefina a senha.'
+          : 'Cadastro sem vinculacao completa de login. Aguarde aprovacao/reparacao do admin.';
 
       const canLoginNow = profileMatches && !isPending;
       setAccountStatusPanel({
         title: 'Estado da conta',
-        summary: canLoginNow
-          ? 'A conta parece pronta para login neste perfil.'
-          : 'A conta precisa de ajuste antes do acesso. Veja os pontos abaixo.',
-        tone: canLoginNow ? 'ok' : 'warn',
+        summary: serverIssue
+          ? 'Servidor indisponivel. Estado montado com dados locais para orientar o acesso.'
+          : canLoginNow
+            ? 'A conta parece pronta para login neste perfil.'
+            : 'A conta precisa de ajuste antes do acesso. Veja os pontos abaixo.',
+        tone: serverIssue ? 'warn' : canLoginNow ? 'ok' : 'warn',
         items: [
           { label: 'Email', value: normalizedEmail, tone: 'info' },
           { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
+          { label: 'Fonte de dados', value: domainUser ? 'Servidor + cache local' : 'Cache local (modo offline)', tone: domainUser ? 'info' : 'warn' },
           { label: 'Perfil registado', value: profileValue, tone: profileTone },
           { label: 'Aprovacao', value: approvalValue, tone: approvalTone },
           { label: 'Confirmacao de email/login', value: emailConfirmValue, tone: emailConfirmTone },
