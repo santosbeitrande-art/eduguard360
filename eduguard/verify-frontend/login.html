@@ -35,6 +35,11 @@
         background: linear-gradient(90deg, #10b981, #22d3ee);
         color: #05253a;
       }
+      .btn[disabled],
+      .ghost[disabled] {
+        opacity: .65;
+        cursor: not-allowed;
+      }
       .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .panel {
         background: rgba(255,255,255,.08);
@@ -450,8 +455,11 @@
     </main>
 
     <script>
+      const LAST_OK_API_KEY = "eduguard_verify_last_ok_api_base";
+      const persistedApiBase = String(localStorage.getItem(LAST_OK_API_KEY) || "").replace(/\/+$/, "");
       const API_CANDIDATES = Array.from(new Set([
         window.EDUGUARD_VERIFY_API_BASE || "",
+        persistedApiBase,
         localStorage.getItem("eduguard_verify_api_base") || "",
         "https://api.eduguard360.co.mz",
         `${window.location.origin}/verify-api`,
@@ -465,7 +473,9 @@
       if (apiBaseFromQuery && !API_CANDIDATES.includes(apiBaseFromQuery)) {
         API_CANDIDATES.unshift(apiBaseFromQuery);
       }
-      let API_BASE = API_CANDIDATES[0];
+      let API_BASE = persistedApiBase || API_CANDIDATES[0];
+      const REQUEST_TIMEOUT_MS = 12000;
+      const HEALTH_TIMEOUT_MS = 4500;
       const TOKEN_KEY = "eduguard_verify_access_token";
       const REFRESH_KEY = "eduguard_verify_refresh_token";
       const LANG_KEY = "eduguard_verify_lang";
@@ -1155,6 +1165,30 @@
         msg.textContent = text;
       }
 
+      function setButtonBusy(buttonOrId, busy, busyLabel) {
+        const btn = typeof buttonOrId === "string"
+          ? document.getElementById(buttonOrId)
+          : buttonOrId;
+        if (!btn) return;
+
+        if (!btn.dataset.defaultLabel) {
+          btn.dataset.defaultLabel = btn.textContent || "";
+        }
+
+        btn.disabled = Boolean(busy);
+        btn.textContent = busy ? busyLabel : btn.dataset.defaultLabel;
+      }
+
+      async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeoutHandle);
+        }
+      }
+
       function externalApiUnavailableMessage() {
         return lang === "pt"
           ? "API externa indisponivel. O modo local foi desativado. Restabeleca a ligacao com o backend."
@@ -1300,15 +1334,20 @@
         const token = getToken();
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        const candidates = [API_BASE, ...API_CANDIDATES.filter((candidate) => candidate !== API_BASE)];
+        const lastOkCandidate = String(localStorage.getItem(LAST_OK_API_KEY) || "").replace(/\/+$/, "");
+        const candidates = Array.from(new Set([
+          API_BASE,
+          lastOkCandidate,
+          ...API_CANDIDATES
+        ].filter(Boolean)));
         let lastError = null;
 
         for (const candidate of candidates) {
           try {
-            const response = await fetch(`${candidate}${path}`, {
+            const response = await fetchWithTimeout(`${candidate}${path}`, {
               ...options,
               headers
-            });
+            }, REQUEST_TIMEOUT_MS);
 
             // On Vercel rewrites, wrong hosts can return HTML 200 instead of JSON API responses.
             if (isLikelyHtmlResponse(response) && response.status < 500) {
@@ -1317,6 +1356,7 @@
 
             API_BASE = candidate;
             localStorage.setItem("eduguard_verify_api_base", API_BASE);
+            localStorage.setItem(LAST_OK_API_KEY, API_BASE);
             return response;
           } catch (error) {
             lastError = error;
@@ -1330,11 +1370,12 @@
       async function resolveApiBase() {
         for (const candidate of API_CANDIDATES) {
           try {
-            const res = await fetch(`${candidate}/health`, { method: "GET" });
+            const res = await fetchWithTimeout(`${candidate}/health`, { method: "GET" }, HEALTH_TIMEOUT_MS);
             const data = await safeJson(res);
             if (res.ok && data?.ok === true && String(data?.service || "").includes("verify-api")) {
               API_BASE = candidate;
               localStorage.setItem("eduguard_verify_api_base", API_BASE);
+              localStorage.setItem(LAST_OK_API_KEY, API_BASE);
               return true;
             }
           } catch {}
@@ -1548,6 +1589,7 @@
       document.getElementById("loginForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         setMessage(lang === "pt" ? "A autenticar..." : "Signing in...");
+        setButtonBusy("btnLogin", true, lang === "pt" ? "A entrar..." : "Signing in...");
 
         const payload = {
           username: document.getElementById("loginEmail").value,
@@ -1593,6 +1635,8 @@
           updateInternalAdminSession(payload.username, false);
           clearLocalOfflineArtifacts();
           setMessage(externalApiUnavailableMessage());
+        } finally {
+          setButtonBusy("btnLogin", false);
         }
       });
 
@@ -1609,14 +1653,26 @@
       document.getElementById("signupForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         setMessage(lang === "pt" ? "A criar conta..." : "Creating account...");
+        setButtonBusy("btnSignup", true, lang === "pt" ? "A criar..." : "Creating...");
 
         const payload = {
-          fullName: document.getElementById("signupName").value,
-          companyName: document.getElementById("signupCompany").value,
-          companyWebsite: document.getElementById("signupWebsite").value,
-          email: document.getElementById("signupEmail").value,
-          password: document.getElementById("signupPassword").value
+          fullName: String(document.getElementById("signupName").value || "").trim(),
+          companyName: String(document.getElementById("signupCompany").value || "").trim(),
+          companyWebsite: String(document.getElementById("signupWebsite").value || "").trim(),
+          email: String(document.getElementById("signupEmail").value || "").trim(),
+          password: String(document.getElementById("signupPassword").value || "").trim()
         };
+
+        if (!payload.fullName || !payload.email || !payload.password) {
+          setMessage(lang === "pt" ? "Preencha nome, email e password." : "Fill in name, email and password.");
+          setButtonBusy("btnSignup", false);
+          return;
+        }
+        if (payload.password.length < 8) {
+          setMessage(lang === "pt" ? "A password deve ter pelo menos 8 caracteres." : "Password must have at least 8 characters.");
+          setButtonBusy("btnSignup", false);
+          return;
+        }
 
         if (normalizeEmail(payload.email) === INTERNAL_ADMIN_EMAIL) {
           document.getElementById("loginEmail").value = INTERNAL_ADMIN_EMAIL;
@@ -1624,6 +1680,7 @@
           setMessage(lang === "pt"
             ? "Este email é reservado para uso interno da plataforma."
             : "This email is reserved for internal platform use.");
+          setButtonBusy("btnSignup", false);
           return;
         }
 
@@ -1657,14 +1714,18 @@
         } catch {
           clearLocalOfflineArtifacts();
           setMessage(externalApiUnavailableMessage());
+        } finally {
+          setButtonBusy("btnSignup", false);
         }
       });
 
       document.getElementById("passwordRecoveryRequestForm").addEventListener("submit", async (event) => {
         event.preventDefault();
+        setButtonBusy("btnRecoveryRequest", true, lang === "pt" ? "A solicitar..." : "Requesting...");
         const email = String(recoveryEmail?.value || document.getElementById("loginEmail").value || "").trim();
         if (!email) {
           setMessage(lang === "pt" ? "Informe o email da conta." : "Enter the account email.");
+          setButtonBusy("btnRecoveryRequest", false);
           return;
         }
 
@@ -1709,19 +1770,24 @@
             : "If the account exists, a recovery token has been issued. Enter the token and the new password.");
         } catch {
           setMessage(externalApiUnavailableMessage());
+        } finally {
+          setButtonBusy("btnRecoveryRequest", false);
         }
       });
 
       document.getElementById("passwordRecoveryConfirmForm").addEventListener("submit", async (event) => {
         event.preventDefault();
+        setButtonBusy("btnRecoveryConfirm", true, lang === "pt" ? "A redefinir..." : "Resetting...");
         const token = String(recoveryToken?.value || "").trim();
         const newPassword = String(recoveryPassword?.value || "").trim();
         if (!token || token.length < 20) {
           setMessage(lang === "pt" ? "Token de recuperação inválido." : "Invalid recovery token.");
+          setButtonBusy("btnRecoveryConfirm", false);
           return;
         }
         if (!newPassword || newPassword.length < 8) {
           setMessage(lang === "pt" ? "A nova palavra-passe deve ter pelo menos 8 caracteres." : "New password must have at least 8 characters.");
+          setButtonBusy("btnRecoveryConfirm", false);
           return;
         }
 
@@ -1747,6 +1813,8 @@
           document.getElementById("loginPassword").focus();
         } catch {
           setMessage(externalApiUnavailableMessage());
+        } finally {
+          setButtonBusy("btnRecoveryConfirm", false);
         }
       });
 
@@ -1876,6 +1944,7 @@
       }
 
       document.getElementById("btnCheckout").addEventListener("click", async () => {
+        const checkoutBtn = document.getElementById("btnCheckout");
         if (offlineMode) {
           setMessage(lang === "pt"
             ? "Pagamento indisponível sem API externa. Restabeleça a ligação com o backend."
@@ -1908,6 +1977,7 @@
         }
 
         setMessage(lang === "pt" ? "A iniciar pagamento..." : "Starting checkout...");
+        setButtonBusy(checkoutBtn, true, lang === "pt" ? "A processar..." : "Processing...");
         try {
           const res = await api("/company/subscription/checkout", {
             method: "POST",
@@ -1938,6 +2008,8 @@
           await loadSubscriptionStatus();
         } catch {
           setMessage(lang === "pt" ? "Erro de ligação no checkout." : "Checkout connection error.");
+        } finally {
+          setButtonBusy(checkoutBtn, false);
         }
       });
 
