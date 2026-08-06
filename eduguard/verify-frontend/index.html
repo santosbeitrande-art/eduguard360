@@ -303,8 +303,8 @@
         window.EDUGUARD_VERIFY_API_BASE || "",
         persistedApiBase,
         localStorage.getItem("eduguard_verify_api_base") || "",
-        CANONICAL_API_BASE,
         `${window.location.origin}/verify-api`,
+        CANONICAL_API_BASE,
         window.location.origin
       ]
         .filter(Boolean)

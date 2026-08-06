@@ -31,6 +31,10 @@
   ],
   "rewrites": [
     {
+      "source": "/verify-api/(.*)",
+      "destination": "https://api.eduguard360.co.mz/$1"
+    },
+    {
       "source": "/public",
       "destination": "/public/index.html?v=2026-08-06-loginfix"
     },

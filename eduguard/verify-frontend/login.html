@@ -461,8 +461,8 @@
         window.EDUGUARD_VERIFY_API_BASE || "",
         persistedApiBase,
         localStorage.getItem("eduguard_verify_api_base") || "",
-        "https://api.eduguard360.co.mz",
         `${window.location.origin}/verify-api`,
+        "https://api.eduguard360.co.mz",
         window.location.origin
       ]
         .filter(Boolean)
@@ -1711,6 +1711,24 @@
             : `Account created successfully. You have ${data.trial.remaining} free checks.`);
           document.getElementById("loginEmail").value = payload.email;
           document.getElementById("loginPassword").value = payload.password;
+
+          // Immediate access: sign in automatically right after successful signup.
+          const authRes = await api("/auth/login/jwt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: payload.email, password: payload.password })
+          });
+          const authData = await safeJson(authRes);
+          if (authRes.ok && authData?.accessToken) {
+            setTokens(authData.accessToken, authData.refreshToken || "");
+            setMessage(lang === "pt" ? "Conta criada e sessão iniciada. A entrar no portal..." : "Account created and signed in. Opening portal...");
+            window.location.href = "/public";
+            return;
+          }
+
+          setMessage(lang === "pt"
+            ? "Conta criada. Use as credenciais para entrar no portal."
+            : "Account created. Use your credentials to sign in.");
         } catch {
           clearLocalOfflineArtifacts();
           setMessage(externalApiUnavailableMessage());
