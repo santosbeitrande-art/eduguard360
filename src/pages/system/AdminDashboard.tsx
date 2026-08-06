@@ -591,11 +591,12 @@ const AdminGlobalDashboard = () => {
             },
           };
 
+          updateStudentsForSelectedSchool((currentStudents) => [
+            localStudent,
+            ...currentStudents.filter((student) => student.id !== localStudent.id),
+          ], activeSchoolId);
+
           if (selectedSchoolId === activeSchoolId) {
-            updateStudentsForSelectedSchool((currentStudents) => [
-              localStudent,
-              ...currentStudents.filter((student) => student.id !== localStudent.id),
-            ]);
             setRecentApprovedStudentId(localStudent.id);
             setTimeout(() => setRecentApprovedStudentId(null), 7000);
           }
@@ -641,7 +642,9 @@ const AdminGlobalDashboard = () => {
         await loadData();
         if (activeSchoolId) {
           setSelectedSchoolId(activeSchoolId);
-          await loadStudents(activeSchoolId);
+          if (isLikelyUuid(activeSchoolId)) {
+            await loadStudents(activeSchoolId);
+          }
         }
         return;
       }
