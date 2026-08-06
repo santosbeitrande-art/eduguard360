@@ -82,6 +82,28 @@ const getCachedStudentsForParent = (viewerEmail: string) => {
   });
 };
 
+const resolveStoredParentIdentity = async (user: any) => {
+  const viewerEmail = String(user?.email || '').trim().toLowerCase();
+  if (!viewerEmail) {
+    return { viewerEmail: '', domainUserId: null as string | null };
+  }
+
+  try {
+    const { data: domainUser } = await withTimeout(supabase
+      .from('utilizadores')
+      .select('id,email,auth_id,perfil')
+      .eq('email', viewerEmail)
+      .maybeSingle(), 12000, 'Parent identity timeout');
+
+    return {
+      viewerEmail,
+      domainUserId: domainUser?.id || null,
+    };
+  } catch {
+    return { viewerEmail, domainUserId: null as string | null };
+  }
+};
+
 const ShieldIcon = () => (
   <svg className="w-8 h-8 text-[#2ecc71]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -162,12 +184,40 @@ const ParentDashboardContent: React.FC = () => {
   const loadStudentStatuses = async () => {
     setLoading(true);
     try {
-      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+      const { viewerEmail, domainUserId } = await resolveStoredParentIdentity(user);
 
-      // A RLS ja limita o encarregado aos seus proprios educandos.
+      if (!domainUserId) {
+        const cachedStudents = getCachedStudentsForParent(viewerEmail).map((student: any) => ({
+          id: student.id,
+          nome: student.nome,
+          classe: student.classe,
+          escola_id: student.escola_id || null,
+          encarregado_id: student.encarregado_id || student.guardian?.id || null,
+        }));
+
+        if (cachedStudents.length === 0) {
+          setStudentStatuses([]);
+          return;
+        }
+
+        const cachedStatuses = cachedStudents.map((student: any) => ({
+          student: { id: student.id, name: student.nome, grade: student.classe, class: '' },
+          status: 'not_arrived',
+          today_logs: [],
+          last_movement: null,
+        }));
+
+        setStudentStatuses(cachedStatuses);
+        if (cachedStatuses.length > 0 && !selectedStudent) {
+          setSelectedStudent(cachedStatuses[0].student.id);
+        }
+        return;
+      }
+
       const { data: alunosData, error: alunosError } = await withTimeout(supabase
         .from('alunos')
         .select('*')
+        .eq('encarregado_id', domainUserId)
         .order('nome'), 12000, 'Parent students timeout');
 
       if (alunosError) {
@@ -261,18 +311,23 @@ const ParentDashboardContent: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
-      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+      const { viewerEmail, domainUserId } = await resolveStoredParentIdentity(user);
       const requestNotifications = viewerEmail ? buildRequestNotifications(viewerEmail) : [];
 
-      if (!user?.id && !viewerEmail) {
+      if (!viewerEmail) {
         setNotifications(requestNotifications);
         return;
       }
 
-      // A RLS ja limita os alunos ao encarregado autenticado.
+      if (!domainUserId) {
+        setNotifications(requestNotifications);
+        return;
+      }
+
       const { data: alunosData, error: alunosError } = await withTimeout(supabase
         .from('alunos')
         .select('id, nome, classe, escola_id')
+        .eq('encarregado_id', domainUserId)
         .order('nome'), 12000, 'Parent notifications students timeout');
 
       if (alunosError) {
