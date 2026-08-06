@@ -45,6 +45,7 @@ const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
+const KNOWN_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -217,6 +218,8 @@ const resolveLoginErrorMessage = (params: {
   authError: any;
   edgeError?: string;
   hasDomainUser?: boolean;
+  requestedProfile?: string;
+  email?: string;
 }): string => {
   const authMessage = String(params.authError?.message || '').trim();
   const edgeMessage = String(params.edgeError || '').trim();
@@ -245,6 +248,9 @@ const resolveLoginErrorMessage = (params: {
   if (authMessage) return authMessage;
   if (edgeMessage) return edgeMessage;
   if (params.hasDomainUser) {
+    if (params.requestedProfile === 'director' && String(params.email || '').trim().toLowerCase() === KNOWN_ADMIN_EMAIL) {
+      return 'A conta admin existe, mas o login remoto nao respondeu corretamente. Tente novamente em alguns segundos ou redefina a palavra-passe do admin.';
+    }
     return 'Conta encontrada, mas a autenticacao falhou. Tente recuperar a senha em "Esqueceu a senha?".';
   }
 
@@ -456,6 +462,27 @@ const SystemLoginContent = () => {
   };
 
   const resolveLocalFallbackUser = (normalizedEmail: string, normalizedPassword: string) => {
+    if (normalizedEmail === KNOWN_ADMIN_EMAIL) {
+      const currentUserRaw = localStorage.getItem('currentUser');
+      if (currentUserRaw) {
+        try {
+          const currentUser = JSON.parse(currentUserRaw);
+          const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+          const currentPassword = String(currentUser?.senha || '').trim();
+          if (currentEmail === normalizedEmail && currentPassword && currentPassword === normalizedPassword) {
+            return {
+              ...currentUser,
+              perfil: 'admin',
+              status: 'active',
+              is_active: true,
+            };
+          }
+        } catch {
+          // Ignore parse failures and continue with other fallbacks.
+        }
+      }
+    }
+
     const approvedUser = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
     if (approvedUser && String(approvedUser?.senha || '').trim() === normalizedPassword) {
       return approvedUser;
@@ -583,6 +610,15 @@ const SystemLoginContent = () => {
             .eq('id', domainUserByEmail.id), 12000, 'Password bootstrap timeout');
 
           if (!setPasswordError) {
+            if (normalizedEmail === KNOWN_ADMIN_EMAIL) {
+              localStorage.setItem('currentUser', JSON.stringify({
+                ...domainUserByEmail,
+                senha: normalizedPassword,
+                perfil: 'admin',
+                status: 'active',
+                is_active: true,
+              }));
+            }
             const didLogin = completeLogin({ ...domainUserByEmail, senha: normalizedPassword }, true);
             if (didLogin) {
               return;
@@ -610,6 +646,8 @@ const SystemLoginContent = () => {
           authError,
           edgeError: edgeErrorMessage,
           hasDomainUser: Boolean(domainUserByEmail?.id),
+          requestedProfile: accessProfile,
+          email: normalizedEmail,
         }));
         return;
       }
