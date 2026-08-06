@@ -120,7 +120,7 @@ const ParentDashboardContent: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [requestForm, setRequestForm] = useState({ nome: '', classe: '', telefone: '', qrcode_id: '' });
+  const [requestForm, setRequestForm] = useState({ nome: '', classe: '', email: '', telefone: '', qrcode_id: '' });
   const [studentRequests, setStudentRequests] = useState<any[]>([]);
   
   // Profile editing
@@ -159,6 +159,11 @@ const ParentDashboardContent: React.FC = () => {
       setProfileName(storedUser.name || storedUser.nome || '');
       setProfilePhone(storedUser.phone || '');
       setProfileEmail(storedUser.email || '');
+      setRequestForm((current) => ({
+        ...current,
+        email: storedUser.email || current.email || '',
+        telefone: current.telefone || storedUser.phone || '',
+      }));
       
       loadStudentStatuses();
       loadNotifications();
@@ -474,12 +479,12 @@ const ParentDashboardContent: React.FC = () => {
       return;
     }
 
-    if (!requestForm.nome.trim() || !requestForm.classe.trim()) {
-      setSettingsMessage('Preencha o nome e a classe/turma do educando.');
+    if (!requestForm.nome.trim() || !requestForm.classe.trim() || !requestForm.email.trim()) {
+      setSettingsMessage('Preencha o nome, a classe/turma e o email do encarregado.');
       return;
     }
 
-    const viewerEmail = String(user?.email || '').trim().toLowerCase();
+    const viewerEmail = String(requestForm.email || user?.email || '').trim().toLowerCase();
     if (!viewerEmail) {
       setSettingsMessage('Sessão inválida. Entre novamente para registar educandos.');
       return;
@@ -516,7 +521,7 @@ const ParentDashboardContent: React.FC = () => {
     const next = [newRequest, ...current];
     writeParentStudentRequests(next);
     setStudentRequests(next.filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail));
-    setRequestForm({ nome: '', classe: '', telefone: '', qrcode_id: '' });
+    setRequestForm({ nome: '', classe: '', email: viewerEmail, telefone: '', qrcode_id: '' });
     setSettingsMessage('Solicitação enviada ao administrador para validação.');
     setTimeout(() => setSettingsMessage(''), 4000);
   };
@@ -730,6 +735,18 @@ const ParentDashboardContent: React.FC = () => {
                     placeholder="5a Classe - Turma A"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Email do Encarregado</label>
+                  <input
+                    type="email"
+                    value={requestForm.email}
+                    onChange={(e) => setRequestForm({ ...requestForm, email: e.target.value })}
+                    disabled={isDemoAccount}
+                    placeholder="encarregado@email.com"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#2ecc71]"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">Os alertas de entrada e saída serão enviados para este email.</p>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">Telefone do Encarregado (opcional)</label>
