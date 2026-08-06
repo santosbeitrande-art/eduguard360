@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/networkPerformance";
 import { Building2, GraduationCap, MapPin, Search, Users, LogOut, PlusCircle, Edit3, Trash2, Mail, Phone, CheckCircle } from "lucide-react";
 
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
@@ -242,67 +243,71 @@ const AdminGlobalDashboard = () => {
 
   const loadData = async () => {
     setLoading(true);
+    try {
+      const [{ data: escolasData, error: escolasError }, { data: alunosData, error: alunosError }, { data: entradasData, error: entradasError }, { data: recentEntriesData, error: recentEntriesError }] = await Promise.all([
+        withTimeout(supabase.from('escolas').select('*').order('nome'), 12000, 'Admin schools timeout'),
+        withTimeout(supabase.from('alunos').select('*'), 12000, 'Admin students timeout'),
+        withTimeout(supabase.from('entradas').select('*'), 12000, 'Admin entries timeout'),
+        withTimeout(supabase.from('entradas')
+          .select('id, tipo, data, aluno_id')
+          .order('data', { ascending: false }), 12000, 'Admin recent entries timeout'),
+      ]);
 
-    const [{ data: escolasData, error: escolasError }, { data: alunosData, error: alunosError }, { data: entradasData, error: entradasError }, { data: recentEntriesData, error: recentEntriesError }] = await Promise.all([
-      supabase.from('escolas').select('*').order('nome'),
-      supabase.from('alunos').select('*'),
-      supabase.from('entradas').select('*'),
-      supabase.from('entradas')
-        .select('id, tipo, data, aluno_id')
-        .order('data', { ascending: false }),
-    ]);
-
-    if (escolasError || alunosError || entradasError || recentEntriesError) {
-      console.error('Erro ao carregar dados do admin:', escolasError || alunosError || entradasError || recentEntriesError);
-      setNotification({ type: 'error', message: 'Erro ao carregar informações. Tente novamente.' });
-    }
-
-    // Enriquecer dados de entradas recentes com informações de alunos e escolas
-    let enrichedRecentEntries: any[] = [];
-    if (recentEntriesData && alunosData && escolasData) {
-      const alunosMap = new Map(alunosData.map((a: any) => [a.id, a]));
-      const escolasMap = new Map(escolasData.map((e: any) => [e.id, e]));
-      enrichedRecentEntries = recentEntriesData.map((entry: any) => {
-        const aluno = alunosMap.get(entry.aluno_id);
-        return {
-          ...entry,
-          alunos: aluno,
-          escola: aluno ? escolasMap.get(aluno.escola_id) : null,
-        };
-      });
-    }
-
-    if (escolasData && escolasData.length > 0) {
-      setEscolas(escolasData);
-      writeSchoolsCache(escolasData);
-      if (!selectedSchoolId && escolasData.length) {
-        setSelectedSchoolId(escolasData[0].id);
+      if (escolasError || alunosError || entradasError || recentEntriesError) {
+        console.error('Erro ao carregar dados do admin:', escolasError || alunosError || entradasError || recentEntriesError);
+        setNotification({ type: 'error', message: 'Erro ao carregar informações. Tente novamente.' });
       }
-    } else {
-      const cachedSchools = readSchoolsCache();
-      if (cachedSchools.length > 0) {
-        setEscolas(cachedSchools);
-        if (!selectedSchoolId) {
-          setSelectedSchoolId(cachedSchools[0].id);
+
+      // Enriquecer dados de entradas recentes com informações de alunos e escolas
+      let enrichedRecentEntries: any[] = [];
+      if (recentEntriesData && alunosData && escolasData) {
+        const alunosMap = new Map(alunosData.map((a: any) => [a.id, a]));
+        const escolasMap = new Map(escolasData.map((e: any) => [e.id, e]));
+        enrichedRecentEntries = recentEntriesData.map((entry: any) => {
+          const aluno = alunosMap.get(entry.aluno_id);
+          return {
+            ...entry,
+            alunos: aluno,
+            escola: aluno ? escolasMap.get(aluno.escola_id) : null,
+          };
+        });
+      }
+
+      if (escolasData && escolasData.length > 0) {
+        setEscolas(escolasData);
+        writeSchoolsCache(escolasData);
+        if (!selectedSchoolId && escolasData.length) {
+          setSelectedSchoolId(escolasData[0].id);
         }
-      } else if (escolasData && escolasData.length === 0 && !escolasError) {
-        setEscolas([]);
+      } else {
+        const cachedSchools = readSchoolsCache();
+        if (cachedSchools.length > 0) {
+          setEscolas(cachedSchools);
+          if (!selectedSchoolId) {
+            setSelectedSchoolId(cachedSchools[0].id);
+          }
+        } else if (escolasData && escolasData.length === 0 && !escolasError) {
+          setEscolas([]);
+        }
       }
-    }
 
-    if (alunosData || entradasData) {
-      setStats((currentStats) => ({
-        totalEscolas: escolasData?.length ?? currentStats.totalEscolas,
-        totalAlunos: alunosData?.length ?? currentStats.totalAlunos,
-        totalEntradas: entradasData?.length ?? currentStats.totalEntradas
-      }));
-    }
+      if (alunosData || entradasData) {
+        setStats((currentStats) => ({
+          totalEscolas: escolasData?.length ?? currentStats.totalEscolas,
+          totalAlunos: alunosData?.length ?? currentStats.totalAlunos,
+          totalEntradas: entradasData?.length ?? currentStats.totalEntradas
+        }));
+      }
 
-    if (recentEntriesData) {
-      setRecentEntries(enrichedRecentEntries);
+      if (recentEntriesData) {
+        setRecentEntries(enrichedRecentEntries);
+      }
+    } catch (err) {
+      console.error('Falha ao carregar dashboard admin:', err);
+      setNotification({ type: 'error', message: 'A ligação está lenta. Atualize em alguns segundos.' });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const loadStudents = async (schoolId: string) => {
@@ -313,44 +318,50 @@ const AdminGlobalDashboard = () => {
     }
 
     setStudentsLoading(true);
-    const { data: alunosData, error: alunosError } = await supabase
-      .from('alunos')
-      .select('*')
-      .eq('escola_id', schoolId)
-      .order('nome');
+    try {
+      const { data: alunosData, error: alunosError } = await withTimeout(supabase
+        .from('alunos')
+        .select('*')
+        .eq('escola_id', schoolId)
+        .order('nome'), 12000, 'Admin school students timeout');
 
-    if (alunosError) {
-      console.error('Erro ao carregar alunos:', alunosError);
-      setNotification({ type: 'error', message: 'Falha ao buscar alunos da escola.' });
-      const cached = getCachedStudentsForSchool(schoolId);
-      if (cached.length > 0) {
-        setStudents(cached);
-      }
-      setStudentsLoading(false);
-      return;
-    }
-
-    if ((!alunosData || alunosData.length === 0)) {
-      const cached = getCachedStudentsForSchool(schoolId);
-      if (cached.length > 0) {
-        setStudents(cached);
-        setStudentsLoading(false);
+      if (alunosError) {
+        console.error('Erro ao carregar alunos:', alunosError);
+        setNotification({ type: 'error', message: 'Falha ao buscar alunos da escola.' });
+        const cached = getCachedStudentsForSchool(schoolId);
+        if (cached.length > 0) {
+          setStudents(cached);
+        }
         return;
       }
+
+      if ((!alunosData || alunosData.length === 0)) {
+        const cached = getCachedStudentsForSchool(schoolId);
+        if (cached.length > 0) {
+          setStudents(cached);
+          return;
+        }
+      }
+
+      const guardianIds = Array.from(new Set((alunosData || []).map((student: any) => student.encarregado_id).filter(Boolean)));
+      const guardiansData = guardianIds.length > 0
+        ? (await withTimeout(supabase.from('utilizadores').select('*').in('id', guardianIds), 12000, 'Admin guardians timeout')).data
+        : [];
+      const guardiansMap = new Map((guardiansData || []).map((g: any) => [g.id, g]));
+
+      const mappedStudents = (alunosData || []).map((student: any) => ({
+        ...student,
+        guardian: guardiansMap.get(student.encarregado_id)
+      }));
+
+      setStudents(mappedStudents);
+      cacheStudentsForSchool(schoolId, mappedStudents);
+    } catch (err) {
+      console.error('Falha ao carregar alunos da escola:', err);
+      setNotification({ type: 'error', message: 'A ligação está lenta. Tente novamente.' });
+    } finally {
+      setStudentsLoading(false);
     }
-
-    const guardianIds = Array.from(new Set((alunosData || []).map((student: any) => student.encarregado_id).filter(Boolean)));
-    const { data: guardiansData } = guardianIds.length > 0 ? await supabase.from('utilizadores').select('*').in('id', guardianIds) : { data: [] };
-    const guardiansMap = new Map((guardiansData || []).map((g: any) => [g.id, g]));
-
-    const mappedStudents = (alunosData || []).map((student: any) => ({
-      ...student,
-      guardian: guardiansMap.get(student.encarregado_id)
-    }));
-
-    setStudents(mappedStudents);
-    cacheStudentsForSchool(schoolId, mappedStudents);
-    setStudentsLoading(false);
   };
 
   const clearNotification = () => setNotification(null);

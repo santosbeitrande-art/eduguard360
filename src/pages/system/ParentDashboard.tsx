@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { SystemAuthProvider, useSystemAuth } from '@/context/SystemAuthContext';
 import { supabase } from '@/lib/supabase';
+import { withTimeout } from '@/lib/networkPerformance';
 import ChangePasswordModal from '@/components/eduguard/ChangePasswordModal';
 
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
@@ -119,56 +120,69 @@ const ParentDashboardContent: React.FC = () => {
     setLoading(true);
     try {
       // Buscar alunos do encarregado
-      const { data: alunosData } = await supabase
+      const { data: alunosData } = await withTimeout(supabase
         .from('alunos')
         .select('*')
-        .eq('encarregado_id', parentId);
+        .eq('encarregado_id', parentId), 12000, 'Parent students timeout');
 
       if (!alunosData || alunosData.length === 0) {
         setStudentStatuses([]);
-        setLoading(false);
         return;
       }
 
-      const statuses: any[] = [];
-      for (const student of alunosData) {
-        // Buscar a última entrada deste aluno para determinar o status
-        const { data: ultimasEntradas } = await supabase
+      const studentIds = alunosData.map((student: any) => student.id);
+      const today = new Date().toISOString().split('T')[0];
+
+      const [latestEntriesRes, todayEntriesRes] = await Promise.all([
+        withTimeout(supabase
           .from('entradas')
-          .select('*')
-          .eq('aluno_id', student.id)
-          .order('data', { ascending: false })
-          .limit(1);
-          
-        const lastEntry = ultimasEntradas?.[0];
-        let status = 'not_arrived';
-        if (lastEntry) {
-           status = lastEntry.tipo === 'entrada' ? 'in_school' : 'left_school';
+          .select('aluno_id, tipo, data')
+          .in('aluno_id', studentIds)
+          .order('data', { ascending: false }), 12000, 'Latest entries timeout'),
+        withTimeout(supabase
+          .from('entradas')
+          .select('aluno_id, tipo, data')
+          .in('aluno_id', studentIds)
+          .gte('data', `${today}T00:00:00Z`)
+          .order('data', { ascending: false }), 12000, 'Today entries timeout')
+      ]);
+
+      const latestByStudent = new Map<string, any>();
+      for (const entry of latestEntriesRes.data || []) {
+        if (!latestByStudent.has(entry.aluno_id)) {
+          latestByStudent.set(entry.aluno_id, entry);
         }
+      }
 
-        // Buscar logs de hoje
-        const today = new Date().toISOString().split('T')[0];
-        const { data: logsHoje } = await supabase
-          .from('entradas')
-          .select('*')
-          .eq('aluno_id', student.id)
-          .gte('data', today + 'T00:00:00Z');
+      const todayByStudent = new Map<string, any[]>();
+      for (const entry of todayEntriesRes.data || []) {
+        if (!todayByStudent.has(entry.aluno_id)) {
+          todayByStudent.set(entry.aluno_id, []);
+        }
+        todayByStudent.get(entry.aluno_id)!.push(entry);
+      }
 
-        const today_logs = (logsHoje || []).map(log => ({
+      const statuses: any[] = alunosData.map((student: any) => {
+        const lastEntry = latestByStudent.get(student.id);
+        const status = lastEntry
+          ? (lastEntry.tipo === 'entrada' ? 'in_school' : 'left_school')
+          : 'not_arrived';
+
+        const today_logs = (todayByStudent.get(student.id) || []).map((log: any) => ({
           movement_type: log.tipo.toUpperCase(),
           time: new Date(log.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })
         }));
 
-        statuses.push({
+        return {
           student: { id: student.id, name: student.nome, grade: student.classe, class: '' },
-          status: status,
-          today_logs: today_logs,
+          status,
+          today_logs,
           last_movement: lastEntry ? {
             type: lastEntry.tipo.toUpperCase(),
             time: new Date(lastEntry.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })
           } : null
-        });
-      }
+        };
+      });
       
       setStudentStatuses(statuses);
       if (statuses.length > 0 && !selectedStudent) {
@@ -176,8 +190,10 @@ const ParentDashboardContent: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
+      setStudentStatuses([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadNotifications = async () => {
@@ -188,10 +204,10 @@ const ParentDashboardContent: React.FC = () => {
       }
 
       // Primeiro, busca os alunos do encarregado
-      const { data: alunosData, error: alunosError } = await supabase
+      const { data: alunosData, error: alunosError } = await withTimeout(supabase
         .from('alunos')
         .select('id, nome, classe, escola_id')
-        .eq('encarregado_id', user.id);
+        .eq('encarregado_id', user.id), 12000, 'Parent notifications students timeout');
 
       if (alunosError) {
         console.error('Erro ao buscar alunos:', alunosError);
@@ -206,12 +222,12 @@ const ParentDashboardContent: React.FC = () => {
       }
 
       // Depois, busca as entradas desses alunos
-      const { data: entriesData, error: entriesError } = await supabase
+      const { data: entriesData, error: entriesError } = await withTimeout(supabase
         .from('entradas')
         .select('id, tipo, data, aluno_id')
         .in('aluno_id', studentIds)
         .order('data', { ascending: false })
-        .limit(50);
+        .limit(50), 12000, 'Parent notifications entries timeout');
 
       if (entriesError) {
         console.error('Erro ao carregar notificações:', entriesError);
@@ -244,12 +260,12 @@ const ParentDashboardContent: React.FC = () => {
 
   const loadAttendanceHistory = async (studentId: string) => {
     try {
-      const { data } = await supabase
+      const { data } = await withTimeout(supabase
         .from('entradas')
         .select('*')
         .eq('aluno_id', studentId)
         .order('data', { ascending: false })
-        .limit(20);
+        .limit(20), 12000, 'Parent attendance history timeout');
 
       if (data) {
         const history = data.map(log => {
@@ -264,7 +280,9 @@ const ParentDashboardContent: React.FC = () => {
         });
         setAttendanceHistory(history);
       }
-    } catch (err) {}
+    } catch (err) {
+      setAttendanceHistory([]);
+    }
   };
 
   const saveProfile = async () => {
@@ -280,9 +298,9 @@ const ParentDashboardContent: React.FC = () => {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
       
-      const { data } = await supabase.functions.invoke('eduguard-auth', {
+      const { data } = await withTimeout(supabase.functions.invoke('eduguard-auth', {
         body: { action: 'update_profile', user_id: user?.id, user_type: 'parent', first_name: firstName, last_name: lastName, phone: profilePhone, email: profileEmail }
-      });
+      }), 12000, 'Parent profile update timeout');
       if (data?.success) {
         updateUser({ name: profileName, phone: profilePhone, email: profileEmail });
         setSettingsMessage('Perfil actualizado com sucesso!');
@@ -308,9 +326,9 @@ const ParentDashboardContent: React.FC = () => {
     setSavingSettings(true);
     setSettingsMessage('');
     try {
-      const { data } = await supabase.functions.invoke('eduguard-auth', {
+      const { data } = await withTimeout(supabase.functions.invoke('eduguard-auth', {
         body: { action: 'update_notification_settings', user_id: user?.id, sms_enabled: smsEnabled, sms_phone: smsPhone, email_enabled: emailEnabled, phone: profilePhone }
-      });
+      }), 12000, 'Parent notification settings timeout');
       if (data?.success) {
         updateUser({ sms_enabled: smsEnabled, sms_phone: smsPhone, email_enabled: emailEnabled });
         setSettingsMessage('Definições de notificação actualizadas!');

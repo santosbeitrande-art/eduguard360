@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/networkPerformance";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -38,59 +39,61 @@ const SchoolDashboard = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    
-    // Bloquear acesso se não houver utilizador ou se não for admin/director
-    if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
-      setLoading(false);
-      setData([]);
-      return;
-    }
-
-    let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
-
-    // Se não for admin global, restringe à sua própria escola
-    if (currentUser.perfil !== 'admin') {
-      if (!currentUser.escola_id) {
-        console.error("Utilizador não tem escola associada.");
-        setLoading(false);
+    try {
+      // Bloquear acesso se não houver utilizador ou se não for admin/director
+      if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
+        setData([]);
         return;
       }
-      alunosQuery = alunosQuery.eq('escola_id', currentUser.escola_id);
-    }
 
-    const { data: alunosData, error: alunosError } = await alunosQuery;
+      let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
 
-    if (alunosError) {
-      console.error("Erro ao buscar alunos:", alunosError);
+      // Se não for admin global, restringe à sua própria escola
+      if (currentUser.perfil !== 'admin') {
+        if (!currentUser.escola_id) {
+          console.error("Utilizador não tem escola associada.");
+          return;
+        }
+        alunosQuery = alunosQuery.eq('escola_id', currentUser.escola_id);
+      }
+
+      const { data: alunosData, error: alunosError } = await withTimeout(alunosQuery, 12000, 'School students timeout');
+
+      if (alunosError) {
+        console.error("Erro ao buscar alunos:", alunosError);
+        return;
+      }
+
+      const studentIds = (alunosData || []).map((a) => a.id);
+      if (studentIds.length === 0) {
+        setData([]);
+        return;
+      }
+
+      const { data: entradasData, error: entradasError } = await withTimeout(
+        supabase
+          .from("entradas")
+          .select('id, tipo, data, aluno_id')
+          .in('aluno_id', studentIds)
+          .order("data", { ascending: false }),
+        12000,
+        'School entries timeout'
+      );
+
+      if (entradasError) {
+        console.error("Erro ao buscar dados:", entradasError);
+      } else if (entradasData) {
+        const alunosMap = new Map((alunosData || []).map((a) => [a.id, a]));
+
+        const enrichedData: EntryRecord[] = entradasData.map((entry: any) => ({
+          ...entry,
+          alunos: alunosMap.get(entry.aluno_id) || null
+        }));
+        setData(enrichedData);
+      }
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const studentIds = (alunosData || []).map((a) => a.id);
-    if (studentIds.length === 0) {
-      setData([]);
-      setLoading(false);
-      return;
-    }
-
-    const { data: entradasData, error: entradasError } = await supabase
-      .from("entradas")
-      .select('id, tipo, data, aluno_id')
-      .in('aluno_id', studentIds)
-      .order("data", { ascending: false });
-
-    if (entradasError) {
-      console.error("Erro ao buscar dados:", entradasError);
-    } else if (entradasData) {
-      const alunosMap = new Map((alunosData || []).map((a) => [a.id, a]));
-
-      const enrichedData: EntryRecord[] = entradasData.map((entry: any) => ({
-        ...entry,
-        alunos: alunosMap.get(entry.aluno_id) || null
-      }));
-      setData(enrichedData);
-    }
-    setLoading(false);
   };
 
   const uniqueClasses = useMemo(() => {
