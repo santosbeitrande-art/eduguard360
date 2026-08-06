@@ -1244,12 +1244,16 @@ function getFormSubmitRuntimeStatus() {
   const endpoint = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_ENDPOINT || 'https://formsubmit.co/ajax').trim().replace(/\/+$/, '');
   const recipient = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT || 'admin@eduguard360.co.mz').trim();
   const includeCc = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_CC || 'true').trim().toLowerCase() !== 'false';
+  const origin = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_ORIGIN || 'https://eduguard360.co.mz').trim().replace(/\/+$/, '');
+  const referer = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_REFERER || `${origin}/public/login`).trim();
 
   return {
     configured: Boolean(endpoint && recipient),
     endpoint,
     recipient,
-    includeCc
+    includeCc,
+    origin,
+    referer
   };
 }
 
@@ -1309,7 +1313,10 @@ async function sendPasswordRecoveryViaFormSubmit(email: string, token: string, e
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json'
+      Accept: 'application/json',
+      Origin: formsubmit.origin,
+      Referer: formsubmit.referer,
+      'User-Agent': 'EduGuard360 Verify API Recovery Mailer'
     },
     body: JSON.stringify(body)
   });
