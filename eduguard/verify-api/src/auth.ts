@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
 import type { Request, Response, NextFunction } from 'express';
 import nodemailer from 'nodemailer';
 
@@ -1268,6 +1269,57 @@ function getRecoveryEmailRuntimeStatus() {
   };
 }
 
+async function postJsonWithCompat(url: string, payload: Record<string, unknown>, headers: Record<string, string>) {
+  const body = JSON.stringify(payload);
+
+  if (typeof (globalThis as any).fetch === 'function') {
+    const response = await (globalThis as any).fetch(url, {
+      method: 'POST',
+      headers,
+      body
+    });
+    const text = await response.text();
+    return {
+      ok: Boolean(response.ok),
+      status: Number(response.status || 0),
+      text
+    };
+  }
+
+  return await new Promise<{ ok: boolean; status: number; text: string }>((resolve, reject) => {
+    const target = new URL(url);
+    const req = https.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port ? Number(target.port) : 443,
+      path: `${target.pathname}${target.search}`,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Length': Buffer.byteLength(body).toString()
+      }
+    }, (res) => {
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        raw += chunk;
+      });
+      res.on('end', () => {
+        const status = Number(res.statusCode || 0);
+        resolve({
+          ok: status >= 200 && status < 300,
+          status,
+          text: raw
+        });
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 async function sendPasswordRecoveryViaSmtp(email: string, token: string, expiresInMinutes: number) {
   const smtp = getSmtpRuntimeStatus();
 
@@ -1309,24 +1361,24 @@ async function sendPasswordRecoveryViaFormSubmit(email: string, token: string, e
     message: buildRecoveryEmailBody(token, expiresInMinutes)
   };
 
-  const response = await fetch(`${formsubmit.endpoint}/${encodeURIComponent(formsubmit.recipient)}`, {
-    method: 'POST',
-    headers: {
+  const response = await postJsonWithCompat(
+    `${formsubmit.endpoint}/${encodeURIComponent(formsubmit.recipient)}`,
+    body,
+    {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       Origin: formsubmit.origin,
       Referer: formsubmit.referer,
       'User-Agent': 'EduGuard360 Verify API Recovery Mailer'
-    },
-    body: JSON.stringify(body)
-  });
+    }
+  );
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => 'unknown-response');
+    const detail = response.text || 'unknown-response';
     throw new Error(`formsubmit-send-failed:${response.status}:${detail}`);
   }
 
-  const json = await response.json().catch(() => ({} as any));
+  const json = JSON.parse(response.text || '{}') as any;
   const rawSuccess = String(json?.success || '').trim().toLowerCase();
   if (rawSuccess && rawSuccess !== 'true') {
     const detail = String(json?.message || 'formsubmit-rejected');
