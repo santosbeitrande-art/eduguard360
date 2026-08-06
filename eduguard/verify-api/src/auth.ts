@@ -1319,6 +1319,13 @@ async function sendPasswordRecoveryViaFormSubmit(email: string, token: string, e
     throw new Error(`formsubmit-send-failed:${response.status}:${detail}`);
   }
 
+  const json = await response.json().catch(() => ({} as any));
+  const rawSuccess = String(json?.success || '').trim().toLowerCase();
+  if (rawSuccess && rawSuccess !== 'true') {
+    const detail = String(json?.message || 'formsubmit-rejected');
+    throw new Error(`formsubmit-send-rejected:${detail}`);
+  }
+
   return { delivered: true as const, provider: 'formsubmit' as const };
 }
 
