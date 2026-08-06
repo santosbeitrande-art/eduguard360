@@ -41,6 +41,33 @@ type AccountStatusPanel = {
   items: AccountStatusItem[];
 };
 
+type AccessProfile =
+  | 'super_admin'
+  | 'director'
+  | 'administrator'
+  | 'secretaria'
+  | 'coordenador'
+  | 'professor'
+  | 'financeiro'
+  | 'rh'
+  | 'seguranca'
+  | 'parent'
+  | 'student';
+
+const accessProfileOptions: Array<{ value: AccessProfile; label: string }> = [
+  { value: 'super_admin', label: 'Super Administrador' },
+  { value: 'director', label: 'Diretor' },
+  { value: 'administrator', label: 'Administrador' },
+  { value: 'secretaria', label: 'Secretaria' },
+  { value: 'coordenador', label: 'Coordenador' },
+  { value: 'professor', label: 'Professor' },
+  { value: 'financeiro', label: 'Financeiro' },
+  { value: 'rh', label: 'RH' },
+  { value: 'seguranca', label: 'Seguranca / QR Code' },
+  { value: 'parent', label: 'Encarregado' },
+  { value: 'student', label: 'Aluno' },
+];
+
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
 const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
@@ -168,11 +195,17 @@ const readGeneratedCredentialsLog = (): any[] => {
 
 const normalizeLegacyProfile = (perfil: unknown): string => {
   const normalized = String(perfil || '').trim().toLowerCase();
-  if (normalized === 'super_admin' || normalized === 'admin') return 'admin';
+  if (normalized === 'super_admin' || normalized === 'admin' || normalized === 'superadmin') return 'super_admin';
   if (normalized === 'school_admin' || normalized === 'director' || normalized === 'diretor') return 'director';
-  if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'pai';
+  if (normalized === 'administrator') return 'administrator';
+  if (normalized === 'secretaria' || normalized === 'secretariat') return 'secretaria';
+  if (normalized === 'coordenador' || normalized === 'coordinator') return 'coordenador';
   if (normalized === 'teacher' || normalized === 'professor' || normalized === 'docente') return 'professor';
-  if (normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca') return 'scanner';
+  if (normalized === 'financeiro' || normalized === 'finance') return 'financeiro';
+  if (normalized === 'rh' || normalized === 'hr') return 'rh';
+  if (normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca') return 'seguranca';
+  if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'parent';
+  if (normalized === 'student' || normalized === 'aluno') return 'student';
   return normalized;
 };
 
@@ -180,37 +213,47 @@ const mapEdgeUserToLegacyProfile = (edgeUser: any): string => {
   const role = String(edgeUser?.role || '').trim().toLowerCase();
   const type = String(edgeUser?.type || '').trim().toLowerCase();
 
-  if (role === 'super_admin' || role === 'admin') return 'admin';
-  if (role === 'school_admin' || role === 'director' || role === 'diretor') return 'director';
-  if (role === 'scanner' || role === 'security' || role === 'seguranca') return 'scanner';
-  if (role === 'teacher' || role === 'professor' || role === 'docente') return 'professor';
-  if (type === 'parent' || role === 'parent' || role === 'guardian' || role === 'encarregado' || role === 'pai') return 'pai';
-
+  if (type === 'parent' || role === 'parent' || role === 'guardian' || role === 'encarregado' || role === 'pai') return 'parent';
+  if (type === 'student' || role === 'student' || role === 'aluno') return 'student';
   return normalizeLegacyProfile(role || type || 'director') || 'director';
 };
 
 const getAccessProfileLabel = (accessProfile: string): string => {
-  if (accessProfile === 'director') return 'Diretor / Escola';
+  if (accessProfile === 'super_admin') return 'Super Administrador';
+  if (accessProfile === 'director') return 'Diretor';
+  if (accessProfile === 'administrator') return 'Administrador';
+  if (accessProfile === 'secretaria') return 'Secretaria';
+  if (accessProfile === 'coordenador') return 'Coordenador';
+  if (accessProfile === 'professor') return 'Professor';
+  if (accessProfile === 'financeiro') return 'Financeiro';
+  if (accessProfile === 'rh') return 'RH';
+  if (accessProfile === 'seguranca') return 'Seguranca / QR Code';
   if (accessProfile === 'parent') return 'Encarregado';
-  if (accessProfile === 'teacher') return 'Professor';
-  if (accessProfile === 'scanner') return 'Seguranca QR Code';
+  if (accessProfile === 'student') return 'Aluno';
   return accessProfile;
 };
 
 const getAccessProfileLabelFromLegacyProfile = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
-  if (normalized === 'director' || normalized === 'admin') return getAccessProfileLabel('director');
-  if (normalized === 'pai') return getAccessProfileLabel('parent');
-  if (normalized === 'professor') return getAccessProfileLabel('teacher');
-  if (normalized === 'scanner') return getAccessProfileLabel('scanner');
+  if (normalized === 'super_admin') return getAccessProfileLabel('super_admin');
+  if (normalized === 'director') return getAccessProfileLabel('director');
+  if (normalized === 'administrator') return getAccessProfileLabel('administrator');
+  if (normalized === 'secretaria') return getAccessProfileLabel('secretaria');
+  if (normalized === 'coordenador') return getAccessProfileLabel('coordenador');
+  if (normalized === 'professor') return getAccessProfileLabel('professor');
+  if (normalized === 'financeiro') return getAccessProfileLabel('financeiro');
+  if (normalized === 'rh') return getAccessProfileLabel('rh');
+  if (normalized === 'seguranca') return getAccessProfileLabel('seguranca');
+  if (normalized === 'parent') return getAccessProfileLabel('parent');
+  if (normalized === 'student') return getAccessProfileLabel('student');
   return 'perfil correto';
 };
 
 const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
-  if (accessProfile === 'director') return 'director';
-  if (accessProfile === 'parent') return 'pai';
   if (accessProfile === 'teacher') return 'professor';
-  if (accessProfile === 'scanner') return 'scanner';
+  if (accessProfile === 'scanner') return 'seguranca';
+  if (accessProfile === 'pai') return 'parent';
+  if (accessProfile === 'admin') return 'super_admin';
   return accessProfile;
 };
 
@@ -229,11 +272,17 @@ const normalizeKnownAdminUser = (user: any): any => {
 
 const getLegacyProfileLabel = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
-  if (normalized === 'admin') return 'Administrador';
-  if (normalized === 'director') return 'Diretor / Escola';
-  if (normalized === 'pai') return 'Encarregado';
+  if (normalized === 'super_admin') return 'Super Administrador';
+  if (normalized === 'director') return 'Diretor';
+  if (normalized === 'administrator') return 'Administrador';
+  if (normalized === 'secretaria') return 'Secretaria';
+  if (normalized === 'coordenador') return 'Coordenador';
   if (normalized === 'professor') return 'Professor';
-  if (normalized === 'scanner') return 'Seguranca QR Code';
+  if (normalized === 'financeiro') return 'Financeiro';
+  if (normalized === 'rh') return 'RH';
+  if (normalized === 'seguranca') return 'Seguranca QR Code';
+  if (normalized === 'parent') return 'Encarregado';
+  if (normalized === 'student') return 'Aluno';
   return normalized || 'Utilizador';
 };
 
@@ -331,7 +380,7 @@ const SystemLoginContent = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [selectedRole, setSelectedRole] = useState("director");
-  const [accessProfile, setAccessProfile] = useState("director");
+  const [accessProfile, setAccessProfile] = useState<AccessProfile>('director');
   const [selectedSchoolId, setSelectedSchoolId] = useState("");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [paymentProvider, setPaymentProvider] = useState<"mpesa" | "emola">("mpesa");
@@ -1070,13 +1119,12 @@ const SystemLoginContent = () => {
               <select
                 id="access-profile"
                 value={accessProfile}
-                onChange={(e) => setAccessProfile(e.target.value)}
+                onChange={(e) => setAccessProfile(e.target.value as AccessProfile)}
                 className="w-full rounded-xl px-3 py-2 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
               >
-                <option value="director">{t('sistema.role_director')}</option>
-                <option value="parent">{t('sistema.role_parent')}</option>
-                <option value="teacher">{t('sistema.role_teacher')}</option>
-                <option value="scanner">Seguranca QR Code</option>
+                {accessProfileOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
             </div>
           </details>

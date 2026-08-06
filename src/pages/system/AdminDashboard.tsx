@@ -40,13 +40,71 @@ const splitFullName = (fullName: string) => {
   };
 };
 
+type PeopleRoleKey =
+  | 'super_admin'
+  | 'director'
+  | 'administrator'
+  | 'secretaria'
+  | 'coordenador'
+  | 'professor'
+  | 'financeiro'
+  | 'rh'
+  | 'seguranca'
+  | 'parent'
+  | 'student';
+
+type PeopleProfileFilter = 'all' | PeopleRoleKey;
+
+const peopleRoleLabelMap: Record<PeopleRoleKey, string> = {
+  super_admin: 'Super Administrador',
+  director: 'Diretor',
+  administrator: 'Administrador',
+  secretaria: 'Secretaria',
+  coordenador: 'Coordenador',
+  professor: 'Professor',
+  financeiro: 'Financeiro',
+  rh: 'RH',
+  seguranca: 'Segurança',
+  parent: 'Encarregado',
+  student: 'Aluno',
+};
+
+const peopleRoleFilterOptions: Array<{ value: PeopleProfileFilter; label: string }> = [
+  { value: 'all', label: 'Todos os perfis' },
+  { value: 'super_admin', label: 'Super Administrador' },
+  { value: 'director', label: 'Diretores' },
+  { value: 'administrator', label: 'Administradores' },
+  { value: 'secretaria', label: 'Secretarias' },
+  { value: 'coordenador', label: 'Coordenadores' },
+  { value: 'professor', label: 'Professores' },
+  { value: 'financeiro', label: 'Financeiro' },
+  { value: 'rh', label: 'RH' },
+  { value: 'seguranca', label: 'Segurança' },
+  { value: 'parent', label: 'Encarregados' },
+  { value: 'student', label: 'Alunos' },
+];
+
+const normalizePeopleRole = (perfil: unknown): PeopleRoleKey | null => {
+  const normalized = String(perfil || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'super_admin' || normalized === 'admin' || normalized === 'superadmin') return 'super_admin';
+  if (normalized === 'director' || normalized === 'school_admin' || normalized === 'diretor') return 'director';
+  if (normalized === 'administrator') return 'administrator';
+  if (normalized === 'secretaria' || normalized === 'secretariat') return 'secretaria';
+  if (normalized === 'coordenador' || normalized === 'coordinator') return 'coordenador';
+  if (normalized === 'professor' || normalized === 'teacher' || normalized === 'docente') return 'professor';
+  if (normalized === 'financeiro' || normalized === 'finance') return 'financeiro';
+  if (normalized === 'rh' || normalized === 'hr') return 'rh';
+  if (normalized === 'seguranca' || normalized === 'security' || normalized === 'scanner') return 'seguranca';
+  if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'parent';
+  if (normalized === 'student' || normalized === 'aluno') return 'student';
+  return null;
+};
+
 const getPendingRoleLabel = (perfil: string) => {
-  const normalized = String(perfil || '').toLowerCase();
-  if (normalized === 'pai' || normalized === 'parent') return 'Encarregado';
-  if (normalized === 'professor' || normalized === 'teacher') return 'Professor';
-  if (normalized === 'scanner' || normalized === 'security') return 'Segurança QR';
-  if (normalized === 'director' || normalized === 'school_admin') return 'Diretor';
-  return normalized || 'Utilizador';
+  const normalized = normalizePeopleRole(perfil);
+  if (!normalized) return String(perfil || '').toLowerCase() || 'Utilizador';
+  return peopleRoleLabelMap[normalized] || 'Utilizador';
 };
 
 const readLocalApprovedUsers = (): any[] => {
@@ -132,21 +190,6 @@ const writeRepairWorkflow = (items: Record<string, { status: string; note?: stri
   emitGlobalSync('repair-workflow-updated');
 };
 
-const isTeacherProfile = (perfil: unknown) => {
-  const normalized = String(perfil || '').trim().toLowerCase();
-  return normalized === 'professor' || normalized === 'teacher' || normalized === 'docente';
-};
-
-const isDirectorProfile = (perfil: unknown) => {
-  const normalized = String(perfil || '').trim().toLowerCase();
-  return normalized === 'director' || normalized === 'school_admin' || normalized === 'diretor';
-};
-
-const isSecurityProfile = (perfil: unknown) => {
-  const normalized = String(perfil || '').trim().toLowerCase();
-  return normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca';
-};
-
 const AdminGlobalDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -187,16 +230,12 @@ const AdminGlobalDashboard = () => {
   const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | 'entrada' | 'saida'>('all');
   const [movementDateFrom, setMovementDateFrom] = useState('');
   const [movementDateTo, setMovementDateTo] = useState('');
-  const [teachers, setTeachers] = useState<any[]>([]);
-  const [teachersLoading, setTeachersLoading] = useState(false);
-  const [directors, setDirectors] = useState<any[]>([]);
-  const [directorsLoading, setDirectorsLoading] = useState(false);
-  const [securityUsers, setSecurityUsers] = useState<any[]>([]);
-  const [securityUsersLoading, setSecurityUsersLoading] = useState(false);
-  const [peopleProfileFilter, setPeopleProfileFilter] = useState<'all' | 'teacher' | 'director' | 'security'>(() => {
+  const [peopleUsers, setPeopleUsers] = useState<any[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleProfileFilter, setPeopleProfileFilter] = useState<PeopleProfileFilter>(() => {
     const requestedProfile = String(searchParams.get('peopleProfile') || '').trim().toLowerCase();
-    if (requestedProfile === 'teacher' || requestedProfile === 'director' || requestedProfile === 'security') {
-      return requestedProfile;
+    if (peopleRoleFilterOptions.some((option) => option.value === requestedProfile)) {
+      return requestedProfile as PeopleProfileFilter;
     }
     return 'all';
   });
@@ -420,17 +459,8 @@ const AdminGlobalDashboard = () => {
     }
   };
 
-  const loadRoleUsers = async (params: {
-    remoteProfiles: string[];
-    localProfileFilter: (perfil: unknown) => boolean;
-    setItems: (items: any[]) => void;
-    setLoading: (loading: boolean) => void;
-    timeoutLabel: string;
-    logLabel: string;
-    fallbackPrefix: string;
-    defaultProfile: string;
-  }) => {
-    params.setLoading(true);
+  const loadRoleUsers = async () => {
+    setPeopleLoading(true);
     try {
       const schoolSource = escolas.length > 0 ? escolas : readSchoolsCache();
       const schoolsById = new Map(
@@ -441,22 +471,34 @@ const AdminGlobalDashboard = () => {
         supabase
           .from('utilizadores')
           .select('id,nome,email,telefone,perfil,escola_id,status,is_active')
-          .in('perfil', params.remoteProfiles)
+          .in('perfil', [
+            'super_admin', 'admin', 'superadmin',
+            'director', 'school_admin', 'diretor',
+            'administrator',
+            'secretaria', 'secretariat',
+            'coordenador', 'coordinator',
+            'professor', 'teacher', 'docente',
+            'financeiro', 'finance',
+            'rh', 'hr',
+            'seguranca', 'security', 'scanner',
+            'parent', 'pai', 'encarregado',
+            'student', 'aluno',
+          ])
           .order('nome'),
         12000,
-        params.timeoutLabel
+        'Admin people profiles timeout'
       );
 
       if (error) {
-        console.warn(`Falha ao carregar ${params.logLabel} remotos:`, error);
+        console.warn('Falha ao carregar perfis remotos:', error);
       }
 
       const remoteList = (remoteUsers || []).map((entry: any) => ({
-        id: entry.id || `${params.fallbackPrefix}-${entry.email || Math.random()}`,
+        id: entry.id || `remote-${entry.email || Math.random()}`,
         nome: entry.nome || 'Sem nome',
         email: String(entry.email || '').trim().toLowerCase(),
         telefone: entry.telefone || null,
-        perfil: entry.perfil || params.defaultProfile,
+        perfil: entry.perfil || 'utilizador',
         escola_id: entry.escola_id || null,
         status: entry.status || null,
         is_active: entry.is_active,
@@ -464,13 +506,12 @@ const AdminGlobalDashboard = () => {
       }));
 
       const localList = readLocalApprovedUsers()
-        .filter((user) => params.localProfileFilter(user?.perfil))
         .map((entry) => ({
-          id: entry.id || `local-${params.fallbackPrefix}-${entry.email || Date.now()}`,
+          id: entry.id || `local-user-${entry.email || Date.now()}`,
           nome: entry.nome || 'Sem nome',
           email: String(entry.email || '').trim().toLowerCase(),
           telefone: entry.telefone || null,
-          perfil: entry.perfil || params.defaultProfile,
+          perfil: entry.perfil || 'utilizador',
           escola_id: entry.escola_id || null,
           status: entry.status || 'active',
           is_active: entry.is_active ?? true,
@@ -485,10 +526,13 @@ const AdminGlobalDashboard = () => {
         if (item.email) mergedByEmail.set(item.email, item);
       }
 
-      const merged = Array.from(mergedByEmail.values()).map((teacher) => {
-        const schoolId = String(teacher.escola_id || '').trim();
+      const merged = Array.from(mergedByEmail.values()).map((person) => {
+        const schoolId = String(person.escola_id || '').trim();
+        const roleKey = normalizePeopleRole(person.perfil);
         return {
-          ...teacher,
+          ...person,
+          roleKey,
+          roleLabel: roleKey ? peopleRoleLabelMap[roleKey] : getPendingRoleLabel(person.perfil),
           schoolName: schoolId
             ? (schoolsById.get(schoolId) || `Escola ${schoolId.slice(0, 8)}`)
             : 'Sem escola associada',
@@ -496,70 +540,30 @@ const AdminGlobalDashboard = () => {
       });
 
       merged.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
-      params.setItems(merged);
+      setPeopleUsers(merged);
     } catch (error) {
-      console.error(`Falha ao carregar ${params.logLabel}:`, error);
+      console.error('Falha ao carregar perfis da equipa:', error);
       const fallbackItems = readLocalApprovedUsers()
-        .filter((user) => params.localProfileFilter(user?.perfil))
         .map((entry) => ({
-          id: entry.id || `local-${params.fallbackPrefix}-${entry.email || Date.now()}`,
+          id: entry.id || `local-user-${entry.email || Date.now()}`,
           nome: entry.nome || 'Sem nome',
           email: String(entry.email || '').trim().toLowerCase(),
           telefone: entry.telefone || null,
-          perfil: entry.perfil || params.defaultProfile,
+          perfil: entry.perfil || 'utilizador',
+          roleKey: normalizePeopleRole(entry.perfil),
+          roleLabel: getPendingRoleLabel(entry.perfil),
           escola_id: entry.escola_id || null,
           schoolName: entry.escola_id ? `Escola ${String(entry.escola_id).slice(0, 8)}` : 'Sem escola associada',
           source: 'local',
         }));
-      params.setItems(fallbackItems);
+      setPeopleUsers(fallbackItems);
     } finally {
-      params.setLoading(false);
+      setPeopleLoading(false);
     }
   };
 
-  const loadTeachers = async () => {
-    await loadRoleUsers({
-      remoteProfiles: ['professor', 'teacher', 'docente'],
-      localProfileFilter: isTeacherProfile,
-      setItems: setTeachers,
-      setLoading: setTeachersLoading,
-      timeoutLabel: 'Admin teachers timeout',
-      logLabel: 'professores',
-      fallbackPrefix: 'teacher',
-      defaultProfile: 'professor',
-    });
-  };
-
-  const loadDirectors = async () => {
-    await loadRoleUsers({
-      remoteProfiles: ['director', 'school_admin', 'diretor'],
-      localProfileFilter: isDirectorProfile,
-      setItems: setDirectors,
-      setLoading: setDirectorsLoading,
-      timeoutLabel: 'Admin directors timeout',
-      logLabel: 'diretores',
-      fallbackPrefix: 'director',
-      defaultProfile: 'director',
-    });
-  };
-
-  const loadSecurityUsers = async () => {
-    await loadRoleUsers({
-      remoteProfiles: ['scanner', 'security', 'seguranca'],
-      localProfileFilter: isSecurityProfile,
-      setItems: setSecurityUsers,
-      setLoading: setSecurityUsersLoading,
-      timeoutLabel: 'Admin security timeout',
-      logLabel: 'segurancas',
-      fallbackPrefix: 'security',
-      defaultProfile: 'scanner',
-    });
-  };
-
   const loadAllRoleUsers = () => {
-    loadTeachers();
-    loadDirectors();
-    loadSecurityUsers();
+    loadRoleUsers();
   };
 
   const handleRefreshAllData = () => {
@@ -574,11 +578,7 @@ const AdminGlobalDashboard = () => {
     }
   };
 
-  const peopleRows = [
-    ...teachers.map((item) => ({ ...item, roleKey: 'teacher', roleLabel: 'Professor' })),
-    ...directors.map((item) => ({ ...item, roleKey: 'director', roleLabel: 'Diretor' })),
-    ...securityUsers.map((item) => ({ ...item, roleKey: 'security', roleLabel: 'Segurança' })),
-  ];
+  const peopleRows = peopleUsers;
 
   const schoolFilterOptions = Array.from(new Map(
     [...escolas, ...peopleRows]
@@ -608,17 +608,30 @@ const AdminGlobalDashboard = () => {
   });
 
   const peopleSummary = filteredPeopleRows.reduce((summary, person) => {
-    summary[person.roleKey as 'teacher' | 'director' | 'security'] = (summary[person.roleKey as 'teacher' | 'director' | 'security'] || 0) + 1;
+    const roleKey = person.roleKey as PeopleRoleKey | null;
+    if (roleKey && summary.counts[roleKey] !== undefined) {
+      summary.counts[roleKey] += 1;
+    }
     if (person.escola_id) {
       summary.schools.add(String(person.escola_id));
     }
     return summary;
   }, {
-    teacher: 0,
-    director: 0,
-    security: 0,
+    counts: {
+      super_admin: 0,
+      director: 0,
+      administrator: 0,
+      secretaria: 0,
+      coordenador: 0,
+      professor: 0,
+      financeiro: 0,
+      rh: 0,
+      seguranca: 0,
+      parent: 0,
+      student: 0,
+    },
     schools: new Set<string>(),
-  } as { teacher: number; director: number; security: number; schools: Set<string> });
+  } as { counts: Record<PeopleRoleKey, number>; schools: Set<string> });
 
   const loadStudents = async (schoolId: string) => {
     if (schoolId.startsWith('local-school-')) {
@@ -2048,13 +2061,15 @@ const AdminGlobalDashboard = () => {
               <div className="p-6 border-b border-white/10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-white">Equipa por Perfil</h2>
-                  <p className="text-gray-400 text-sm">Professores, diretores e seguranças numa única visão com filtros rápidos por perfil e escola.</p>
+                  <p className="text-gray-400 text-sm">Perfis de governação e operação numa única visão com filtros rápidos por papel e escola.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
                   <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1"><Users className="w-4 h-4" /> {filteredPeopleRows.length} registo(s)</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Professores: {peopleSummary.teacher}</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Diretores: {peopleSummary.director}</span>
-                  <span className="rounded-full bg-white/5 px-3 py-1">Seguranças: {peopleSummary.security}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Diretores: {peopleSummary.counts.director}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Administradores: {peopleSummary.counts.administrator}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Secretarias: {peopleSummary.counts.secretaria}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Professores: {peopleSummary.counts.professor}</span>
+                  <span className="rounded-full bg-white/5 px-3 py-1">Segurança: {peopleSummary.counts.seguranca}</span>
                   <span className="rounded-full bg-white/5 px-3 py-1">Escolas: {peopleSummary.schools.size}</span>
                 </div>
               </div>
@@ -2062,14 +2077,13 @@ const AdminGlobalDashboard = () => {
                 <div className="grid gap-3 md:grid-cols-3">
                   <select
                     value={peopleProfileFilter}
-                    onChange={(event) => setPeopleProfileFilter(event.target.value as 'all' | 'teacher' | 'director' | 'security')}
+                    onChange={(event) => setPeopleProfileFilter(event.target.value as PeopleProfileFilter)}
                     className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white outline-none"
                     aria-label="Filtrar por perfil"
                   >
-                    <option value="all">Todos os perfis</option>
-                    <option value="teacher">Professores</option>
-                    <option value="director">Diretores</option>
-                    <option value="security">Seguranças</option>
+                    {peopleRoleFilterOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
                   </select>
                   <select
                     value={peopleSchoolFilter}
@@ -2093,12 +2107,9 @@ const AdminGlobalDashboard = () => {
 
                 <div className="flex flex-wrap gap-2">
                   <button onClick={loadAllRoleUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Lista</button>
-                  <button onClick={loadTeachers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Professores</button>
-                  <button onClick={loadDirectors} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Diretores</button>
-                  <button onClick={loadSecurityUsers} className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Atualizar Seguranças</button>
                 </div>
 
-                {teachersLoading || directorsLoading || securityUsersLoading ? (
+                {peopleLoading ? (
                   <div className="text-gray-400">A carregar perfis...</div>
                 ) : filteredPeopleRows.length === 0 ? (
                   <div className="text-gray-400">Nenhum registo encontrado para os filtros selecionados.</div>

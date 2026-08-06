@@ -25,7 +25,19 @@ import {
   WalletCards,
 } from 'lucide-react';
 
-type EnterpriseRole = 'director' | 'teacher' | 'security' | 'parent' | 'admin' | 'other';
+type EnterpriseRole =
+  | 'super_admin'
+  | 'director'
+  | 'administrator'
+  | 'secretaria'
+  | 'coordenador'
+  | 'professor'
+  | 'financeiro'
+  | 'rh'
+  | 'seguranca'
+  | 'parent'
+  | 'student'
+  | 'other';
 type DashboardLens = 'director' | 'teacher' | 'secretaria' | 'financeiro';
 
 type EnterpriseCard = {
@@ -53,18 +65,39 @@ type TimelineEvent = {
 };
 
 const isRelevantRole = (perfil: unknown) => {
-  const normalized = String(perfil || '').trim().toLowerCase();
-  return normalized === 'director' || normalized === 'school_admin' || normalized === 'teacher' || normalized === 'professor' || normalized === 'scanner' || normalized === 'security' || normalized === 'admin';
+  const role = normalizeEnterpriseRole(perfil);
+  return role !== 'unknown' && role !== 'parent' && role !== 'student';
 };
 
 const getRoleLabel = (perfil: unknown): EnterpriseRole => {
-  const normalized = String(perfil || '').trim().toLowerCase();
-  if (normalized === 'director' || normalized === 'school_admin') return 'director';
-  if (normalized === 'teacher' || normalized === 'professor' || normalized === 'docente') return 'teacher';
-  if (normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca') return 'security';
-  if (normalized === 'admin') return 'admin';
-  if (normalized === 'pai' || normalized === 'parent') return 'parent';
+  const role = normalizeEnterpriseRole(perfil);
+  if (role === 'super_admin') return 'super_admin';
+  if (role === 'director') return 'director';
+  if (role === 'administrator') return 'administrator';
+  if (role === 'secretaria') return 'secretaria';
+  if (role === 'coordenador') return 'coordenador';
+  if (role === 'professor') return 'professor';
+  if (role === 'financeiro') return 'financeiro';
+  if (role === 'rh') return 'rh';
+  if (role === 'seguranca') return 'seguranca';
+  if (role === 'parent') return 'parent';
+  if (role === 'student') return 'student';
   return 'other';
+};
+
+const getRoleDisplayLabel = (role: EnterpriseRole): string => {
+  if (role === 'super_admin') return 'Super Administrador';
+  if (role === 'director') return 'Diretor';
+  if (role === 'administrator') return 'Administrador';
+  if (role === 'secretaria') return 'Secretaria';
+  if (role === 'coordenador') return 'Coordenador';
+  if (role === 'professor') return 'Professor';
+  if (role === 'financeiro') return 'Financeiro';
+  if (role === 'rh') return 'RH';
+  if (role === 'seguranca') return 'Segurança';
+  if (role === 'parent') return 'Encarregado';
+  if (role === 'student') return 'Aluno';
+  return 'Outro';
 };
 
 const toneClass = {
@@ -137,7 +170,8 @@ const EnterprisePortalPage = () => {
         .filter((user: any) => isRelevantRole(user?.perfil))
         .map((user: any) => ({
           ...user,
-          roleLabel: getRoleLabel(user?.perfil),
+          roleKey: getRoleLabel(user?.perfil),
+          roleLabel: getRoleDisplayLabel(getRoleLabel(user?.perfil)),
           schoolName: schoolsData.find((school: any) => String(school.id) === String(user.escola_id))?.nome || 'Sem escola associada',
           source: 'remote',
         }));
@@ -151,9 +185,9 @@ const EnterprisePortalPage = () => {
       setStats({
         schools: schoolsData.length,
         staff: staffData.length,
-        directors: staffData.filter((item: any) => item.roleLabel === 'director').length,
-        teachers: staffData.filter((item: any) => item.roleLabel === 'teacher').length,
-        security: staffData.filter((item: any) => item.roleLabel === 'security').length,
+        directors: staffData.filter((item: any) => item.roleKey === 'director').length,
+        teachers: staffData.filter((item: any) => item.roleKey === 'professor').length,
+        security: staffData.filter((item: any) => item.roleKey === 'seguranca').length,
         parents: usersData.filter((item: any) => getRoleLabel(item?.perfil) === 'parent' || studentsData.some((student: any) => String(student.encarregado_id) === String(item.id))).length,
         pendingUsers,
       });
@@ -329,7 +363,7 @@ const EnterprisePortalPage = () => {
       ? parentRequests.filter((item: any) => String(item?.status || '').toLowerCase() === 'pending').length
       : 0;
 
-    const teachersWithoutSchool = staff.filter((item: any) => item.roleLabel === 'teacher' && !item.escola_id).length;
+    const teachersWithoutSchoolByRole = staff.filter((item: any) => item.roleKey === 'professor' && !item.escola_id).length;
     const pendingUsers = users.filter((item: any) => item?.status === 'pending' || item?.is_active === false).length;
     const studentsWithoutClass = students.filter((item: any) => !String(item?.classe || '').trim()).length;
 
@@ -337,7 +371,7 @@ const EnterprisePortalPage = () => {
 
     return [
       { id: 'enrollment', title: 'Matrículas por aprovar', owner: 'Secretaria', count: pendingRequests, tone: 'amber' },
-      { id: 'teacher-schedule', title: 'Professores sem escola atribuída', owner: 'Direção', count: Math.max(teachersWithoutSchool, Number(workflowSummary.in_review || 0)), tone: 'sky' },
+      { id: 'teacher-schedule', title: 'Professores sem escola atribuída', owner: 'Direção', count: Math.max(teachersWithoutSchoolByRole, Number(workflowSummary.in_review || 0)), tone: 'sky' },
       { id: 'accounts', title: 'Contas pendentes/inativas', owner: 'Admin', count: Math.max(pendingUsers, Number(workflowSummary.pending || 0)), tone: 'rose' },
       { id: 'classroom', title: 'Alunos sem turma definida', owner: 'Gestão Académica', count: Math.max(studentsWithoutClass, Number(workflowSummary.approved || 0)), tone: 'emerald' },
     ];
