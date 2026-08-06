@@ -7,6 +7,7 @@ import { withTimeout } from '@/lib/networkPerformance';
 import ChangePasswordModal from '@/components/eduguard/ChangePasswordModal';
 
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
+const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 
 const readParentStudentRequests = (): any[] => {
   try {
@@ -20,6 +21,16 @@ const readParentStudentRequests = (): any[] => {
 
 const writeParentStudentRequests = (items: any[]) => {
   localStorage.setItem(PARENT_STUDENT_REQUESTS_KEY, JSON.stringify(items));
+};
+
+const readStudentsCache = (): Record<string, any[]> => {
+  try {
+    const raw = localStorage.getItem(STUDENTS_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 };
 
 const requestStatusLabel = (status: string) => {
@@ -37,6 +48,38 @@ const requestStatusStyle = (status: string) => {
   if (normalized === 'rejected') return 'bg-red-500/20 text-red-300 border border-red-500/30';
   if (normalized === 'standby') return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
   return 'bg-sky-500/20 text-sky-300 border border-sky-500/30';
+};
+
+const buildRequestNotifications = (viewerEmail: string) => {
+  return readParentStudentRequests()
+    .filter((entry) => String(entry?.guardianEmail || '').trim().toLowerCase() === viewerEmail)
+    .filter((entry) => ['approved', 'rejected', 'standby'].includes(String(entry?.status || '').toLowerCase()))
+    .map((entry) => {
+      const normalizedStatus = String(entry?.status || '').toLowerCase();
+      const studentName = entry?.studentName || 'Educando';
+      const statusLabel = requestStatusLabel(normalizedStatus);
+      return {
+        notification_id: `request-${entry.id}`,
+        title: `Cadastro ${statusLabel.toLowerCase()}`,
+        message: entry?.admin_note
+          ? `${studentName}: ${entry.admin_note}`
+          : `${studentName}: o administrador marcou o cadastro como ${statusLabel.toLowerCase()}.`,
+        type: normalizedStatus === 'approved' ? 'APPROVED' : normalizedStatus === 'rejected' ? 'REJECTED' : 'STANDBY',
+        created_at: entry.updated_at || entry.created_at || new Date().toISOString(),
+        channel: 'app',
+      };
+    });
+};
+
+const getCachedStudentsForParent = (viewerEmail: string) => {
+  const cache = readStudentsCache();
+  const allStudents = Object.values(cache).flatMap((items) => Array.isArray(items) ? items : []);
+  const normalizedEmail = String(viewerEmail || '').trim().toLowerCase();
+
+  return allStudents.filter((student: any) => {
+    const guardianEmail = String(student?.guardian?.email || student?.guardianEmail || '').trim().toLowerCase();
+    return guardianEmail === normalizedEmail;
+  });
 };
 
 const ShieldIcon = () => (
@@ -95,7 +138,7 @@ const ParentDashboardContent: React.FC = () => {
       setProfilePhone(storedUser.phone || '');
       setProfileEmail(storedUser.email || '');
       
-      loadStudentStatuses(storedUser.id);
+      loadStudentStatuses();
       loadNotifications();
     }
   }, [user]);
@@ -116,36 +159,56 @@ const ParentDashboardContent: React.FC = () => {
     setStudentRequests(mine);
   }, [user?.email]);
 
-  const loadStudentStatuses = async (parentId: string) => {
+  const loadStudentStatuses = async () => {
     setLoading(true);
     try {
-      // Buscar alunos do encarregado
-      const { data: alunosData } = await withTimeout(supabase
+      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+
+      // A RLS ja limita o encarregado aos seus proprios educandos.
+      const { data: alunosData, error: alunosError } = await withTimeout(supabase
         .from('alunos')
         .select('*')
-        .eq('encarregado_id', parentId), 12000, 'Parent students timeout');
+        .order('nome'), 12000, 'Parent students timeout');
 
-      if (!alunosData || alunosData.length === 0) {
+      if (alunosError) {
+        console.error('Erro ao buscar educandos do encarregado:', alunosError);
+      }
+
+      const effectiveStudents = Array.isArray(alunosData) && alunosData.length > 0
+        ? alunosData
+        : getCachedStudentsForParent(viewerEmail).map((student: any) => ({
+            id: student.id,
+            nome: student.nome,
+            classe: student.classe,
+            escola_id: student.escola_id || null,
+            encarregado_id: student.encarregado_id || student.guardian?.id || null,
+          }));
+
+      if (!effectiveStudents || effectiveStudents.length === 0) {
         setStudentStatuses([]);
         return;
       }
 
-      const studentIds = alunosData.map((student: any) => student.id);
+      const studentIds = effectiveStudents
+        .map((student: any) => student.id)
+        .filter((id: any) => typeof id === 'string' && !String(id).startsWith('local-'));
       const today = new Date().toISOString().split('T')[0];
 
-      const [latestEntriesRes, todayEntriesRes] = await Promise.all([
-        withTimeout(supabase
-          .from('entradas')
-          .select('aluno_id, tipo, data')
-          .in('aluno_id', studentIds)
-          .order('data', { ascending: false }), 12000, 'Latest entries timeout'),
-        withTimeout(supabase
-          .from('entradas')
-          .select('aluno_id, tipo, data')
-          .in('aluno_id', studentIds)
-          .gte('data', `${today}T00:00:00Z`)
-          .order('data', { ascending: false }), 12000, 'Today entries timeout')
-      ]);
+      const [latestEntriesRes, todayEntriesRes] = studentIds.length > 0
+        ? await Promise.all([
+            withTimeout(supabase
+              .from('entradas')
+              .select('aluno_id, tipo, data')
+              .in('aluno_id', studentIds)
+              .order('data', { ascending: false }), 12000, 'Latest entries timeout'),
+            withTimeout(supabase
+              .from('entradas')
+              .select('aluno_id, tipo, data')
+              .in('aluno_id', studentIds)
+              .gte('data', `${today}T00:00:00Z`)
+              .order('data', { ascending: false }), 12000, 'Today entries timeout')
+          ])
+        : [{ data: [], error: null }, { data: [], error: null }];
 
       const latestByStudent = new Map<string, any>();
       for (const entry of latestEntriesRes.data || []) {
@@ -162,7 +225,7 @@ const ParentDashboardContent: React.FC = () => {
         todayByStudent.get(entry.aluno_id)!.push(entry);
       }
 
-      const statuses: any[] = alunosData.map((student: any) => {
+      const statuses: any[] = effectiveStudents.map((student: any) => {
         const lastEntry = latestByStudent.get(student.id);
         const status = lastEntry
           ? (lastEntry.tipo === 'entrada' ? 'in_school' : 'left_school')
@@ -198,26 +261,29 @@ const ParentDashboardContent: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
-      if (!user?.id) {
-        setNotifications([]);
+      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+      const requestNotifications = viewerEmail ? buildRequestNotifications(viewerEmail) : [];
+
+      if (!user?.id && !viewerEmail) {
+        setNotifications(requestNotifications);
         return;
       }
 
-      // Primeiro, busca os alunos do encarregado
+      // A RLS ja limita os alunos ao encarregado autenticado.
       const { data: alunosData, error: alunosError } = await withTimeout(supabase
         .from('alunos')
         .select('id, nome, classe, escola_id')
-        .eq('encarregado_id', user.id), 12000, 'Parent notifications students timeout');
+        .order('nome'), 12000, 'Parent notifications students timeout');
 
       if (alunosError) {
         console.error('Erro ao buscar alunos:', alunosError);
-        setNotifications([]);
+        setNotifications(requestNotifications);
         return;
       }
 
       const studentIds = (alunosData || []).map((s: any) => s.id);
       if (studentIds.length === 0) {
-        setNotifications([]);
+        setNotifications(requestNotifications);
         return;
       }
 
@@ -231,7 +297,7 @@ const ParentDashboardContent: React.FC = () => {
 
       if (entriesError) {
         console.error('Erro ao carregar notificações:', entriesError);
-        setNotifications([]);
+        setNotifications(requestNotifications);
         return;
       }
 
@@ -251,10 +317,14 @@ const ParentDashboardContent: React.FC = () => {
         };
       });
 
-      setNotifications(mappedNotifications);
+      const mergedNotifications = [...mappedNotifications, ...requestNotifications]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      setNotifications(mergedNotifications);
     } catch (err) {
       console.error('Erro ao carregar notificações:', err);
-      setNotifications([]);
+      const viewerEmail = String(user?.email || '').trim().toLowerCase();
+      setNotifications(viewerEmail ? buildRequestNotifications(viewerEmail) : []);
     }
   };
 
