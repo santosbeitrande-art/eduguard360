@@ -25,6 +25,21 @@ type SchoolTrial = {
   validUntil: string;
 };
 
+type AccountStatusTone = 'ok' | 'warn' | 'error' | 'info';
+
+type AccountStatusItem = {
+  label: string;
+  value: string;
+  tone: AccountStatusTone;
+};
+
+type AccountStatusPanel = {
+  title: string;
+  summary: string;
+  tone: AccountStatusTone;
+  items: AccountStatusItem[];
+};
+
 const SCHOOL_SUBSCRIPTIONS_KEY = "eduguard_school_subscriptions";
 const SCHOOL_TRIALS_KEY = "eduguard_school_trials";
 const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
@@ -180,6 +195,14 @@ const getAccessProfileLabel = (accessProfile: string): string => {
   return accessProfile;
 };
 
+const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
+  if (accessProfile === 'director') return 'director';
+  if (accessProfile === 'parent') return 'pai';
+  if (accessProfile === 'teacher') return 'professor';
+  if (accessProfile === 'scanner') return 'scanner';
+  return accessProfile;
+};
+
 const getLegacyProfileLabel = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
   if (normalized === 'admin') return 'Administrador';
@@ -295,6 +318,8 @@ const SystemLoginContent = () => {
   const [registerMode, setRegisterMode] = useState(false);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [accountStatusPanel, setAccountStatusPanel] = useState<AccountStatusPanel | null>(null);
+  const [checkingAccountStatus, setCheckingAccountStatus] = useState(false);
   const navigate = useNavigate();
 
   const loadSchools = async () => {
@@ -640,6 +665,130 @@ const SystemLoginContent = () => {
       setErrorMessage(t('mensagens.erro_generico'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCheckAccountStatus = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setAccountStatusPanel({
+        title: 'Estado da conta',
+        summary: 'Informe um email para verificar o estado da conta.',
+        tone: 'warn',
+        items: [
+          { label: 'Email', value: 'Nao informado', tone: 'warn' },
+          { label: 'Perfil esperado', value: getAccessProfileLabel(accessProfile), tone: 'info' },
+        ],
+      });
+      return;
+    }
+
+    setCheckingAccountStatus(true);
+    setAccountStatusPanel(null);
+
+    try {
+      const expectedLegacyProfile = mapAccessProfileToLegacyProfile(accessProfile);
+      const expectedProfileLabel = getAccessProfileLabel(accessProfile);
+      const localPending = readPendingRegistrations().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+      const localApproved = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+
+      const { data: domainUser, error } = await withTimeout(
+        supabase
+          .from('utilizadores')
+          .select('id,email,perfil,status,is_active,auth_id')
+          .eq('email', normalizedEmail)
+          .maybeSingle(),
+        12000,
+        'Account status check timeout'
+      );
+
+      if (error) {
+        setAccountStatusPanel({
+          title: 'Estado da conta',
+          summary: 'Nao foi possivel verificar o estado agora. Tente novamente em alguns segundos.',
+          tone: 'warn',
+          items: [
+            { label: 'Email', value: normalizedEmail, tone: 'info' },
+            { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
+            { label: 'Verificacao', value: 'Falha de ligacao com o servidor', tone: 'warn' },
+          ],
+        });
+        return;
+      }
+
+      if (!domainUser && !localPending && !localApproved) {
+        setAccountStatusPanel({
+          title: 'Estado da conta',
+          summary: 'Nao encontramos este email no sistema. Faca o cadastro primeiro.',
+          tone: 'error',
+          items: [
+            { label: 'Email', value: normalizedEmail, tone: 'info' },
+            { label: 'Cadastro', value: 'Conta nao encontrada', tone: 'error' },
+            { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
+          ],
+        });
+        return;
+      }
+
+      const profileSource = domainUser?.perfil || localPending?.perfil || localApproved?.perfil || '';
+      const normalizedProfile = normalizeLegacyProfile(profileSource);
+      const profileMatches = normalizedProfile === expectedLegacyProfile || normalizedProfile === 'admin';
+      const profileTone: AccountStatusTone = profileMatches ? 'ok' : 'warn';
+      const profileValue = profileMatches
+        ? `${getLegacyProfileLabel(normalizedProfile)} (ok para este acesso)`
+        : `${getLegacyProfileLabel(normalizedProfile)}. Troque o perfil no topo para ${getLegacyProfileLabel(normalizedProfile)}.`;
+
+      const isPending = domainUser?.status === 'pending' || domainUser?.status === 'inactive' || domainUser?.is_active === false || Boolean(localPending && !localApproved);
+      const approvalTone: AccountStatusTone = isPending ? 'warn' : 'ok';
+      const approvalValue = isPending
+        ? 'Aprovacao pendente/inativa. Aguarde validacao do administrador.'
+        : 'Aprovada para acesso.';
+
+      const hasAuthLink = Boolean(domainUser?.auth_id || localPending?.auth_id || localApproved?.auth_id);
+      const emailConfirmTone: AccountStatusTone = hasAuthLink ? 'info' : 'warn';
+      const emailConfirmValue = hasAuthLink
+        ? 'Conta vinculada ao login. Se falhar ao entrar, confirme o email e redefina a senha.'
+        : 'Cadastro sem vinculacao completa de login. Aguarde aprovacao/reparacao do admin.';
+
+      const canLoginNow = profileMatches && !isPending;
+      setAccountStatusPanel({
+        title: 'Estado da conta',
+        summary: canLoginNow
+          ? 'A conta parece pronta para login neste perfil.'
+          : 'A conta precisa de ajuste antes do acesso. Veja os pontos abaixo.',
+        tone: canLoginNow ? 'ok' : 'warn',
+        items: [
+          { label: 'Email', value: normalizedEmail, tone: 'info' },
+          { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'info' },
+          { label: 'Perfil registado', value: profileValue, tone: profileTone },
+          { label: 'Aprovacao', value: approvalValue, tone: approvalTone },
+          { label: 'Confirmacao de email/login', value: emailConfirmValue, tone: emailConfirmTone },
+        ],
+      });
+    } catch (err) {
+      if (err instanceof NetworkTimeoutError) {
+        setAccountStatusPanel({
+          title: 'Estado da conta',
+          summary: 'Tempo excedido ao verificar conta. Tente novamente.',
+          tone: 'warn',
+          items: [
+            { label: 'Email', value: normalizedEmail, tone: 'info' },
+            { label: 'Perfil esperado', value: getAccessProfileLabel(accessProfile), tone: 'info' },
+          ],
+        });
+      } else {
+        setAccountStatusPanel({
+          title: 'Estado da conta',
+          summary: 'Erro inesperado ao verificar estado da conta.',
+          tone: 'error',
+          items: [
+            { label: 'Email', value: normalizedEmail, tone: 'info' },
+            { label: 'Perfil esperado', value: getAccessProfileLabel(accessProfile), tone: 'info' },
+          ],
+        });
+      }
+    } finally {
+      setCheckingAccountStatus(false);
     }
   };
 
@@ -1005,7 +1154,10 @@ const SystemLoginContent = () => {
             <>
               <input
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setAccountStatusPanel(null);
+                }}
                 type="email"
                 placeholder={t('sistema.email')}
                 className="w-full rounded-xl px-4 py-3 outline-none transition-all"
@@ -1021,6 +1173,17 @@ const SystemLoginContent = () => {
                 />
               )}
 
+              {!recoveryMode && (
+                <button
+                  type="button"
+                  onClick={handleCheckAccountStatus}
+                  disabled={checkingAccountStatus || loading}
+                  className="w-full rounded-xl border border-[#2e5a6e] px-4 py-2 text-sm font-semibold text-[#d1e4ef] hover:bg-[#12344a] transition-colors"
+                >
+                  {checkingAccountStatus ? 'A verificar estado da conta...' : 'Verificar estado da conta'}
+                </button>
+              )}
+
               <button
                 onClick={recoveryMode ? handlePasswordRecovery : handleLogin}
                 disabled={loading}
@@ -1032,6 +1195,34 @@ const SystemLoginContent = () => {
                     ? t('sistema.enviar_link_recuperacao')
                     : t('sistema.entrar')}
               </button>
+
+              {accountStatusPanel && !recoveryMode && (
+                <div className={`mt-2 rounded-xl border px-4 py-3 text-sm ${
+                  accountStatusPanel.tone === 'ok'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                    : accountStatusPanel.tone === 'error'
+                      ? 'border-red-500/30 bg-red-500/10 text-red-100'
+                      : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                }`}>
+                  <p className="font-semibold">{accountStatusPanel.title}</p>
+                  <p className="mt-1 text-xs opacity-90">{accountStatusPanel.summary}</p>
+                  <div className="mt-2 space-y-1 text-xs">
+                    {accountStatusPanel.items.map((item) => (
+                      <p key={`${item.label}-${item.value}`} className={`${
+                        item.tone === 'ok'
+                          ? 'text-emerald-200'
+                          : item.tone === 'error'
+                            ? 'text-red-200'
+                            : item.tone === 'warn'
+                              ? 'text-amber-200'
+                              : 'text-sky-100'
+                      }`}>
+                        <strong>{item.label}:</strong> {item.value}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
