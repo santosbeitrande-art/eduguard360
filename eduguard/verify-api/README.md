@@ -70,7 +70,7 @@ Authentication:
 - Admin operations via x-admin-token
 - Required env vars for admin bootstrap/access: `VERIFY_ADMIN_TOKEN` and `INTERNAL_ADMIN_PASSWORD`
 - SMTP vars for real recovery email delivery: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
-- Fallback (without SMTP) via FormSubmit webhook: `PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT` (verified recipient) and optional `PASSWORD_RECOVERY_FORMSUBMIT_ENDPOINT` (default `https://formsubmit.co/ajax`) and `PASSWORD_RECOVERY_FORMSUBMIT_CC` (`true` by default to copy user)
+- Fallback (without SMTP) via FormSubmit webhook: `PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT` (verified recipient, defaults to `admin@eduguard360.co.mz`) and optional `PASSWORD_RECOVERY_FORMSUBMIT_ENDPOINT` (default `https://formsubmit.co/ajax`) and `PASSWORD_RECOVERY_FORMSUBMIT_CC` (`true` by default to copy user)
 - Optional password policy vars: `PASSWORD_HISTORY_SECRET` (recommended), plus strong password enforcement (uppercase/lowercase/number, min 8) and password history anti-reuse.
 - Recovery hardening vars: `PASSWORD_RESET_RETURN_TOKEN` (debug use only) and `PASSWORD_RESET_ALLOW_MANUAL_FALLBACK` (emergency mode only when SMTP is unavailable).
 

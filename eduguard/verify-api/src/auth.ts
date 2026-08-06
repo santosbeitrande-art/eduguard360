@@ -1242,7 +1242,7 @@ function getSmtpRuntimeStatus() {
 
 function getFormSubmitRuntimeStatus() {
   const endpoint = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_ENDPOINT || 'https://formsubmit.co/ajax').trim().replace(/\/+$/, '');
-  const recipient = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT || '').trim();
+  const recipient = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_RECIPIENT || 'admin@eduguard360.co.mz').trim();
   const includeCc = String(process.env.PASSWORD_RECOVERY_FORMSUBMIT_CC || 'true').trim().toLowerCase() !== 'false';
 
   return {
