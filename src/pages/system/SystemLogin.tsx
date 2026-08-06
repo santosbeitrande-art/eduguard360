@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
+import { resolvePortalRouteByRole } from "@/lib/enterpriseGovernance";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -400,23 +401,9 @@ const SystemLoginContent = () => {
 
   const isPendingUser = (user: any): boolean => user?.status === 'pending' || user?.status === 'inactive' || user?.is_active === false;
 
-  const isProfileAllowed = (perfil: string): boolean => {
-    const normalized = normalizeLegacyProfile(perfil);
-    if (accessProfile === 'director') return normalized === 'director' || normalized === 'admin';
-    if (accessProfile === 'parent') return normalized === 'pai' || normalized === 'admin';
-    if (accessProfile === 'teacher') return normalized === 'professor' || normalized === 'admin';
-    if (accessProfile === 'scanner') return normalized === 'scanner' || normalized === 'admin';
-    return true;
-  };
-
   const redirectByProfile = (perfil: string) => {
-    const normalized = normalizeLegacyProfile(perfil);
-    if (normalized === 'admin') navigate('/admin');
-    else if (normalized === 'director') navigate('/school');
-    else if (normalized === 'pai') navigate('/parent');
-    else if (normalized === 'professor') navigate('/school');
-    else if (normalized === 'scanner') navigate('/scanner');
-    else navigate('/');
+    const route = resolvePortalRouteByRole(perfil);
+    navigate(route);
   };
 
   const persistLegacyUserFromEdgeAuth = (edgeUser: any) => {
@@ -449,10 +436,6 @@ const SystemLoginContent = () => {
     }
 
     const perfil = normalizeLegacyProfile(normalizedUser?.perfil || normalizedUser?.role);
-    if (!isProfileAllowed(perfil)) {
-      setErrorMessage(`Este utilizador esta registado como ${getLegacyProfileLabel(perfil)}. No topo, selecione o perfil ${getAccessProfileLabelFromLegacyProfile(perfil)} para entrar.`);
-      return false;
-    }
 
     const schoolId = normalizedUser.escola_id || null;
     if (schoolId && perfil !== 'admin') {
@@ -556,25 +539,28 @@ const SystemLoginContent = () => {
     let domainUserByEmail: any = null;
 
     try {
-      const edgeUserType = accessProfile === 'parent' ? 'parent' : 'system';
-      const edgeResult = await withTimeout(
-        edgeLogin(normalizedEmail, normalizedPassword, edgeUserType),
-        12000,
-        'Edge login timeout'
-      );
-      edgeErrorMessage = String(edgeResult?.error || '');
-      if (edgeResult.success) {
+      // Single login entrypoint: try both user types automatically.
+      const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
+      for (const attemptType of edgeAttempts) {
+        const edgeResult = await withTimeout(
+          edgeLogin(normalizedEmail, normalizedPassword, attemptType),
+          12000,
+          'Edge login timeout'
+        );
+        edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
+        if (!edgeResult.success) continue;
+
         const edgeUserRaw = localStorage.getItem('eduguard_user');
-        if (edgeUserRaw) {
-          try {
-            const edgeUser = JSON.parse(edgeUserRaw);
-            persistLegacyUserFromEdgeAuth(edgeUser);
-            const perfil = mapEdgeUserToLegacyProfile(edgeUser);
-            redirectByProfile(perfil);
-            return;
-          } catch (parseError) {
-            console.warn('Falha ao ler eduguard_user após edge login', parseError);
-          }
+        if (!edgeUserRaw) continue;
+
+        try {
+          const edgeUser = JSON.parse(edgeUserRaw);
+          persistLegacyUserFromEdgeAuth(edgeUser);
+          const perfil = mapEdgeUserToLegacyProfile(edgeUser);
+          redirectByProfile(perfil);
+          return;
+        } catch (parseError) {
+          console.warn('Falha ao ler eduguard_user apos edge login', parseError);
         }
       }
 
@@ -1074,20 +1060,26 @@ const SystemLoginContent = () => {
         <h2 className="text-2xl font-bold text-white text-center">EduGuard360</h2>
         <div className="mt-2 text-center">
           <p className="text-sm text-[#9bbbc9]">{t('sistema.title')} · {t('sistema.login')}</p>
-          <div className="mt-2">
-            <label className="sr-only" htmlFor="access-profile">{t('sistema.selecionar_perfil_acesso')}</label>
-            <select
-              id="access-profile"
-              value={accessProfile}
-              onChange={(e) => setAccessProfile(e.target.value)}
-              className="mx-auto max-w-[280px] rounded-xl px-3 py-2 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
-            >
-              <option value="director">{t('sistema.role_director')}</option>
-              <option value="parent">{t('sistema.role_parent')}</option>
-              <option value="teacher">{t('sistema.role_teacher')}</option>
-              <option value="scanner">Segurança QR Code</option>
-            </select>
-          </div>
+          <p className="mt-2 text-xs text-[#85a7b8]">
+            Entrada unica: apos login, o sistema redireciona automaticamente para o portal certo com base nas permissoes.
+          </p>
+          <details className="mt-2 text-left mx-auto max-w-[320px]">
+            <summary className="cursor-pointer text-xs text-[#9bbbc9]">Perfil esperado (opcional, para diagnostico)</summary>
+            <div className="pt-2">
+              <label className="sr-only" htmlFor="access-profile">{t('sistema.selecionar_perfil_acesso')}</label>
+              <select
+                id="access-profile"
+                value={accessProfile}
+                onChange={(e) => setAccessProfile(e.target.value)}
+                className="w-full rounded-xl px-3 py-2 outline-none transition-all bg-[#0f2a3d] text-white border border-[#2e5a6e]"
+              >
+                <option value="director">{t('sistema.role_director')}</option>
+                <option value="parent">{t('sistema.role_parent')}</option>
+                <option value="teacher">{t('sistema.role_teacher')}</option>
+                <option value="scanner">Seguranca QR Code</option>
+              </select>
+            </div>
+          </details>
         </div>
 
         <div className="mt-8 space-y-4">

@@ -5,6 +5,21 @@ import { EnterpriseService } from './enterprise.service';
 export class EnterpriseController {
   constructor(private readonly enterpriseService: EnterpriseService) {}
 
+  @Get('rbac/matrix')
+  matrix() {
+    return this.enterpriseService.getRbacMatrix();
+  }
+
+  @Post('rbac/resolve')
+  resolveAccess(@Body() body: any) {
+    return this.enterpriseService.resolveAccessProfile({
+      role: body?.role,
+      schoolId: body?.schoolId,
+      tenantId: body?.tenantId,
+      userId: body?.userId,
+    });
+  }
+
   @Get('overview')
   async overview() {
     return this.enterpriseService.getOverview();

@@ -5,32 +5,32 @@ import { WorkflowProcess } from './workflow-process.entity';
 @Index(['processId', 'stepOrder'])
 export class WorkflowStep {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  processId: string;
+  processId!: string;
 
   @ManyToOne(() => WorkflowProcess, (process) => process.steps, { onDelete: 'CASCADE' })
-  process: WorkflowProcess;
+  process!: WorkflowProcess;
 
   @Column({ type: 'int' })
-  stepOrder: number;
+  stepOrder!: number;
 
   @Column({ type: 'varchar', length: 120 })
-  stepName: string;
+  stepName!: string;
 
   @Column({ type: 'varchar', length: 24, default: 'pending' })
-  status: 'pending' | 'active' | 'done' | 'skipped';
+  status!: 'pending' | 'active' | 'done' | 'skipped';
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  actor: string | null;
+  actor!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  actedAt: Date | null;
+  actedAt!: Date | null;
 
   @Column({ type: 'text', nullable: true })
-  notes: string | null;
+  notes!: string | null;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 }

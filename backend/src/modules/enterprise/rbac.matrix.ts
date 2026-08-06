@@ -1,0 +1,359 @@
+export type EnterprisePortal = 'enterprise' | 'parent' | 'student';
+
+export type EnterpriseRole =
+  | 'super_admin'
+  | 'director'
+  | 'administrator'
+  | 'secretaria'
+  | 'coordenador'
+  | 'professor'
+  | 'financeiro'
+  | 'rh'
+  | 'seguranca'
+  | 'parent'
+  | 'student'
+  | 'unknown';
+
+export type PermissionDomain =
+  | 'schools'
+  | 'users'
+  | 'courses'
+  | 'disciplines'
+  | 'classes'
+  | 'teachers'
+  | 'students'
+  | 'enrollments'
+  | 'schedule'
+  | 'grades'
+  | 'attendance'
+  | 'incidents'
+  | 'payments'
+  | 'employees'
+  | 'documents'
+  | 'qr'
+  | 'analytics'
+  | 'security'
+  | 'workflow';
+
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'approve' | 'export';
+
+export type RolePermissions = Record<PermissionDomain, PermissionAction[]>;
+
+const allActions: PermissionAction[] = ['create', 'read', 'update', 'delete', 'approve', 'export'];
+const readOnlyActions: PermissionAction[] = ['read'];
+
+const emptyPermissions = (): RolePermissions => ({
+  schools: [],
+  users: [],
+  courses: [],
+  disciplines: [],
+  classes: [],
+  teachers: [],
+  students: [],
+  enrollments: [],
+  schedule: [],
+  grades: [],
+  attendance: [],
+  incidents: [],
+  payments: [],
+  employees: [],
+  documents: [],
+  qr: [],
+  analytics: [],
+  security: [],
+  workflow: [],
+});
+
+const rolePermissions: Record<EnterpriseRole, RolePermissions> = {
+  super_admin: {
+    schools: allActions,
+    users: allActions,
+    courses: allActions,
+    disciplines: allActions,
+    classes: allActions,
+    teachers: allActions,
+    students: allActions,
+    enrollments: allActions,
+    schedule: allActions,
+    grades: allActions,
+    attendance: allActions,
+    incidents: allActions,
+    payments: allActions,
+    employees: allActions,
+    documents: allActions,
+    qr: allActions,
+    analytics: allActions,
+    security: allActions,
+    workflow: allActions,
+  },
+  director: {
+    schools: ['read', 'update'],
+    users: ['create', 'read', 'update', 'approve'],
+    courses: ['create', 'read', 'update', 'delete', 'approve'],
+    disciplines: ['create', 'read', 'update', 'delete'],
+    classes: ['create', 'read', 'update', 'delete'],
+    teachers: ['create', 'read', 'update', 'delete'],
+    students: ['create', 'read', 'update', 'delete'],
+    enrollments: ['create', 'read', 'update', 'approve'],
+    schedule: ['create', 'read', 'update', 'approve'],
+    grades: ['read', 'approve', 'export'],
+    attendance: ['read', 'export'],
+    incidents: ['read', 'approve'],
+    payments: ['read', 'approve', 'export'],
+    employees: ['create', 'read', 'update', 'delete'],
+    documents: ['create', 'read', 'update', 'approve', 'export'],
+    qr: ['read', 'update'],
+    analytics: ['read', 'export'],
+    security: ['read', 'update', 'approve'],
+    workflow: ['read', 'approve', 'update'],
+  },
+  administrator: {
+    schools: ['read'],
+    users: ['create', 'read', 'update'],
+    courses: ['create', 'read', 'update', 'delete'],
+    disciplines: ['create', 'read', 'update', 'delete'],
+    classes: ['create', 'read', 'update', 'delete'],
+    teachers: ['create', 'read', 'update', 'delete'],
+    students: ['create', 'read', 'update', 'delete'],
+    enrollments: ['create', 'read', 'update'],
+    schedule: ['create', 'read', 'update'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: ['read'],
+    employees: ['read', 'update'],
+    documents: ['create', 'read', 'update', 'export'],
+    qr: ['read', 'update'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read', 'update'],
+  },
+  secretaria: {
+    schools: ['read'],
+    users: ['read'],
+    courses: ['read'],
+    disciplines: ['read'],
+    classes: ['read'],
+    teachers: ['read'],
+    students: ['create', 'read', 'update'],
+    enrollments: ['create', 'read', 'update'],
+    schedule: ['read'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: ['read'],
+    employees: ['read'],
+    documents: ['create', 'read', 'update', 'export'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read', 'update'],
+  },
+  coordenador: {
+    schools: ['read'],
+    users: ['read'],
+    courses: ['read', 'update'],
+    disciplines: ['create', 'read', 'update', 'delete'],
+    classes: ['create', 'read', 'update'],
+    teachers: ['read', 'update'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['create', 'read', 'update'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: [],
+    employees: ['read'],
+    documents: ['read'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read', 'update'],
+  },
+  professor: {
+    schools: ['read'],
+    users: ['read'],
+    courses: ['read'],
+    disciplines: ['read'],
+    classes: ['read'],
+    teachers: ['read'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['read'],
+    grades: ['create', 'read', 'update'],
+    attendance: ['create', 'read', 'update'],
+    incidents: ['create', 'read', 'update'],
+    payments: [],
+    employees: [],
+    documents: ['read'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read'],
+  },
+  financeiro: {
+    schools: ['read'],
+    users: ['read'],
+    courses: ['read'],
+    disciplines: ['read'],
+    classes: ['read'],
+    teachers: ['read'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['read'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: ['create', 'read', 'update', 'approve', 'export'],
+    employees: ['read'],
+    documents: ['read', 'export'],
+    qr: ['read'],
+    analytics: ['read', 'export'],
+    security: ['read'],
+    workflow: ['read'],
+  },
+  rh: {
+    schools: ['read'],
+    users: ['read', 'update'],
+    courses: ['read'],
+    disciplines: ['read'],
+    classes: ['read'],
+    teachers: ['create', 'read', 'update', 'delete'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['read'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: ['read'],
+    employees: ['create', 'read', 'update', 'delete'],
+    documents: ['create', 'read', 'update'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read'],
+  },
+  seguranca: {
+    schools: ['read'],
+    users: ['read'],
+    courses: [],
+    disciplines: [],
+    classes: ['read'],
+    teachers: ['read'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['read'],
+    grades: [],
+    attendance: ['read'],
+    incidents: ['create', 'read', 'update'],
+    payments: [],
+    employees: ['read'],
+    documents: ['read'],
+    qr: ['create', 'read', 'update'],
+    analytics: ['read'],
+    security: ['read'],
+    workflow: ['read'],
+  },
+  parent: {
+    schools: readOnlyActions,
+    users: readOnlyActions,
+    courses: readOnlyActions,
+    disciplines: readOnlyActions,
+    classes: readOnlyActions,
+    teachers: readOnlyActions,
+    students: readOnlyActions,
+    enrollments: readOnlyActions,
+    schedule: readOnlyActions,
+    grades: readOnlyActions,
+    attendance: readOnlyActions,
+    incidents: readOnlyActions,
+    payments: readOnlyActions,
+    employees: [],
+    documents: ['read', 'export'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: [],
+    workflow: ['read'],
+  },
+  student: {
+    schools: ['read'],
+    users: ['read'],
+    courses: ['read'],
+    disciplines: ['read'],
+    classes: ['read'],
+    teachers: ['read'],
+    students: ['read'],
+    enrollments: ['read'],
+    schedule: ['read'],
+    grades: ['read'],
+    attendance: ['read'],
+    incidents: ['read'],
+    payments: ['read'],
+    employees: [],
+    documents: ['read', 'export'],
+    qr: ['read'],
+    analytics: ['read'],
+    security: [],
+    workflow: ['read'],
+  },
+  unknown: emptyPermissions(),
+};
+
+const aliases: Record<string, EnterpriseRole> = {
+  admin: 'super_admin',
+  superadmin: 'super_admin',
+  school_admin: 'director',
+  diretor: 'director',
+  secretaria: 'secretaria',
+  secretariat: 'secretaria',
+  coordinator: 'coordenador',
+  coordenador: 'coordenador',
+  teacher: 'professor',
+  professor: 'professor',
+  financeiro: 'financeiro',
+  finance: 'financeiro',
+  hr: 'rh',
+  rh: 'rh',
+  scanner: 'seguranca',
+  security: 'seguranca',
+  seguranca: 'seguranca',
+  parent: 'parent',
+  pai: 'parent',
+  encarregado: 'parent',
+  student: 'student',
+  aluno: 'student',
+};
+
+export const normalizeEnterpriseRole = (value: unknown): EnterpriseRole => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unknown';
+  if (normalized in rolePermissions) return normalized as EnterpriseRole;
+  return aliases[normalized] || 'unknown';
+};
+
+export const resolvePortalByRole = (role: EnterpriseRole): EnterprisePortal => {
+  if (role === 'parent') return 'parent';
+  if (role === 'student') return 'student';
+  return 'enterprise';
+};
+
+export const getRolePermissions = (role: EnterpriseRole): RolePermissions => {
+  return rolePermissions[role] || rolePermissions.unknown;
+};
+
+export const getAccessMatrix = () => ({
+  hierarchy: [
+    'super_admin',
+    'director',
+    'administrator',
+    'secretaria',
+    'coordenador',
+    'professor',
+    'financeiro',
+    'rh',
+    'seguranca',
+    'parent',
+    'student',
+  ],
+  rolePermissions,
+});

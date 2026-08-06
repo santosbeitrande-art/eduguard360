@@ -4,32 +4,32 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 @Index(['userId'])
 export class MfaEnrollment {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 64 })
-  userId: string;
+  userId!: string;
 
   @Column({ type: 'varchar', length: 255 })
-  userName: string;
+  userName!: string;
 
   @Column({ type: 'varchar', length: 24, default: 'app' })
-  method: 'app' | 'sms' | 'email';
+  method!: 'app' | 'sms' | 'email';
 
   @Column({ type: 'varchar', length: 120 })
-  deviceLabel: string;
+  deviceLabel!: string;
 
   @Column({ type: 'boolean', default: false })
-  isVerified: boolean;
+  isVerified!: boolean;
 
   @Column({ type: 'boolean', default: false })
-  trustedDevice: boolean;
+  trustedDevice!: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
-  lastUsedAt: Date | null;
+  lastUsedAt!: Date | null;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

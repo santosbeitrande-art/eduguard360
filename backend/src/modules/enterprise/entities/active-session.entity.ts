@@ -4,44 +4,44 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 @Index(['userId', 'status'])
 export class ActiveSession {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 64 })
-  userId: string;
+  userId!: string;
 
   @Column({ type: 'varchar', length: 255 })
-  userName: string;
+  userName!: string;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
-  userRole: string | null;
+  userRole!: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  device: string | null;
+  device!: string | null;
 
   @Column({ type: 'varchar', length: 80, nullable: true })
-  browser: string | null;
+  browser!: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  location: string | null;
+  location!: string | null;
 
   @Column({ type: 'varchar', length: 80, nullable: true })
-  ipAddress: string | null;
+  ipAddress!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'active' })
-  status: 'active' | 'revoked' | 'expired';
+  status!: 'active' | 'revoked' | 'expired';
 
   @Column({ type: 'boolean', default: false })
-  trusted: boolean;
+  trusted!: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
-  lastSeenAt: Date | null;
+  lastSeenAt!: Date | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  expiresAt: Date | null;
+  expiresAt!: Date | null;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

@@ -4,26 +4,26 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 @Index(['key'], { unique: true })
 export class SecurityPolicy {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 80 })
-  key: string;
+  key!: string;
 
   @Column({ type: 'varchar', length: 255 })
-  label: string;
+  label!: string;
 
   @Column({ type: 'jsonb', default: {} })
-  value: Record<string, any>;
+  value!: Record<string, any>;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  description: string | null;
+  description!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  updatedBy: string | null;
+  updatedBy!: string | null;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

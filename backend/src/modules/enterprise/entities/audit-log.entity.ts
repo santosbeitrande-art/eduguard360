@@ -5,38 +5,38 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
 @Index(['resourceType', 'resourceId'])
 export class AuditLog {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
-  actorId: string | null;
+  actorId!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  actorName: string | null;
+  actorName!: string | null;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
-  actorRole: string | null;
+  actorRole!: string | null;
 
   @Column({ type: 'varchar', length: 80 })
-  action: string;
+  action!: string;
 
   @Column({ type: 'varchar', length: 80 })
-  resourceType: string;
+  resourceType!: string;
 
   @Column({ type: 'varchar', length: 80, nullable: true })
-  resourceId: string | null;
+  resourceId!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'info' })
-  severity: 'info' | 'warn' | 'error';
+  severity!: 'info' | 'warn' | 'error';
 
   @Column({ type: 'jsonb', default: {} })
-  metadata: Record<string, any>;
+  metadata!: Record<string, any>;
 
   @Column({ type: 'varchar', length: 80, nullable: true })
-  ipAddress: string | null;
+  ipAddress!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  userAgent: string | null;
+  userAgent!: string | null;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 }

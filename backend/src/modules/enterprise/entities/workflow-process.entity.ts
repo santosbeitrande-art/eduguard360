@@ -5,38 +5,38 @@ import { WorkflowStep } from './workflow-step.entity';
 @Index(['status', 'priority'])
 export class WorkflowProcess {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 160 })
-  title: string;
+  title!: string;
 
   @Column({ type: 'varchar', length: 64 })
-  type: string;
+  type!: string;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  requester: string | null;
+  requester!: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  owner: string | null;
+  owner!: string | null;
 
   @Column({ type: 'varchar', length: 24, default: 'pending' })
-  status: 'pending' | 'in_review' | 'approved' | 'rejected' | 'completed';
+  status!: 'pending' | 'in_review' | 'approved' | 'rejected' | 'completed';
 
   @Column({ type: 'varchar', length: 24, default: 'medium' })
-  priority: 'low' | 'medium' | 'high';
+  priority!: 'low' | 'medium' | 'high';
 
   @Column({ type: 'int', default: 0 })
-  currentStep: number;
+  currentStep!: number;
 
   @Column({ type: 'jsonb', default: {} })
-  payload: Record<string, any>;
+  payload!: Record<string, any>;
 
   @OneToMany(() => WorkflowStep, (step) => step.process, { cascade: true })
-  steps: WorkflowStep[];
+  steps!: WorkflowStep[];
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

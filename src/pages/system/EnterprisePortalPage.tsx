@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { withTimeout } from '@/lib/networkPerformance';
+import { isEnterpriseRole, normalizeEnterpriseRole, resolvePortalRouteByRole } from '@/lib/enterpriseGovernance';
 import {
   ArrowRight,
   Bell,
@@ -229,8 +230,31 @@ const EnterprisePortalPage = () => {
   };
 
   useEffect(() => {
+    const currentUserRaw = localStorage.getItem('currentUser') || localStorage.getItem('eduguard_user');
+    if (!currentUserRaw) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(currentUserRaw);
+      const role = normalizeEnterpriseRole(parsed?.perfil || parsed?.role);
+
+      if (!isEnterpriseRole(role)) {
+        navigate(resolvePortalRouteByRole(role));
+        return;
+      }
+
+      if (role === 'professor') setDashboardLens('teacher');
+      if (role === 'financeiro') setDashboardLens('financeiro');
+      if (role === 'secretaria') setDashboardLens('secretaria');
+    } catch {
+      navigate('/login');
+      return;
+    }
+
     loadData();
-  }, []);
+  }, [navigate]);
 
   const visibleStaff = useMemo(() => {
     const q = staffSearch.trim().toLowerCase();

@@ -7,6 +7,12 @@ import { SecurityPolicy } from './entities/security-policy.entity';
 import { MfaEnrollment } from './entities/mfa-enrollment.entity';
 import { WorkflowProcess } from './entities/workflow-process.entity';
 import { WorkflowStep } from './entities/workflow-step.entity';
+import {
+  getAccessMatrix,
+  getRolePermissions,
+  normalizeEnterpriseRole,
+  resolvePortalByRole,
+} from './rbac.matrix';
 
 @Injectable()
 export class EnterpriseService {
@@ -438,6 +444,50 @@ export class EnterpriseService {
       workflows: {
         summary: workflows.summary,
         latest: workflows.data.slice(0, 10),
+      },
+    };
+  }
+
+  getRbacMatrix() {
+    return {
+      generatedAt: new Date().toISOString(),
+      ...getAccessMatrix(),
+    };
+  }
+
+  resolveAccessProfile(payload: {
+    role?: string;
+    schoolId?: string | null;
+    tenantId?: string | null;
+    userId?: string | null;
+  }) {
+    const role = normalizeEnterpriseRole(payload.role);
+    const portal = resolvePortalByRole(role);
+    const permissions = getRolePermissions(role);
+    const isGlobalRole = role === 'super_admin';
+
+    const tenantScope = {
+      mode: isGlobalRole ? 'global' : 'school',
+      schoolId: payload.schoolId || null,
+      tenantId: payload.tenantId || payload.schoolId || null,
+    };
+
+    const analyticsScope = isGlobalRole
+      ? { level: 'global', canViewAllSchools: true }
+      : {
+          level: 'school',
+          canViewAllSchools: false,
+          schoolId: payload.schoolId || null,
+        };
+
+    return {
+      role,
+      portal,
+      permissions,
+      tenantScope,
+      analyticsScope,
+      subject: {
+        userId: payload.userId || null,
       },
     };
   }
