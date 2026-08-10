@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/context/LanguageContext';
 import {
   BookOpen,
+  Building2,
   Shield,
   ArrowRight,
   Users,
@@ -55,6 +56,30 @@ const EducuardPortalHub: React.FC = () => {
         { label: 'Escolas', value: '250+' },
         { label: 'Utilizadores', value: '15K+' },
         { label: 'Uptime', value: '99.9%' },
+      ],
+    },
+    {
+      id: 'building360',
+      name: 'Building360',
+      title: 'Building360 Core',
+      description: language === 'pt' ? 'Plataforma operacional para gerir edificios, instalacoes e comunidades' : 'Operational platform to manage buildings, facilities and communities',
+      icon: <Building2 className="w-12 h-12" />,
+      color: 'from-sky-600 to-emerald-600',
+      route: '/building360',
+      status: 'available',
+      badge: 'Novo',
+      features: [
+        'Gestao hierarquica multi-site e multi-edificio',
+        'Finance360: cobranca, facturas e pagamentos',
+        'Asset360 + Maintain360 com work orders',
+        'BuildingPass para acessos e visitantes',
+        'Vendor360, Document360 e Incident Management',
+        'Arquitectura multi-tenant com RBAC e auditoria',
+      ],
+      stats: [
+        { label: 'Modulos', value: '10' },
+        { label: 'Modelos', value: '6+' },
+        { label: 'Core', value: '1' },
       ],
     },
     {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BookOpen, Lock, Shield, Zap, Users, BarChart3 } from 'lucide-react';
+import { ArrowRight, BookOpen, Lock, Shield, Zap, Users, BarChart3, Building2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
 export const PortalsPromoSection: React.FC = () => {
@@ -49,6 +49,15 @@ export const PortalsPromoSection: React.FC = () => {
       color: 'from-cyan-600 to-sky-700',
       route: '/public/login',
       external: true,
+    },
+    {
+      icon: <Building2 className="w-8 h-8" />,
+      title: 'Building360',
+      description: language === 'pt'
+        ? 'Plataforma operacional para edifícios, instalações e comunidades em um único sistema'
+        : 'Operational platform for buildings, facilities and communities in one system',
+      color: 'from-sky-600 to-emerald-600',
+      route: '/building360',
     },
     {
       icon: <Users className="w-8 h-8" />,

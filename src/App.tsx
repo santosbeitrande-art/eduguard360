@@ -7,7 +7,10 @@ import SystemLogin from "@/pages/system/SystemLogin";
 import AdminDashboard from "@/pages/system/AdminDashboard";
 import AdminCourses from "@/pages/system/AdminCourses";
 import EnterprisePortalPage from "@/pages/system/EnterprisePortalPage";
+import EnterpriseWorkspacePage from "@/pages/system/EnterpriseWorkspacePage";
 import AnalyticsPortalPage from "@/pages/system/AnalyticsPortalPage";
+import Building360PortalPage from "@/pages/building/Building360PortalPage";
+import Building360BlueprintV1Page from "@/pages/building/Building360BlueprintV1Page";
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import AdminExecutiveDashboard from "@/pages/system/AdminExecutiveDashboard";
@@ -90,7 +93,10 @@ function App() {
         <Route path="/sistema/admin" element={<AdminDashboard />} />
         <Route path="/sistema/admin/edumarket" element={<AdminCourses />} />
         <Route path="/enterprise" element={<EnterprisePortalPage />} />
+        <Route path="/enterprise/workspace/:role/:module" element={<EnterpriseWorkspacePage />} />
         <Route path="/analytics" element={<AnalyticsPortalPage />} />
+        <Route path="/building360" element={<Building360PortalPage />} />
+        <Route path="/building360/blueprint" element={<Building360BlueprintV1Page />} />
         <Route path="/sistema/escola" element={<SchoolDashboard />} />
         <Route path="/sistema/scanner" element={<QRScannerPro />} />
 

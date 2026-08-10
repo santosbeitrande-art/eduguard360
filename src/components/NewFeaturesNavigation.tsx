@@ -1,7 +1,7 @@
 // src/components/NewFeaturesNavigation.tsx
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { BookOpen, GraduationCap, Lock, Users } from 'lucide-react';
+import { BookOpen, Building2, GraduationCap, Lock, Users } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
 export const NewFeaturesNavigation = () => {
@@ -19,7 +19,7 @@ export const NewFeaturesNavigation = () => {
             : 'Access online courses, open literature and tools for educators'}
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           {/* Portal de Cursos */}
           <div className="bg-white/10 backdrop-blur rounded-lg p-6 hover:bg-white/20 transition">
             <GraduationCap className="w-12 h-12 mb-4" />
@@ -78,6 +78,22 @@ export const NewFeaturesNavigation = () => {
               className="bg-white text-blue-600 hover:bg-gray-100"
             >
               <a href="/public/login">{language === 'pt' ? 'Aceder Verify AI' : 'Open Verify AI'}</a>
+            </Button>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur rounded-lg p-6 hover:bg-white/20 transition">
+            <Building2 className="w-12 h-12 mb-4" />
+            <h3 className="text-xl font-bold mb-2">Building360</h3>
+            <p className="mb-4 opacity-90">
+              {language === 'pt'
+                ? 'Gestao integrada de edificios, activos, manutencao, seguranca e financas.'
+                : 'Integrated management for buildings, assets, maintenance, security and finance.'}
+            </p>
+            <Button
+              asChild
+              className="bg-white text-blue-600 hover:bg-gray-100"
+            >
+              <a href="/building360">{language === 'pt' ? 'Abrir Building360' : 'Open Building360'}</a>
             </Button>
           </div>
         </div>

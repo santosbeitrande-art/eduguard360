@@ -27,6 +27,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
 
   const portals = [
     { label: language === 'pt' ? '🛡️ Segurança Escolar' : '🛡️ School Security', href: '/sistema' },
+    { label: '🏢 Building360', href: '/building360' },
     { label: '📚 EduMarket', href: '/edumarket' },
     { label: language === 'pt' ? '📖 Literatura Aberta' : '📖 Open Literature', href: '/literatura' },
     { label: '🔐 EduGuard Verify AI', href: '/public/login', external: true },
