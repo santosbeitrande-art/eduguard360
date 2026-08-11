@@ -26,6 +26,9 @@ import { BuildingInvoice } from '../modules/building360/entities/invoice.entity'
 import { BuildingPayment } from '../modules/building360/entities/payment.entity';
 import { BuildingReceipt } from '../modules/building360/entities/receipt.entity';
 import { BuildingLedgerEntry } from '../modules/building360/entities/ledger-entry.entity';
+import { join } from 'path';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 export const DatabaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -63,7 +66,9 @@ export const DatabaseConfig: TypeOrmModuleOptions = {
     BuildingReceipt,
     BuildingLedgerEntry,
   ],
-  synchronize: process.env.NODE_ENV !== 'production',
+  migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+  migrationsRun: isProduction,
+  synchronize: !isProduction,
   logging: process.env.NODE_ENV === 'development',
   cache: true,
 };
