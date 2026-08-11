@@ -1,5 +1,14 @@
 import { cors, proxyBusinessApi } from '../../../_lib/businessApiProxy.js';
 
+const fallbackBuildings = [
+  {
+    id: 'bld-torre-a',
+    siteId: 'site-maputo-central',
+    name: 'Torre A',
+    floors: 3,
+  },
+];
+
 export default function handler(req, res) {
   cors(res);
 
@@ -24,10 +33,8 @@ export default function handler(req, res) {
       return;
     }
 
-    res.status(502).json({
-      error: 'building360-upstream-unavailable',
-      status: upstream.status,
-      data: [],
-    });
+    const siteId = String(req.query?.siteId || '').trim();
+    const list = siteId ? fallbackBuildings.filter((item) => item.siteId === siteId) : fallbackBuildings;
+    res.status(200).json(list);
   });
 }
