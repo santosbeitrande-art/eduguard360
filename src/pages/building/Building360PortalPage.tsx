@@ -167,6 +167,10 @@ const buildHeaders = (currentUser: any): HeadersInit => ({
   'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
 });
 
+const endpointFor = (currentUser: any, securePath: string, publicPath: string): string => {
+  return currentUser ? securePath : publicPath;
+};
+
 const Building360PortalPage: React.FC = () => {
   const navigate = useNavigate();
   const [loadingMetrics, setLoadingMetrics] = useState(true);
@@ -190,8 +194,9 @@ const Building360PortalPage: React.FC = () => {
       try {
         const currentUser = resolveCurrentUserSnapshot();
         const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const endpoint = endpointFor(currentUser, '/api/v1/building360/overview', '/api/v1/building360/public/overview');
         const response = await withTimeout(
-          fetch('/api/v1/building360/overview', { headers }),
+          fetch(endpoint, { headers }),
           10000,
           'Building360 overview timeout'
         );
@@ -221,8 +226,9 @@ const Building360PortalPage: React.FC = () => {
       try {
         const currentUser = resolveCurrentUserSnapshot();
         const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const endpoint = endpointFor(currentUser, '/api/v1/building360/sites', '/api/v1/building360/public/sites');
         const response = await withTimeout(
-          fetch('/api/v1/building360/sites', { headers }),
+          fetch(endpoint, { headers }),
           10000,
           'Building360 sites timeout'
         );
@@ -256,8 +262,13 @@ const Building360PortalPage: React.FC = () => {
       try {
         const currentUser = resolveCurrentUserSnapshot();
         const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const basePath = endpointFor(
+          currentUser,
+          '/api/v1/building360/buildings',
+          '/api/v1/building360/public/buildings',
+        );
         const response = await withTimeout(
-          fetch(`/api/v1/building360/buildings?siteId=${encodeURIComponent(selectedSiteId)}`, { headers }),
+          fetch(`${basePath}?siteId=${encodeURIComponent(selectedSiteId)}`, { headers }),
           10000,
           'Building360 buildings timeout'
         );
@@ -293,6 +304,7 @@ const Building360PortalPage: React.FC = () => {
       try {
         const currentUser = resolveCurrentUserSnapshot();
         const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const basePath = endpointFor(currentUser, '/api/v1/building360/units', '/api/v1/building360/public/units');
         const params = new URLSearchParams();
         params.set('siteId', selectedSiteId);
         if (selectedBuildingId) params.set('buildingId', selectedBuildingId);
@@ -300,7 +312,7 @@ const Building360PortalPage: React.FC = () => {
         if (selectedUnitStatus) params.set('status', selectedUnitStatus);
 
         const response = await withTimeout(
-          fetch(`/api/v1/building360/units?${params.toString()}`, { headers }),
+          fetch(`${basePath}?${params.toString()}`, { headers }),
           10000,
           'Building360 units timeout'
         );

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Building360Controller } from './building360.controller';
+import { Building360PublicController } from './building360.public.controller';
 import { Building360Service } from './building360.service';
 import { EnterpriseRbacGuard } from '../enterprise/guards/enterprise-rbac.guard';
 import { BuildingOrganization } from './entities/organization.entity';
@@ -43,7 +44,7 @@ import { AuditLog } from '../enterprise/entities/audit-log.entity';
       AuditLog,
     ]),
   ],
-  controllers: [Building360Controller],
+  controllers: [Building360Controller, Building360PublicController],
   providers: [Building360Service, EnterpriseRbacGuard],
   exports: [Building360Service],
 })
