@@ -18,26 +18,47 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-type EnterpriseOverview = {
-  audit?: {
-    totalToday?: number;
+type Building360Overview = {
+  tenantId?: string;
+  portfolio?: {
+    sites?: number;
+    buildings?: number;
+    units?: number;
   };
-  sessions?: {
-    active?: number;
-    total?: number;
+  operations?: {
+    assets?: number;
+    workOrdersOpen?: number;
+    workOrdersDone?: number;
   };
-  security?: {
-    mfa?: {
-      verified?: number;
-      total?: number;
-    };
+  maintenance?: {
+    criticalAssets?: number;
+    warningAssets?: number;
   };
-  workflows?: {
-    summary?: {
-      total?: number;
-      byStatus?: Record<string, number>;
-    };
-  };
+  generatedAt?: string;
+};
+
+type Building360Site = {
+  id: string;
+  name: string;
+  city: string;
+  type: string;
+};
+
+type Building360Building = {
+  id: string;
+  siteId: string;
+  name: string;
+  floors: number;
+};
+
+type Building360Unit = {
+  id: string;
+  siteId: string;
+  buildingId: string;
+  number: string;
+  type: string;
+  status: string;
+  areaM2: number;
 };
 
 type ModuleItem = {
@@ -136,6 +157,9 @@ const resolveCurrentUserSnapshot = () => {
 };
 
 const buildHeaders = (currentUser: any): HeadersInit => ({
+  ...(localStorage.getItem('eduguard_token') || localStorage.getItem('token')
+    ? { Authorization: `Bearer ${localStorage.getItem('eduguard_token') || localStorage.getItem('token')}` }
+    : {}),
   'Content-Type': 'application/json',
   'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
   'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
@@ -146,8 +170,17 @@ const buildHeaders = (currentUser: any): HeadersInit => ({
 const Building360PortalPage: React.FC = () => {
   const navigate = useNavigate();
   const [loadingMetrics, setLoadingMetrics] = useState(true);
-  const [overview, setOverview] = useState<EnterpriseOverview | null>(null);
+  const [overview, setOverview] = useState<Building360Overview | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [loadingPortfolio, setLoadingPortfolio] = useState(true);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [sites, setSites] = useState<Building360Site[]>([]);
+  const [buildings, setBuildings] = useState<Building360Building[]>([]);
+  const [units, setUnits] = useState<Building360Unit[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState('');
+  const [selectedBuildingId, setSelectedBuildingId] = useState('');
+  const [selectedUnitType, setSelectedUnitType] = useState('');
+  const [selectedUnitStatus, setSelectedUnitStatus] = useState('');
 
   useEffect(() => {
     const loadOverview = async () => {
@@ -158,7 +191,7 @@ const Building360PortalPage: React.FC = () => {
         const currentUser = resolveCurrentUserSnapshot();
         const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
         const response = await withTimeout(
-          fetch('/api/v1/enterprise/overview', { headers }),
+          fetch('/api/v1/building360/overview', { headers }),
           10000,
           'Building360 overview timeout'
         );
@@ -180,47 +213,162 @@ const Building360PortalPage: React.FC = () => {
     loadOverview();
   }, []);
 
-  const workflowStatus = overview?.workflows?.summary?.byStatus || {};
-  const openWorkflows = (workflowStatus.in_review || 0) + (workflowStatus.pending || 0);
+  useEffect(() => {
+    const loadSites = async () => {
+      setLoadingPortfolio(true);
+      setPortfolioError(null);
+
+      try {
+        const currentUser = resolveCurrentUserSnapshot();
+        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const response = await withTimeout(
+          fetch('/api/v1/building360/sites', { headers }),
+          10000,
+          'Building360 sites timeout'
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = (await response.json()) as Building360Site[];
+        setSites(Array.isArray(data) ? data : []);
+        setSelectedSiteId((prev) => prev || data?.[0]?.id || '');
+      } catch (error) {
+        console.warn('Building360 site list unavailable.', error);
+        setPortfolioError('Nao foi possivel carregar portfolio operacional agora.');
+      } finally {
+        setLoadingPortfolio(false);
+      }
+    };
+
+    loadSites();
+  }, []);
+
+  useEffect(() => {
+    const loadBuildings = async () => {
+      if (!selectedSiteId) {
+        setBuildings([]);
+        setSelectedBuildingId('');
+        return;
+      }
+
+      try {
+        const currentUser = resolveCurrentUserSnapshot();
+        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const response = await withTimeout(
+          fetch(`/api/v1/building360/buildings?siteId=${encodeURIComponent(selectedSiteId)}`, { headers }),
+          10000,
+          'Building360 buildings timeout'
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = (await response.json()) as Building360Building[];
+        const list = Array.isArray(data) ? data : [];
+        setBuildings(list);
+        setSelectedBuildingId((prev) => {
+          if (!prev) return list[0]?.id || '';
+          return list.some((item) => item.id === prev) ? prev : list[0]?.id || '';
+        });
+      } catch (error) {
+        console.warn('Building360 building list unavailable.', error);
+        setBuildings([]);
+        setSelectedBuildingId('');
+      }
+    };
+
+    loadBuildings();
+  }, [selectedSiteId]);
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      if (!selectedSiteId) {
+        setUnits([]);
+        return;
+      }
+
+      try {
+        const currentUser = resolveCurrentUserSnapshot();
+        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const params = new URLSearchParams();
+        params.set('siteId', selectedSiteId);
+        if (selectedBuildingId) params.set('buildingId', selectedBuildingId);
+        if (selectedUnitType) params.set('type', selectedUnitType);
+        if (selectedUnitStatus) params.set('status', selectedUnitStatus);
+
+        const response = await withTimeout(
+          fetch(`/api/v1/building360/units?${params.toString()}`, { headers }),
+          10000,
+          'Building360 units timeout'
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = (await response.json()) as Building360Unit[];
+        setUnits(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.warn('Building360 unit list unavailable.', error);
+        setUnits([]);
+      }
+    };
+
+    loadUnits();
+  }, [selectedSiteId, selectedBuildingId, selectedUnitType, selectedUnitStatus]);
+
+  const portfolio = overview?.portfolio;
+  const operations = overview?.operations;
+  const maintenance = overview?.maintenance;
+  const workOrdersOpen = operations?.workOrdersOpen ?? 0;
+  const workOrdersDone = operations?.workOrdersDone ?? 0;
+  const warningAssets = maintenance?.warningAssets ?? 0;
+  const criticalAssets = maintenance?.criticalAssets ?? 0;
 
   const topCards = useMemo(
     () => [
       {
-        label: 'Eventos Hoje',
-        value: overview?.audit?.totalToday ?? 0,
-        subtitle: 'Eventos de auditoria e actividade operacional',
+        label: 'Sites Activos',
+        value: portfolio?.sites ?? 0,
+        subtitle: 'Sites operacionais no tenant actual',
       },
       {
-        label: 'Sessoes Activas',
-        value: overview?.sessions?.active ?? 0,
-        subtitle: 'Utilizadores activos neste momento',
+        label: 'Unidades',
+        value: portfolio?.units ?? 0,
+        subtitle: 'Unidades e espacos sob gestao',
       },
       {
-        label: 'Workflows Abertos',
-        value: openWorkflows,
-        subtitle: 'Fluxos pendentes e em revisao',
+        label: 'Ordens Abertas',
+        value: workOrdersOpen,
+        subtitle: 'Ordens de manutencao em curso',
       },
       {
-        label: 'MFA Verificado',
-        value: `${overview?.security?.mfa?.verified ?? 0}/${overview?.security?.mfa?.total ?? 0}`,
-        subtitle: 'Dispositivos e contas protegidas',
+        label: 'Risco de Activos',
+        value: `${criticalAssets}/${warningAssets}`,
+        subtitle: 'Criticos vs alertas preventivos',
       },
     ],
-    [overview, openWorkflows]
+    [criticalAssets, portfolio?.sites, portfolio?.units, warningAssets, workOrdersOpen]
   );
 
   const moduleLiveData: Record<string, string> = {
-    property: `${overview?.sessions?.total ?? 0} sessoes acumuladas`,
-    finance: `${overview?.audit?.totalToday ?? 0} eventos financeiros/auditoria hoje`,
-    maintenance: `${openWorkflows} fluxos activos`,
-    access: `${overview?.sessions?.active ?? 0} acessos activos`,
-    people: `${overview?.sessions?.total ?? 0} registos de sessao`,
-    documents: `${workflowStatus.completed || 0} aprovacoes concluidas`,
-    parking: `${workflowStatus.pending || 0} pendencias operacionais`,
-    insight: `${overview?.audit?.totalToday ?? 0} pontos no painel analitico`,
-    intelligence: `${workflowStatus.in_review || 0} alertas para decisao`,
-    security: `${overview?.security?.mfa?.verified ?? 0} contas com MFA`,
+    property: `${portfolio?.sites ?? 0} sites · ${portfolio?.buildings ?? 0} edificios`,
+    finance: `${workOrdersDone} ordens encerradas para fecho financeiro`,
+    maintenance: `${workOrdersOpen} ordens activas`,
+    access: `${operations?.assets ?? 0} activos monitorados`,
+    people: `${portfolio?.units ?? 0} unidades com actividade`,
+    documents: `${workOrdersDone} registos de operacao concluidos`,
+    parking: `${warningAssets} activos em alerta`,
+    insight: `${operations?.assets ?? 0} sinais no painel analitico`,
+    intelligence: `${criticalAssets} activos criticos para decisao`,
+    security: `${warningAssets + criticalAssets} alertas operacionais totais`,
   };
+
+  const selectedSite = sites.find((item) => item.id === selectedSiteId);
+  const selectedBuilding = buildings.find((item) => item.id === selectedBuildingId);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -322,6 +470,126 @@ const Building360PortalPage: React.FC = () => {
               </article>
             ))}
           </div>
+        </section>
+
+        <section className="mt-16 sm:mt-20 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 sm:p-7">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Portfolio Operacional Live</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Filtros reais de sites, edificios e unidades com dados vindos do modulo Building360.
+              </p>
+            </div>
+            <div className="text-xs text-slate-400">
+              {loadingPortfolio ? 'A carregar portfolio...' : `${sites.length} site(s) | ${buildings.length} edificio(s) | ${units.length} unidade(s)`}
+            </div>
+          </div>
+
+          {portfolioError && (
+            <p className="mt-4 text-xs text-amber-300 bg-amber-950/40 border border-amber-700/50 rounded-lg px-3 py-2">
+              {portfolioError}
+            </p>
+          )}
+
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <label className="text-xs text-slate-300">
+              Site
+              <select
+                value={selectedSiteId}
+                onChange={(event) => setSelectedSiteId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os sites</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>{site.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Edificio
+              <select
+                value={selectedBuildingId}
+                onChange={(event) => setSelectedBuildingId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os edificios</option>
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.id}>{building.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Tipo de Unidade
+              <select
+                value={selectedUnitType}
+                onChange={(event) => setSelectedUnitType(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os tipos</option>
+                <option value="apartment">apartment</option>
+                <option value="office">office</option>
+                <option value="shop">shop</option>
+                <option value="room">room</option>
+                <option value="warehouse">warehouse</option>
+                <option value="parking">parking</option>
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Estado
+              <select
+                value={selectedUnitStatus}
+                onChange={(event) => setSelectedUnitStatus(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os estados</option>
+                <option value="occupied">occupied</option>
+                <option value="vacant">vacant</option>
+                <option value="maintenance">maintenance</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-slate-800 overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-slate-900/90 text-slate-300 border-b border-slate-800">
+                <tr>
+                  <th className="text-left px-4 py-3">Unidade</th>
+                  <th className="text-left px-4 py-3">Tipo</th>
+                  <th className="text-left px-4 py-3">Estado</th>
+                  <th className="text-left px-4 py-3">Area (m2)</th>
+                  <th className="text-left px-4 py-3">Edificio</th>
+                  <th className="text-left px-4 py-3">Site</th>
+                </tr>
+              </thead>
+              <tbody>
+                {units.map((unit) => (
+                  <tr key={unit.id} className="border-b border-slate-800/70 text-slate-200">
+                    <td className="px-4 py-3 font-semibold">{unit.number}</td>
+                    <td className="px-4 py-3">{unit.type}</td>
+                    <td className="px-4 py-3">{unit.status}</td>
+                    <td className="px-4 py-3">{unit.areaM2}</td>
+                    <td className="px-4 py-3">{buildings.find((building) => building.id === unit.buildingId)?.name || '-'}</td>
+                    <td className="px-4 py-3">{sites.find((site) => site.id === unit.siteId)?.name || '-'}</td>
+                  </tr>
+                ))}
+                {!loadingPortfolio && units.length === 0 && (
+                  <tr>
+                    <td className="px-4 py-6 text-slate-400" colSpan={6}>Sem unidades para os filtros actuais.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {(selectedSite || selectedBuilding) && (
+            <p className="mt-4 text-xs text-slate-400">
+              Escopo actual: {selectedSite ? `${selectedSite.name} (${selectedSite.city})` : 'Todos os sites'}
+              {selectedBuilding ? ` -> ${selectedBuilding.name}` : ''}
+            </p>
+          )}
         </section>
 
         <section className="mt-16 sm:mt-20 grid grid-cols-1 lg:grid-cols-2 gap-6">
