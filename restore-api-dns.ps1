@@ -57,31 +57,72 @@ $headersBearer = @{
 }
 
 $headers = $headersBearer
+$authMode = "API Token (Bearer)"
+$usedGlobalKeyFallback = $false
 
-try {
-  $null = Invoke-RestMethod -Method GET -Uri "https://api.cloudflare.com/client/v4/user/tokens/verify" -Headers $headersBearer
-  Write-Host "Cloudflare auth mode: API Token (Bearer)"
-} catch {
-  Write-Host "Bearer token validation failed. Trying Global API Key mode..."
-  if ([string]::IsNullOrWhiteSpace($cfEmail)) {
-    $cfEmail = Read-Host -Prompt "Cloudflare account email (for Global API Key mode)"
+function Set-GlobalKeyHeaders {
+  if ([string]::IsNullOrWhiteSpace($script:cfEmail)) {
+    $script:cfEmail = Read-Host -Prompt "Cloudflare account email (for Global API Key mode)"
   }
 
-  if ([string]::IsNullOrWhiteSpace($cfEmail)) {
+  if ([string]::IsNullOrWhiteSpace($script:cfEmail)) {
     throw "Missing Cloudflare email for Global API Key mode."
   }
 
-  $headers = @{
-    "X-Auth-Email" = $cfEmail
-    "X-Auth-Key" = $cfToken
+  $script:headers = @{
+    "X-Auth-Email" = $script:cfEmail
+    "X-Auth-Key" = $script:cfToken
     "Content-Type" = "application/json"
   }
+  $script:authMode = "Global API Key"
+  $script:usedGlobalKeyFallback = $true
   Write-Host "Cloudflare auth mode: Global API Key"
 }
 
+function Invoke-CfRequest {
+  param(
+    [Parameter(Mandatory = $true)][string]$Method,
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [string]$Body
+  )
+
+  try {
+    if ($PSBoundParameters.ContainsKey('Body')) {
+      return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $script:headers -Body $Body
+    }
+    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $script:headers
+  } catch {
+    $responseBody = ""
+    try {
+      $stream = $_.Exception.Response.GetResponseStream()
+      if ($stream) {
+        $reader = New-Object System.IO.StreamReader($stream)
+        $responseBody = $reader.ReadToEnd()
+      }
+    } catch {
+      $responseBody = ""
+    }
+
+    if (-not $script:usedGlobalKeyFallback -and $script:authMode -eq "API Token (Bearer)") {
+      if ($responseBody -match '"code"\s*:\s*9106' -or $responseBody -match 'Authentication failed') {
+        Write-Host "Bearer token rejected by API. Trying Global API Key mode..."
+        Set-GlobalKeyHeaders
+        if ($PSBoundParameters.ContainsKey('Body')) {
+          return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $script:headers -Body $Body
+        }
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $script:headers
+      }
+    }
+
+    throw
+  }
+}
+
+Write-Host "Cloudflare auth mode: $authMode"
+
 if ([string]::IsNullOrWhiteSpace($zoneId)) {
   $zoneLookupUrl = "https://api.cloudflare.com/client/v4/zones?name=$ZoneName&status=active"
-  $zoneLookup = Invoke-RestMethod -Method GET -Uri $zoneLookupUrl -Headers $headers
+  $zoneLookup = Invoke-CfRequest -Method GET -Uri $zoneLookupUrl
   if (-not $zoneLookup.success -or -not $zoneLookup.result -or $zoneLookup.result.Count -eq 0) {
     throw "Unable to resolve zone ID automatically for $ZoneName."
   }
@@ -91,7 +132,7 @@ if ([string]::IsNullOrWhiteSpace($zoneId)) {
 
 Write-Host "[1/5] Looking up existing DNS record for $ApiHost..."
 $searchUrl = "https://api.cloudflare.com/client/v4/zones/$zoneId/dns_records?name=$ApiHost"
-$search = Invoke-RestMethod -Method GET -Uri $searchUrl -Headers $headers
+$search = Invoke-CfRequest -Method GET -Uri $searchUrl
 if (-not $search.success) {
   throw "Cloudflare DNS lookup failed."
 }
@@ -112,14 +153,14 @@ $payload = @{
 if ($record -ne $null) {
   Write-Host "[2/5] Updating existing record $($record.id)..."
   $updateUrl = "https://api.cloudflare.com/client/v4/zones/$zoneId/dns_records/$($record.id)"
-  $update = Invoke-RestMethod -Method PUT -Uri $updateUrl -Headers $headers -Body $payload
+  $update = Invoke-CfRequest -Method PUT -Uri $updateUrl -Body $payload
   if (-not $update.success) {
     throw "Failed to update DNS record."
   }
 } else {
   Write-Host "[2/5] Creating new record..."
   $createUrl = "https://api.cloudflare.com/client/v4/zones/$zoneId/dns_records"
-  $create = Invoke-RestMethod -Method POST -Uri $createUrl -Headers $headers -Body $payload
+  $create = Invoke-CfRequest -Method POST -Uri $createUrl -Body $payload
   if (-not $create.success) {
     throw "Failed to create DNS record."
   }
