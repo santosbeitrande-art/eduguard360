@@ -156,9 +156,15 @@ const resolveCurrentUserSnapshot = () => {
   return null;
 };
 
+const resolveAuthToken = (): string => {
+  return String(localStorage.getItem('eduguard_token') || localStorage.getItem('token') || '').trim();
+};
+
+const hasAuthToken = (): boolean => resolveAuthToken().length > 0;
+
 const buildHeaders = (currentUser: any): HeadersInit => ({
-  ...(localStorage.getItem('eduguard_token') || localStorage.getItem('token')
-    ? { Authorization: `Bearer ${localStorage.getItem('eduguard_token') || localStorage.getItem('token')}` }
+  ...(hasAuthToken()
+    ? { Authorization: `Bearer ${resolveAuthToken()}` }
     : {}),
   'Content-Type': 'application/json',
   'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
@@ -167,8 +173,8 @@ const buildHeaders = (currentUser: any): HeadersInit => ({
   'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
 });
 
-const endpointFor = (currentUser: any, securePath: string, publicPath: string): string => {
-  return currentUser ? securePath : publicPath;
+const endpointFor = (useSecureEndpoint: boolean, securePath: string, publicPath: string): string => {
+  return useSecureEndpoint ? securePath : publicPath;
 };
 
 const Building360PortalPage: React.FC = () => {
@@ -193,8 +199,9 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
-        const endpoint = endpointFor(currentUser, '/api/v1/building360/overview', '/api/v1/building360/public/overview');
+        const useSecureEndpoint = hasAuthToken();
+        const headers = buildHeaders(currentUser);
+        const endpoint = endpointFor(useSecureEndpoint, '/api/v1/building360/overview', '/api/v1/building360/public/overview');
         const response = await withTimeout(
           fetch(endpoint, { headers }),
           10000,
@@ -225,8 +232,9 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
-        const endpoint = endpointFor(currentUser, '/api/v1/building360/sites', '/api/v1/building360/public/sites');
+        const useSecureEndpoint = hasAuthToken();
+        const headers = buildHeaders(currentUser);
+        const endpoint = endpointFor(useSecureEndpoint, '/api/v1/building360/sites', '/api/v1/building360/public/sites');
         const response = await withTimeout(
           fetch(endpoint, { headers }),
           10000,
@@ -261,9 +269,10 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
+        const useSecureEndpoint = hasAuthToken();
+        const headers = buildHeaders(currentUser);
         const basePath = endpointFor(
-          currentUser,
+          useSecureEndpoint,
           '/api/v1/building360/buildings',
           '/api/v1/building360/public/buildings',
         );
@@ -303,8 +312,9 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const headers = currentUser ? buildHeaders(currentUser) : { 'Content-Type': 'application/json' };
-        const basePath = endpointFor(currentUser, '/api/v1/building360/units', '/api/v1/building360/public/units');
+        const useSecureEndpoint = hasAuthToken();
+        const headers = buildHeaders(currentUser);
+        const basePath = endpointFor(useSecureEndpoint, '/api/v1/building360/units', '/api/v1/building360/public/units');
         const params = new URLSearchParams();
         params.set('siteId', selectedSiteId);
         if (selectedBuildingId) params.set('buildingId', selectedBuildingId);
