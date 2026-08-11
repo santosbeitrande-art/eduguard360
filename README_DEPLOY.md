@@ -39,13 +39,23 @@ Para manter o `api.eduguard360.co.mz` actual ligado ao Verify API e publicar o b
 1. Criar um novo servico web no Render usando o blueprint [render.business-api.yaml](render.business-api.yaml) ou apontando para [backend/Dockerfile](backend/Dockerfile).
 2. Publicar o servico com um host proprio, por exemplo `business.eduguard360.co.mz`.
 3. Na Cloudflare, criar `business` como `CNAME` para o hostname publico do Render.
-4. Na Vercel, definir `BUSINESS_API_BASE=https://business.eduguard360.co.mz` no projecto principal.
-5. Fazer redeploy do frontend e validar:
+   No Windows/PowerShell podes usar [restore-business-dns.ps1](restore-business-dns.ps1):
+
+```powershell
+./restore-business-dns.ps1 -TargetHost <render-host-publico> -RecordType CNAME
+```
+
+Depois disso:
+
+1. Na Vercel, definir `BUSINESS_API_BASE=https://business.eduguard360.co.mz` no projecto principal.
+2. Fazer redeploy do frontend e validar:
 	- `https://business.eduguard360.co.mz/api/v1/health`
 	- `https://business.eduguard360.co.mz/api/v1/building360/public/overview`
 	- `https://eduguard360.co.mz/api/v1/building360/public/overview`
 
 O backend Nest business agora expoe healthcheck proprio em `/api/v1/health` para validacao do deploy.
+
+O proxy do frontend passou a assumir `https://business.eduguard360.co.mz` como default para `BUSINESS_API_BASE`, evitando novo acoplamento acidental ao `api.eduguard360.co.mz` do Verify.
 
 ### Modo `api-external-orchestrated` no Render
 Se o frontend `/public` exigir modo externo obrigatório, configure também estes env vars no serviço da API:

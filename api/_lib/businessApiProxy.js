@@ -1,4 +1,4 @@
-const DEFAULT_BUSINESS_API_BASE = 'https://api.eduguard360.co.mz';
+const DEFAULT_BUSINESS_API_BASE = 'https://business.eduguard360.co.mz';
 
 export function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
