@@ -31,6 +31,14 @@
   ],
   "rewrites": [
     {
+      "source": "/api/v1/enterprise/(.*)",
+      "destination": "/api/v1/enterprise/$1"
+    },
+    {
+      "source": "/api/v1/building360/(.*)",
+      "destination": "/api/v1/building360/$1"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "https://api.eduguard360.co.mz/api/$1"
     },

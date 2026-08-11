@@ -221,6 +221,64 @@ const approvalFlowByProfile = [
   { id: 'step-final', title: 'Concluído', owner: 'administrator', label: 'Administração Escolar' },
 ];
 
+const preferredWorkspaceModuleByRole: Record<string, string> = {
+  super_admin: 'workflows',
+  director: 'aprovacoes',
+  administrator: 'matriculas',
+  secretaria: 'matriculas',
+  coordenador: 'planeamento',
+  professor: 'comunicacao-ocorrencias',
+  financeiro: 'pagamentos',
+  rh: 'funcionarios',
+  seguranca: 'ocorrencias',
+};
+
+const moduleSlugOverrides: Record<string, Record<string, string>> = {
+  super_admin: {
+    instituicao: 'instituicao-global',
+    aprovacoes: 'workflows',
+    auditoria: 'seguranca-auditoria',
+  },
+  administrator: {
+    'administracao-escolar': 'utilizadores',
+  },
+  professor: {
+    ocorrencias: 'comunicacao-ocorrencias',
+  },
+  financeiro: {
+    'propinas-e-pagamentos': 'propinas',
+    reconciliacao: 'reconciliacao',
+  },
+  seguranca: {
+    'controlo-de-entradas': 'controlo-de-entradas',
+    ocorrencias: 'ocorrencias',
+    conformidade: 'conformidade',
+  },
+};
+
+const audienceTags = [
+  { role: 'director', label: 'Direção' },
+  { role: 'administrator', label: 'Administração Escolar' },
+  { role: 'secretaria', label: 'Secretaria Académica' },
+  { role: 'coordenador', label: 'Coordenação Académica' },
+  { role: 'professor', label: 'Professores' },
+  { role: 'financeiro', label: 'Gestão Financeira' },
+  { role: 'rh', label: 'Recursos Humanos' },
+] as const;
+
+const toModuleSlug = (title: string) =>
+  title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+const resolveWorkspaceModuleSlug = (roleKey: string, moduleTitle: string) => {
+  const normalized = toModuleSlug(moduleTitle);
+  return moduleSlugOverrides[roleKey]?.[normalized] || normalized;
+};
+
 const EnterprisePortalPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -261,6 +319,9 @@ const EnterprisePortalPage = () => {
   };
 
   const buildEnterpriseHeaders = (currentUser: any): HeadersInit => ({
+    ...(localStorage.getItem('eduguard_token') || localStorage.getItem('token')
+      ? { Authorization: `Bearer ${localStorage.getItem('eduguard_token') || localStorage.getItem('token')}` }
+      : {}),
     'Content-Type': 'application/json',
     'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
     'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
@@ -317,9 +378,7 @@ const EnterprisePortalPage = () => {
             const resolveRes = await withTimeout(
               fetch('/api/v1/enterprise/rbac/resolve', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
+                headers: enterpriseHeaders,
                 body: JSON.stringify({
                   role: String(currentUser?.perfil || currentUser?.role || ''),
                   schoolId: String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
@@ -469,11 +528,20 @@ const EnterprisePortalPage = () => {
     return Array.isArray(actions) && actions.includes(action);
   };
 
+  const workspaceRoleKey = currentEnterpriseRole === 'other' ? 'administrator' : currentEnterpriseRole;
+
+  const hasResolvedPermissions = useMemo(() => {
+    if (!accessProfile?.permissions) return false;
+    return Object.values(accessProfile.permissions).some((actions) => Array.isArray(actions) && actions.length > 0);
+  }, [accessProfile]);
+
   const workspaceModules = useMemo(() => {
-    const role = currentEnterpriseRole === 'other' ? 'administrator' : currentEnterpriseRole;
-    const base = roleWorkspaceModules[role] || roleWorkspaceModules.administrator;
-    return base.filter((module) => can(module.domain, 'read'));
-  }, [currentEnterpriseRole, accessProfile]);
+    const base = roleWorkspaceModules[workspaceRoleKey] || roleWorkspaceModules.administrator;
+    if (!hasResolvedPermissions) return base;
+
+    const readable = base.filter((module) => can(module.domain, 'read'));
+    return readable.length > 0 ? readable : base;
+  }, [workspaceRoleKey, accessProfile, hasResolvedPermissions]);
 
   const workspacePermissionRows = useMemo(() => {
     const rows = workspaceModules.map((module) => ({
@@ -504,7 +572,10 @@ const EnterprisePortalPage = () => {
     { title: 'Encarregados', value: String(stats.parents), subtitle: 'Famílias ligadas ao ecossistema', accent: 'from-sky-600 to-blue-700', icon: <Bell className="w-6 h-6" /> },
   ];
 
-  const audienceTags = ['Direção', 'Administração Escolar', 'Secretaria Académica', 'Coordenação Académica', 'Professores', 'Gestão Financeira', 'Recursos Humanos'];
+  const openWorkspaceForRole = (roleKey: string, moduleSlug?: string) => {
+    const fallbackModule = preferredWorkspaceModuleByRole[roleKey] || 'utilizadores';
+    navigate(`/enterprise/workspace/${roleKey}/${moduleSlug || fallbackModule}`);
+  };
 
   const quickActions = [
     {
@@ -721,9 +792,14 @@ const EnterprisePortalPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-2 md:min-w-[280px]">
               {audienceTags.map((tag) => (
-                <span key={tag} className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-center text-sm text-slate-200">
-                  {tag}
-                </span>
+                <button
+                  key={tag.role}
+                  type="button"
+                  onClick={() => openWorkspaceForRole(tag.role)}
+                  className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-center text-sm text-slate-200 transition hover:border-emerald-400/40 hover:bg-slate-900"
+                >
+                  {tag.label}
+                </button>
               ))}
             </div>
           </div>
@@ -749,6 +825,13 @@ const EnterprisePortalPage = () => {
                   <p className="font-semibold text-white">{module.title}</p>
                   <p className="mt-1 text-sm text-slate-300">{module.description}</p>
                   <p className="mt-2 text-xs text-slate-400">Domínio RBAC: {module.domain}</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/enterprise/workspace/${workspaceRoleKey}/${resolveWorkspaceModuleSlug(workspaceRoleKey, module.title)}`)}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                  >
+                    Abrir rota de trabalho <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -765,13 +848,19 @@ const EnterprisePortalPage = () => {
 
             <div className="space-y-3">
               {roleOwnershipFlow.map((step) => (
-                <div key={step.id} className={`rounded-2xl border p-4 ${step.canExecute ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-white/10 bg-slate-950/50 text-slate-200'}`}>
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => openWorkspaceForRole(step.owner, preferredWorkspaceModuleByRole[step.owner])}
+                  className={`w-full rounded-2xl border p-4 text-left transition ${step.canExecute ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:border-emerald-300/60' : 'border-white/10 bg-slate-950/50 text-slate-200 hover:border-white/20'}`}
+                >
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-semibold">{step.title}</p>
                     <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">{step.label}</span>
                   </div>
                   <p className="mt-1 text-xs opacity-90">{step.canExecute ? 'Pode executar esta etapa.' : 'Apenas leitura para este perfil.'}</p>
-                </div>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] opacity-80">Abrir módulo</p>
+                </button>
               ))}
             </div>
           </div>

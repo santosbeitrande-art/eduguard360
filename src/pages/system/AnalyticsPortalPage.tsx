@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
 import { withTimeout } from '@/lib/networkPerformance';
 import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
 import {
@@ -66,7 +65,7 @@ const AnalyticsPortalPage = () => {
   const [schools, setSchools] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [rankings, setRankings] = useState<{ courses: any[]; professors: any[] }>({ courses: [], professors: [] });
   const [accessContext, setAccessContext] = useState<any | null>(null);
 
   const resolveCurrentUserSnapshot = () => {
@@ -83,18 +82,36 @@ const AnalyticsPortalPage = () => {
     return null;
   };
 
+  const buildEnterpriseHeaders = (currentUser: any): HeadersInit => ({
+    ...(localStorage.getItem('eduguard_token') || localStorage.getItem('token')
+      ? { Authorization: `Bearer ${localStorage.getItem('eduguard_token') || localStorage.getItem('token')}` }
+      : {}),
+    'Content-Type': 'application/json',
+    'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
+    'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
+    'x-school-id': String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
+    'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
+  });
+
   const resolveAccessContext = async (currentUser: any) => {
     const fallbackRole = normalizeEnterpriseRole(currentUser?.perfil || currentUser?.role);
     const fallbackSchool = String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || '').trim() || null;
 
     try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'x-enterprise-role': String(currentUser?.perfil || currentUser?.role || ''),
-        'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
-        'x-school-id': String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
-        'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
-      };
+      const headers = buildEnterpriseHeaders(currentUser);
+
+      const analyticsResponse = await withTimeout(
+        fetch('/api/v1/enterprise/analytics/overview', {
+          method: 'GET',
+          headers,
+        }),
+        10000,
+        'Analytics enterprise overview timeout'
+      );
+
+      if (analyticsResponse.ok) {
+        return await analyticsResponse.json();
+      }
 
       const response = await withTimeout(
         fetch('/api/v1/enterprise/rbac/resolve', {
@@ -135,8 +152,12 @@ const AnalyticsPortalPage = () => {
     setError(null);
     try {
       const currentUser = resolveCurrentUserSnapshot();
-      const resolvedAccess = await resolveAccessContext(currentUser);
-      setAccessContext(resolvedAccess);
+      const resolvedPayload = await resolveAccessContext(currentUser);
+      const resolvedAccess = resolvedPayload?.accessProfile || resolvedPayload;
+      setAccessContext({
+        ...resolvedPayload,
+        accessProfile: resolvedAccess,
+      });
 
       const canReadDomain = (domain: string) => {
         const actions = resolvedAccess?.permissions?.[domain];
@@ -144,107 +165,123 @@ const AnalyticsPortalPage = () => {
         return actions.includes('read');
       };
 
-      const scopeSchoolId = String(resolvedAccess?.analyticsScope?.schoolId || '').trim() || null;
-      const canViewAllSchools = Boolean(resolvedAccess?.analyticsScope?.canViewAllSchools);
+      const scopeSchoolId = String(
+        resolvedAccess?.analyticsScope?.schoolId ||
+        resolvedPayload?.scope?.schoolId ||
+        resolvedPayload?.scope?.tenantId ||
+        ''
+      ).trim() || null;
+      const canViewAllSchools = Boolean(
+        resolvedAccess?.analyticsScope?.canViewAllSchools ||
+        resolvedPayload?.scope?.role === 'super_admin'
+      );
 
-      let schoolsQuery = supabase.from('escolas').select('id,nome,email,telefone').order('nome');
-      if (!canViewAllSchools && scopeSchoolId) {
-        schoolsQuery = schoolsQuery.eq('id', scopeSchoolId);
-      }
+      const backendMetrics = resolvedPayload?.metrics || {};
+      const backendBreakdowns = resolvedPayload?.breakdowns || {};
 
-      let studentsQuery = supabase.from('alunos').select('id,nome,classe,escola_id,encarregado_id').limit(5000);
-      if (!canViewAllSchools && scopeSchoolId) {
-        studentsQuery = studentsQuery.eq('escola_id', scopeSchoolId);
-      }
-
-      let usersQuery = supabase.from('utilizadores').select('id,nome,perfil,status,is_active,escola_id').limit(5000);
-      if (!canViewAllSchools && scopeSchoolId) {
-        usersQuery = usersQuery.eq('escola_id', scopeSchoolId);
-      }
-
-      const [schoolsRes, studentsRes, usersRes, entriesRes] = await Promise.all([
-        withTimeout(schoolsQuery, 12000, 'Analytics schools timeout'),
-        withTimeout(studentsQuery, 12000, 'Analytics students timeout'),
-        withTimeout(usersQuery, 12000, 'Analytics users timeout'),
-        withTimeout(supabase.from('entradas').select('id,tipo,data,aluno_id').order('data', { ascending: false }).limit(120), 12000, 'Analytics entries timeout'),
-      ]);
-
-      const schoolsData = canReadDomain('schools') && Array.isArray(schoolsRes.data) ? schoolsRes.data : [];
-      const studentsData = canReadDomain('students') && Array.isArray(studentsRes.data) ? studentsRes.data : [];
-      const usersData = canReadDomain('users') && Array.isArray(usersRes.data) ? usersRes.data : [];
-      const rawEntries = Array.isArray(entriesRes.data) ? entriesRes.data : [];
-      const allowedStudentIds = new Set(studentsData.map((student: any) => String(student.id)));
-      const entriesData = (canReadDomain('attendance') || canReadDomain('analytics'))
-        ? rawEntries.filter((entry: any) => allowedStudentIds.size === 0 || allowedStudentIds.has(String(entry.aluno_id)))
+      const schoolDistribution = canReadDomain('schools') && Array.isArray(backendBreakdowns?.schoolDistribution)
+        ? backendBreakdowns.schoolDistribution
+        : [];
+      const roleDistribution = canReadDomain('users') && Array.isArray(backendBreakdowns?.userRoleDistribution)
+        ? backendBreakdowns.userRoleDistribution
+        : [];
+      const trendByDay = (canReadDomain('attendance') || canReadDomain('analytics')) && Array.isArray(backendBreakdowns?.trendByDay)
+        ? backendBreakdowns.trendByDay
         : [];
 
-      const alerts = usersData.filter((user: any) => user?.status === 'pending' || user?.is_active === false).length;
+      const schoolsData = schoolDistribution.map((row: any) => ({
+        id: String(row?.id || row?.name || 'Sem escopo'),
+        nome: String(row?.name || row?.id || 'Sem escopo'),
+        students: Number(row?.students || 0),
+        users: Number(row?.users || 0),
+        movements: Number(row?.movements || 0),
+        frequency: Number(row?.frequency || 0),
+      }));
+
+      const usersData = roleDistribution.map((row: any) => ({
+        id: `role-${String(row?.role || 'unknown')}`,
+        nome: String(row?.role || 'unknown'),
+        perfil: String(row?.role || 'unknown'),
+        total: Number(row?.total || 0),
+      }));
+
+      const studentsData = schoolsData.map((school: any) => ({
+        id: `students-${String(school.id)}`,
+        nome: `Alunos ${String(school.nome)}`,
+        classe: 'Distribuição institucional',
+        escola_id: school.id,
+        count: Number(school.students || 0),
+      }));
+
+      const entriesData = trendByDay.map((point: any) => ({
+        id: `trend-${String(point?.day || '')}`,
+        tipo: 'movimentos',
+        data: point?.day,
+        aluno_id: String(point?.scopeId || point?.schoolId || 'all'),
+        schoolId: String(point?.scopeId || point?.schoolId || ''),
+        count: Number(point?.total || 0),
+      }));
+
+      const alerts = Math.max(0, Number(backendMetrics?.usersTotal || 0) - Number(backendMetrics?.usersActive || 0));
+
+      const headers = buildEnterpriseHeaders(currentUser);
+      let rankingsPayload: { courses?: any[]; professors?: any[] } = {};
+      try {
+        const rankingResponse = await withTimeout(
+          fetch('/api/v1/enterprise/analytics/rankings', { headers }),
+          10000,
+          'Analytics rankings timeout'
+        );
+        if (rankingResponse.ok) {
+          rankingsPayload = await rankingResponse.json();
+        }
+      } catch {
+        rankingsPayload = {};
+      }
 
       setSchools(schoolsData);
       setStudents(studentsData);
       setUsers(usersData);
       setMetrics({
-        schools: schoolsData.length,
-        students: studentsData.length,
-        users: usersData.length,
-        entries: entriesData.length,
+        schools: typeof resolvedPayload?.metrics?.schoolsTotal === 'number'
+          ? resolvedPayload.metrics.schoolsTotal
+          : schoolsData.length,
+        students: typeof resolvedPayload?.metrics?.studentsTotal === 'number'
+          ? resolvedPayload.metrics.studentsTotal
+          : studentsData.reduce((sum: number, item: any) => sum + Number(item?.count || 0), 0),
+        users: typeof resolvedPayload?.metrics?.usersTotal === 'number'
+          ? resolvedPayload.metrics.usersTotal
+          : usersData.reduce((sum: number, item: any) => sum + Number(item?.total || 0), 0),
+        entries: typeof resolvedPayload?.metrics?.reservationsTotal === 'number'
+          ? resolvedPayload.metrics.reservationsTotal
+          : entriesData.reduce((sum: number, item: any) => sum + Number(item?.count || 0), 0),
         alerts,
       });
       setRecentEntries(entriesData);
+      setRankings({
+        courses: Array.isArray(rankingsPayload?.courses) ? rankingsPayload.courses : [],
+        professors: Array.isArray(rankingsPayload?.professors) ? rankingsPayload.professors : [],
+      });
 
       if (!canViewAllSchools && scopeSchoolId) {
         setSchoolFilter(scopeSchoolId);
       }
 
-      try {
-        if (!canReadDomain('courses')) {
-          setCourses([]);
-        } else {
-          const [publishedCoursesRes, draftCoursesRes] = await Promise.all([
-            withTimeout(fetch('/api/courses?status=published'), 12000, 'Analytics published courses timeout'),
-            withTimeout(fetch('/api/courses?status=draft'), 12000, 'Analytics draft courses timeout'),
-          ]);
-
-          const publishedCoursesData = publishedCoursesRes.ok ? await publishedCoursesRes.json() : { courses: [] };
-          const draftCoursesData = draftCoursesRes.ok ? await draftCoursesRes.json() : { courses: [] };
-          const publishedCourses = Array.isArray(publishedCoursesData.courses) ? publishedCoursesData.courses : [];
-          const draftCourses = Array.isArray(draftCoursesData.courses) ? draftCoursesData.courses : [];
-
-          const mergedCourses = [...publishedCourses];
-          for (const course of draftCourses) {
-            if (!mergedCourses.some((item: any) => String(item.id) === String(course.id))) {
-              mergedCourses.push(course);
-            }
-          }
-          setCourses(mergedCourses);
-        }
-      } catch (courseError) {
-        console.warn('Analytics courses timeout or unavailable:', courseError);
-        setCourses([]);
-      }
     } catch (err: any) {
       console.error('Erro ao carregar Analytics Portal:', err);
-      setError('Não foi possível carregar métricas em tempo real. A mostrar dados locais quando disponíveis.');
-      const cachedSchoolsRaw = localStorage.getItem('eduguard_admin_schools_cache');
-      const cachedUsersRaw = localStorage.getItem('eduguard_locally_approved_users');
-      const cachedRequestsRaw = localStorage.getItem('eduguard_parent_student_requests');
-      const cachedSchools = cachedSchoolsRaw ? JSON.parse(cachedSchoolsRaw) : [];
-      const localUsers = cachedUsersRaw ? JSON.parse(cachedUsersRaw) : [];
-      const localEntries = cachedRequestsRaw ? JSON.parse(cachedRequestsRaw) : [];
+      setError('Não foi possível carregar métricas em tempo real no backend.');
 
-      setSchools(Array.isArray(cachedSchools) ? cachedSchools : []);
-      setUsers(Array.isArray(localUsers) ? localUsers : []);
+      setSchools([]);
+      setUsers([]);
       setStudents([]);
       setRecentEntries([]);
-      setCourses([]);
+      setRankings({ courses: [], professors: [] });
       setMetrics({
-        schools: Array.isArray(cachedSchools) ? cachedSchools.length : 0,
-        students: Array.isArray(localEntries) ? localEntries.length : 0,
-        users: Array.isArray(localUsers) ? localUsers.length : 0,
+        schools: 0,
+        students: 0,
+        users: 0,
         entries: 0,
-        alerts: Array.isArray(localUsers)
-          ? localUsers.filter((item: any) => String(item?.status || '').toLowerCase() === 'pending' || item?.is_active === false).length
-          : 0,
+        alerts: 0,
       });
     } finally {
       setLoading(false);
@@ -275,8 +312,8 @@ const AnalyticsPortalPage = () => {
       const entryDate = entry.data ? new Date(entry.data).getTime() : 0;
       if (entryDate < start || entryDate > end) return false;
       if (schoolFilter !== 'all') {
-        const studentSchool = students.find((student: any) => String(student.id) === String(entry.aluno_id))?.escola_id || null;
-        if (String(studentSchool || '') !== schoolFilter) return false;
+        const entrySchool = String(entry?.schoolId || entry?.aluno_id || '').trim();
+        if (entrySchool !== schoolFilter) return false;
       }
       return true;
     });
@@ -289,24 +326,25 @@ const AnalyticsPortalPage = () => {
 
   const filteredCourses = useMemo(() => {
     const query = courseFilter.trim().toLowerCase();
-    if (!query) return courses;
-    return courses.filter((course) => {
-      const haystack = [course.title, course.description, course.status, course.instructorId, course.category]
+    if (!query) return rankings.courses;
+    return rankings.courses.filter((course) => {
+      const haystack = [course.label, course.subtitle]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [courses, courseFilter]);
+  }, [rankings.courses, courseFilter]);
 
-  const inactiveUsers = users.filter((user: any) => user?.status === 'pending' || user?.is_active === false).length;
-  const activeStudents = new Set(filteredEntries.map((entry) => entry.aluno_id)).size;
-  const attendanceCoverage = students.length > 0 ? Math.round((activeStudents / students.length) * 100) : 0;
-  const retention = users.length > 0 ? Math.max(0, 100 - Math.round((inactiveUsers / users.length) * 100)) : 0;
+  const inactiveUsers = metrics.alerts;
+  const windowMovements = filteredEntries.reduce((sum, entry) => sum + Number(entry?.count || 0), 0);
+  const activeStudents = metrics.students > 0 ? Math.min(metrics.students, windowMovements) : 0;
+  const attendanceCoverage = metrics.students > 0 ? Math.round((activeStudents / metrics.students) * 100) : 0;
+  const retention = metrics.users > 0 ? Math.max(0, 100 - Math.round((inactiveUsers / metrics.users) * 100)) : 0;
 
   const kpis = {
     approvalRate: `${Math.max(0, 100 - inactiveUsers)}%`,
-    abandonmentRate: `${Math.min(100, Math.round((inactiveUsers / Math.max(users.length, 1)) * 100))}%`,
+    abandonmentRate: `${Math.min(100, Math.round((inactiveUsers / Math.max(metrics.users, 1)) * 100))}%`,
     averageFrequency: `${attendanceCoverage}%`,
     retention: `${retention}%`,
   };
@@ -315,7 +353,7 @@ const AnalyticsPortalPage = () => {
     const byDay = new Map<string, number>();
     for (const entry of filteredEntries) {
       const day = entry.data ? new Date(entry.data).toLocaleDateString('pt-MZ', { month: 'short', day: '2-digit' }) : 'N/A';
-      byDay.set(day, (byDay.get(day) || 0) + 1);
+      byDay.set(day, (byDay.get(day) || 0) + Number(entry?.count || 0));
     }
     return Array.from(byDay.entries()).slice(0, 8).map(([label, value]) => ({ label, value }));
   }, [filteredEntries]);
@@ -324,60 +362,52 @@ const AnalyticsPortalPage = () => {
     const byDay = new Map<string, number>();
     for (const entry of previousPeriodEntries) {
       const day = entry.data ? new Date(entry.data).toLocaleDateString('pt-MZ', { month: 'short', day: '2-digit' }) : 'N/A';
-      byDay.set(day, (byDay.get(day) || 0) + 1);
+      byDay.set(day, (byDay.get(day) || 0) + Number(entry?.count || 0));
     }
     return Array.from(byDay.values());
   }, [previousPeriodEntries]);
 
-  const entriesCurrent = filteredEntries.length;
-  const entriesPrevious = previousPeriodEntries.length;
+  const entriesCurrent = filteredEntries.reduce((sum, entry) => sum + Number(entry?.count || 0), 0);
+  const entriesPrevious = previousPeriodEntries.reduce((sum, entry) => sum + Number(entry?.count || 0), 0);
   const entriesDeltaPct = entriesPrevious > 0 ? Math.round(((entriesCurrent - entriesPrevious) / entriesPrevious) * 100) : 0;
 
-  const currentActiveStudents = new Set(filteredEntries.map((entry) => entry.aluno_id)).size;
-  const previousActiveStudents = new Set(previousPeriodEntries.map((entry) => entry.aluno_id)).size;
+  const currentActiveStudents = activeStudents;
+  const previousActiveStudents = metrics.students > 0 ? Math.min(metrics.students, entriesPrevious) : 0;
   const studentsDeltaPct = previousActiveStudents > 0 ? Math.round(((currentActiveStudents - previousActiveStudents) / previousActiveStudents) * 100) : 0;
 
   const schoolBenchmarks = useMemo(() => {
-    return schools.map((school) => {
-      const schoolStudents = students.filter((student: any) => String(student.escola_id || '') === String(school.id));
-      const schoolEntries = filteredEntries.filter((entry) => schoolStudents.some((student: any) => String(student.id) === String(entry.aluno_id)));
+    return schools.map((school: any) => {
+      const schoolStudents = Number(school?.students || 0);
+      const schoolEntries = Number(school?.movements || 0);
       return {
         id: school.id,
         name: school.nome,
-        students: schoolStudents.length,
-        movements: schoolEntries.length,
-        frequency: schoolStudents.length > 0 ? Math.round((new Set(schoolEntries.map((entry) => entry.aluno_id)).size / schoolStudents.length) * 100) : 0,
+        students: schoolStudents,
+        movements: schoolEntries,
+        frequency: schoolStudents > 0 ? Number(school?.frequency || Math.round((Math.min(schoolEntries, schoolStudents) / schoolStudents) * 100)) : 0,
       };
     }).sort((a, b) => b.movements - a.movements);
-  }, [schools, students, filteredEntries]);
+  }, [schools]);
 
   const ranking = useMemo(() => {
     const topSchools = schoolBenchmarks.slice(0, 5);
     const topCourses = [...filteredCourses]
-      .sort((a, b) => {
-        const aEnrollments = Array.isArray(a?.students) ? a.students.length : 0;
-        const bEnrollments = Array.isArray(b?.students) ? b.students.length : 0;
-        return bEnrollments - aEnrollments;
-      })
+      .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0))
       .slice(0, 5)
-      .map((course) => ({
-        id: String(course.id),
-        label: course.title || 'Curso sem título',
-        score: Array.isArray(course.students) ? course.students.length : 0,
-        subtitle: `Status: ${String(course.status || 'draft')}`,
+      .map((course: any) => ({
+        id: String(course?.id || ''),
+        label: String(course?.label || 'Curso sem título'),
+        score: Number(course?.score || 0),
+        subtitle: String(course?.subtitle || ''),
       }));
 
-    const teacherRank = users
-      .filter((user: any) => {
-        const role = String(user?.perfil || '').toLowerCase();
-        return role === 'teacher' || role === 'professor' || role === 'docente';
-      })
+    const teacherRank = (Array.isArray(rankings.professors) ? rankings.professors : [])
       .slice(0, 5)
       .map((user: any, index: number) => ({
-        id: String(user.id || index),
-        label: user.nome || 'Professor sem nome',
-        score: Math.max(1, 100 - index * 7),
-        subtitle: user.escola_id ? `Escola ${String(user.escola_id).slice(0, 8)}` : 'Sem escola associada',
+        id: String(user?.id || index),
+        label: String(user?.label || 'Professor sem nome'),
+        score: Number(user?.score || 0),
+        subtitle: String(user?.subtitle || 'Ranking backend'),
       }));
 
     return {
@@ -385,7 +415,7 @@ const AnalyticsPortalPage = () => {
       courses: topCourses,
       teachers: teacherRank,
     };
-  }, [schoolBenchmarks, filteredCourses, users]);
+  }, [schoolBenchmarks, filteredCourses, rankings.professors]);
 
   const goalPanel = {
     attendanceGoal: 95,
@@ -425,20 +455,12 @@ const AnalyticsPortalPage = () => {
     }
 
     if (drillSource === 'students') {
-      const classCounter = new Map<string, number>();
-      students.forEach((student: any) => {
-        const key = String(student?.classe || 'Sem turma');
-        classCounter.set(key, (classCounter.get(key) || 0) + 1);
-      });
-      return Array.from(classCounter.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 12)
-        .map(([label, value]) => ({
-          id: label,
-          label,
-          value,
-          subtitle: 'Distribuição por turma/classe',
-        }));
+      return schoolBenchmarks.slice(0, 12).map((item) => ({
+        id: `students-${String(item.id)}`,
+        label: item.name,
+        value: item.students,
+        subtitle: 'Distribuição de alunos por escola (backend)',
+      }));
     }
 
     if (drillSource === 'users') {
@@ -461,7 +483,7 @@ const AnalyticsPortalPage = () => {
     const byType = new Map<string, number>();
     filteredEntries.forEach((entry) => {
       const type = String(entry?.tipo || 'desconhecido');
-      byType.set(type, (byType.get(type) || 0) + 1);
+      byType.set(type, (byType.get(type) || 0) + Number(entry?.count || 1));
     });
     return Array.from(byType.entries()).map(([label, value]) => ({
       id: label,
