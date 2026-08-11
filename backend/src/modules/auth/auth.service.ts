@@ -111,6 +111,11 @@ export class AuthService {
     const accessToken = this.jwtService.sign({
       sub: user.id,
       phone: user.phone,
+      name: user.name,
+      email: user.email || null,
+      role: user.role || null,
+      schoolId: user.schoolId || null,
+      tenantId: user.tenantId || user.schoolId || null,
     });
 
     const refreshToken = this.jwtService.sign(

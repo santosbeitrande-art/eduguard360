@@ -60,50 +60,69 @@ export class EnterpriseRbacGuard implements CanActivate {
     const headers = request?.headers || {};
     const user = request?.user || {};
 
+    const hasJwtSubject = Boolean(this.normalizeValue(user.sub || user.id));
+    const tokenRole = this.normalizeValue(user.role || user.perfil);
+    const tokenSchoolId = this.normalizeValue(user.schoolId || user.school_id || user.escola_id);
+    const tokenTenantId = this.normalizeValue(user.tenantId || user.tenant_id);
+    const tokenUserName = this.normalizeValue(user.name || user.nome);
+    const tokenUserId = this.normalizeValue(user.sub || user.id);
+
+    const useTokenClaimsOnly = hasJwtSubject && Boolean(tokenRole || tokenSchoolId || tokenTenantId);
+
     const role = normalizeEnterpriseRole(
-      user.role ||
-        user.perfil ||
-        headers['x-enterprise-role'] ||
-        body.role ||
-        body.actorRole ||
-        query.role,
+      useTokenClaimsOnly
+        ? tokenRole
+        : user.role ||
+            user.perfil ||
+            headers['x-enterprise-role'] ||
+            body.role ||
+            body.actorRole ||
+            query.role,
     );
 
     const schoolId = this.normalizeValue(
-      user.schoolId ||
-        user.school_id ||
-        user.escola_id ||
-        headers['x-school-id'] ||
-        body.schoolId ||
-        body.school_id ||
-        body.escola_id ||
-        query.schoolId,
+      useTokenClaimsOnly
+        ? tokenSchoolId
+        : user.schoolId ||
+            user.school_id ||
+            user.escola_id ||
+            headers['x-school-id'] ||
+            body.schoolId ||
+            body.school_id ||
+            body.escola_id ||
+            query.schoolId,
     );
 
     const tenantId = this.normalizeValue(
-      user.tenantId ||
-        user.tenant_id ||
-        headers['x-tenant-id'] ||
-        body.tenantId ||
-        body.tenant_id ||
-        query.tenantId,
+      useTokenClaimsOnly
+        ? tokenTenantId
+        : user.tenantId ||
+            user.tenant_id ||
+            headers['x-tenant-id'] ||
+            body.tenantId ||
+            body.tenant_id ||
+            query.tenantId,
     );
 
     const userId = this.normalizeValue(
-      user.sub ||
-        user.id ||
-        body.userId ||
-        body.actorId ||
-        query.userId ||
-        headers['x-user-id'],
+      useTokenClaimsOnly
+        ? tokenUserId
+        : user.sub ||
+            user.id ||
+            body.userId ||
+            body.actorId ||
+            query.userId ||
+            headers['x-user-id'],
     );
 
     const userName = this.normalizeValue(
-      user.name ||
-        user.nome ||
-        body.userName ||
-        body.actorName ||
-        headers['x-user-name'],
+      useTokenClaimsOnly
+        ? tokenUserName
+        : user.name ||
+            user.nome ||
+            body.userName ||
+            body.actorName ||
+            headers['x-user-name'],
     );
 
     return {

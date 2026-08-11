@@ -1,4 +1,6 @@
-import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import 'reflect-metadata';
+import { join } from 'path';
+import { DataSource } from 'typeorm';
 import { User } from '../modules/users/entities/user.entity';
 import { Listing } from '../modules/listings/entities/listing.entity';
 import { Image } from '../modules/listings/entities/image.entity';
@@ -27,10 +29,10 @@ import { BuildingPayment } from '../modules/building360/entities/payment.entity'
 import { BuildingReceipt } from '../modules/building360/entities/receipt.entity';
 import { BuildingLedgerEntry } from '../modules/building360/entities/ledger-entry.entity';
 
-export const DatabaseConfig: TypeOrmModuleOptions = {
+export default new DataSource({
   type: 'postgres',
   host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT) || 5432,
+  port: parseInt(process.env.DATABASE_PORT || '5432', 10),
   username: process.env.DATABASE_USER || 'ecotrade_app',
   password: process.env.DATABASE_PASSWORD || 'secure_password',
   database: process.env.DATABASE_NAME || 'ecotrade360',
@@ -63,7 +65,8 @@ export const DatabaseConfig: TypeOrmModuleOptions = {
     BuildingReceipt,
     BuildingLedgerEntry,
   ],
-  synchronize: process.env.NODE_ENV !== 'production',
+  // Resolve from current build location to avoid loading src and dist migrations together.
+  migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+  synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  cache: true,
-};
+});

@@ -8,7 +8,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Segurança
-  app.use(helmet());
+  const helmetMiddleware = (helmet as any).default ?? (helmet as any);
+  app.use(helmetMiddleware());
   app.enableCors({
     origin: process.env.NODE_ENV === 'production'
       ? ['https://app.ecotrade360.pt', 'https://ecotrade360.pt']

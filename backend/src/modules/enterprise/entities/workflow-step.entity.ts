@@ -19,6 +19,9 @@ export class WorkflowStep {
   @Column({ type: 'varchar', length: 120 })
   stepName!: string;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  ownerRole!: string | null;
+
   @Column({ type: 'varchar', length: 24, default: 'pending' })
   status!: 'pending' | 'active' | 'done' | 'skipped';
 

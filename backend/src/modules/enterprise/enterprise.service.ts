@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
@@ -7,6 +7,9 @@ import { SecurityPolicy } from './entities/security-policy.entity';
 import { MfaEnrollment } from './entities/mfa-enrollment.entity';
 import { WorkflowProcess } from './entities/workflow-process.entity';
 import { WorkflowStep } from './entities/workflow-step.entity';
+import { User } from '../users/entities/user.entity';
+import { Listing } from '../listings/entities/listing.entity';
+import { Reservation } from '../reservations/entities/reservation.entity';
 import {
   EnterpriseRole,
   getAccessMatrix,
@@ -38,6 +41,12 @@ export class EnterpriseService {
     private readonly workflowRepository: Repository<WorkflowProcess>,
     @InjectRepository(WorkflowStep)
     private readonly stepRepository: Repository<WorkflowStep>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(Listing)
+    private readonly listingRepository: Repository<Listing>,
+    @InjectRepository(Reservation)
+    private readonly reservationRepository: Repository<Reservation>,
   ) {}
 
   private normalizeScope(input?: Partial<EnterpriseScope>): EnterpriseScope {
@@ -73,6 +82,116 @@ export class EnterpriseService {
     qb.andWhere(`${alias}.schoolId = :schoolId`, {
       schoolId: scope.schoolId,
     });
+  }
+
+  private async tableExists(tableName: string): Promise<boolean> {
+    const rows = await this.userRepository.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = $1
+      LIMIT 1
+      `,
+      [tableName],
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  private async tableColumns(tableName: string): Promise<Set<string>> {
+    const rows = await this.userRepository.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+      `,
+      [tableName],
+    );
+    return new Set((rows || []).map((item: any) => String(item?.column_name || '').trim()).filter(Boolean));
+  }
+
+  private async countOptionalEducationTable(
+    tableName: string,
+    scope: EnterpriseScope,
+    schoolColumnCandidates: string[],
+    tenantColumnCandidates: string[],
+  ): Promise<number | null> {
+    try {
+      const exists = await this.tableExists(tableName);
+      if (!exists) return null;
+
+      const columns = await this.tableColumns(tableName);
+      const schoolColumn = schoolColumnCandidates.find((name) => columns.has(name)) || null;
+      const tenantColumn = tenantColumnCandidates.find((name) => columns.has(name)) || null;
+
+      let sql = `SELECT COUNT(*)::int AS total FROM public."${tableName}"`;
+      const params: Array<string> = [];
+
+      if (scope.role !== 'super_admin') {
+        this.enforceTenantScope(scope);
+        const scopeTenant = String(scope.tenantId || scope.schoolId || '').trim();
+        const scopeSchool = String(scope.schoolId || scope.tenantId || '').trim();
+
+        if (tenantColumn && schoolColumn) {
+          sql += ` WHERE ("${tenantColumn}" = $1 OR "${schoolColumn}" = $2)`;
+          params.push(scopeTenant, scopeSchool);
+        } else if (tenantColumn) {
+          sql += ` WHERE "${tenantColumn}" = $1`;
+          params.push(scopeTenant);
+        } else if (schoolColumn) {
+          sql += ` WHERE "${schoolColumn}" = $1`;
+          params.push(scopeSchool);
+        }
+      }
+
+      const rows = await this.userRepository.query(sql, params);
+      return Number(rows?.[0]?.total || 0);
+    } catch {
+      return null;
+    }
+  }
+
+  private inferOwnerRoleFromStepName(stepName: string): EnterpriseRole | null {
+    const normalized = String(stepName || '').trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized.includes('secretaria') || normalized.includes('matr')) return 'secretaria';
+    if (normalized.includes('coordena') || normalized.includes('pedag')) return 'coordenador';
+    if (normalized.includes('dire') || normalized.includes('institucional')) return 'director';
+    if (normalized.includes('finan') || normalized.includes('pag')) return 'financeiro';
+    if (normalized.includes('rh') || normalized.includes('funcion')) return 'rh';
+    if (normalized.includes('seguran') || normalized.includes('portaria') || normalized.includes('qr')) return 'seguranca';
+    if (normalized.includes('professor') || normalized.includes('docente')) return 'professor';
+    if (normalized.includes('admin') || normalized.includes('conclu')) return 'administrator';
+    return null;
+  }
+
+  private normalizeWorkflowSteps(
+    steps: Array<string | { stepName?: string; ownerRole?: string }>,
+  ): Array<{ stepName: string; ownerRole: EnterpriseRole | null }> {
+    return steps
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const ownerRole = this.inferOwnerRoleFromStepName(entry);
+          return {
+            stepName: entry,
+            ownerRole,
+          };
+        }
+
+        const stepName = String(entry?.stepName || '').trim();
+        if (!stepName) return null;
+
+        const normalizedOwner = entry?.ownerRole
+          ? normalizeEnterpriseRole(entry.ownerRole)
+          : this.inferOwnerRoleFromStepName(stepName);
+
+        return {
+          stepName,
+          ownerRole: normalizedOwner === 'unknown' ? null : normalizedOwner,
+        };
+      })
+      .filter((item): item is { stepName: string; ownerRole: EnterpriseRole | null } => Boolean(item));
   }
 
   private async ensureDefaults(): Promise<void> {
@@ -122,7 +241,13 @@ export class EnterpriseService {
         requester: 'Portal dos Pais',
         owner: 'Secretaria',
         priority: 'high',
-        steps: ['Pedido', 'Secretaria', 'Direção', 'Financeiro', 'Concluído'],
+        steps: [
+          { stepName: 'Submissão', ownerRole: 'secretaria' },
+          { stepName: 'Validação Pedagógica', ownerRole: 'coordenador' },
+          { stepName: 'Aprovação Institucional', ownerRole: 'director' },
+          { stepName: 'Confirmação Financeira', ownerRole: 'financeiro' },
+          { stepName: 'Concluído', ownerRole: 'administrator' },
+        ],
       }, { role: 'super_admin', userId: null, userName: 'system', schoolId: null, tenantId: null });
 
       await this.createWorkflow({
@@ -131,7 +256,11 @@ export class EnterpriseService {
         requester: 'Encarregado',
         owner: 'Direção',
         priority: 'medium',
-        steps: ['Pedido', 'Secretaria', 'Direção', 'Concluído'],
+        steps: [
+          { stepName: 'Submissão', ownerRole: 'secretaria' },
+          { stepName: 'Aprovação Institucional', ownerRole: 'director' },
+          { stepName: 'Concluído', ownerRole: 'administrator' },
+        ],
       }, { role: 'super_admin', userId: null, userName: 'system', schoolId: null, tenantId: null });
     }
   }
@@ -428,7 +557,7 @@ export class EnterpriseService {
     requester?: string;
     owner?: string;
     priority?: 'low' | 'medium' | 'high';
-    steps: string[];
+    steps: Array<string | { stepName?: string; ownerRole?: string }>;
     initialStatus?: 'pending' | 'in_review' | 'approved' | 'rejected' | 'completed';
   }, scopeInput?: Partial<EnterpriseScope>) {
     const scope = this.normalizeScope(scopeInput);
@@ -449,11 +578,17 @@ export class EnterpriseService {
 
     const savedProcess = await this.workflowRepository.save(process);
 
-    const steps = payload.steps.map((stepName, index) =>
+    const normalizedSteps = this.normalizeWorkflowSteps(payload.steps);
+    if (normalizedSteps.length === 0) {
+      throw new BadRequestException('Workflow must include at least one valid step.');
+    }
+
+    const steps = normalizedSteps.map((step, index) =>
       this.stepRepository.create({
         processId: savedProcess.id,
         stepOrder: index,
-        stepName,
+        stepName: step.stepName,
+        ownerRole: step.ownerRole,
         status: index === 0 ? 'active' : 'pending',
       })
     );
@@ -494,6 +629,18 @@ export class EnterpriseService {
     const current = orderedSteps.find((step) => step.status === 'active') || null;
 
     if (current) {
+      const currentOwner = current.ownerRole
+        ? normalizeEnterpriseRole(current.ownerRole)
+        : this.inferOwnerRoleFromStepName(current.stepName);
+
+      if (currentOwner && currentOwner !== 'unknown' && scope.role !== 'super_admin' && scope.role !== currentOwner) {
+        throw new ForbiddenException(`Only role ${currentOwner} can execute the active workflow step.`);
+      }
+
+      if (!current.ownerRole && currentOwner && currentOwner !== 'unknown') {
+        current.ownerRole = currentOwner;
+      }
+
       current.status = 'done';
       current.actor = payload.actor || null;
       current.notes = payload.notes || null;
@@ -502,6 +649,10 @@ export class EnterpriseService {
 
       const next = orderedSteps.find((step) => step.stepOrder === current.stepOrder + 1);
       if (next) {
+        if (!next.ownerRole) {
+          const nextOwner = this.inferOwnerRoleFromStepName(next.stepName);
+          next.ownerRole = nextOwner;
+        }
         next.status = 'active';
         await this.stepRepository.save(next);
         process.currentStep = next.stepOrder;
@@ -632,4 +783,402 @@ export class EnterpriseService {
       },
     };
   }
+
+  async getAnalyticsOverview(scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
+    const accessProfile = this.resolveAccessProfile({
+      role: scope.role,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
+      userId: scope.userId,
+    });
+
+    const canRead = (domain: keyof typeof accessProfile.permissions) => {
+      const actions = accessProfile.permissions[domain] || [];
+      return Array.isArray(actions) && actions.includes('read');
+    };
+
+    let usersTotal = 0;
+    let usersActive = 0;
+    let schoolsTotal = 0;
+    let studentsTotal = 0;
+    let listingsTotal = 0;
+    let listingsAvailable = 0;
+    let reservationsTotal = 0;
+    let reservationsActive = 0;
+    let reservationsCompleted = 0;
+    let reservationPending = 0;
+    let reservationCancelled = 0;
+
+    if (canRead('users')) {
+      const usersQb = this.userRepository.createQueryBuilder('user').andWhere('user.deletedAt IS NULL');
+      this.applyScopedQuery(usersQb, 'user', scope);
+      usersTotal = await usersQb.getCount();
+
+      const usersActiveQb = this.userRepository
+        .createQueryBuilder('user')
+        .andWhere('user.deletedAt IS NULL')
+        .andWhere('user.isActive = :isActive', { isActive: true });
+      this.applyScopedQuery(usersActiveQb, 'user', scope);
+      usersActive = await usersActiveQb.getCount();
+    }
+
+    if (canRead('schools')) {
+      const tableCount = await this.countOptionalEducationTable(
+        'escolas',
+        scope,
+        ['id'],
+        ['tenant_id', 'tenantId'],
+      );
+
+      if (typeof tableCount === 'number') {
+        schoolsTotal = tableCount;
+      } else {
+        const schoolsQb = this.userRepository
+          .createQueryBuilder('user')
+          .select('COUNT(DISTINCT COALESCE(user.tenantId, user.schoolId))', 'total')
+          .andWhere('user.deletedAt IS NULL');
+        this.applyScopedQuery(schoolsQb, 'user', scope);
+        const schoolRaw = await schoolsQb.getRawOne<{ total?: string }>();
+        schoolsTotal = Number(schoolRaw?.total || 0);
+      }
+    }
+
+    if (canRead('students')) {
+      const tableCount = await this.countOptionalEducationTable(
+        'alunos',
+        scope,
+        ['escola_id', 'school_id'],
+        ['tenant_id', 'tenantId'],
+      );
+
+      if (typeof tableCount === 'number') {
+        studentsTotal = tableCount;
+      } else {
+        const studentsQb = this.userRepository
+          .createQueryBuilder('user')
+          .andWhere('user.deletedAt IS NULL')
+          .andWhere('(LOWER(user.role) = :studentRole OR LOWER(user.role) = :alunoRole)', {
+            studentRole: 'student',
+            alunoRole: 'aluno',
+          });
+        this.applyScopedQuery(studentsQb, 'user', scope);
+        studentsTotal = await studentsQb.getCount();
+      }
+    }
+
+    if (canRead('courses')) {
+      const listingsQb = this.listingRepository.createQueryBuilder('listing').andWhere('listing.deletedAt IS NULL');
+      this.applyScopedQuery(listingsQb, 'listing', scope);
+      listingsTotal = await listingsQb.getCount();
+
+      const listingsAvailableQb = this.listingRepository
+        .createQueryBuilder('listing')
+        .andWhere('listing.deletedAt IS NULL')
+        .andWhere('listing.status = :status', { status: 'available' });
+      this.applyScopedQuery(listingsAvailableQb, 'listing', scope);
+      listingsAvailable = await listingsAvailableQb.getCount();
+    }
+
+    if (canRead('enrollments')) {
+      const reservationsQb = this.reservationRepository.createQueryBuilder('reservation');
+      this.applyScopedQuery(reservationsQb, 'reservation', scope);
+      reservationsTotal = await reservationsQb.getCount();
+
+      const activeQb = this.reservationRepository
+        .createQueryBuilder('reservation')
+        .andWhere('reservation.status = :status', { status: 'active' });
+      this.applyScopedQuery(activeQb, 'reservation', scope);
+      reservationsActive = await activeQb.getCount();
+
+      const completedQb = this.reservationRepository
+        .createQueryBuilder('reservation')
+        .andWhere('reservation.status = :status', { status: 'completed' });
+      this.applyScopedQuery(completedQb, 'reservation', scope);
+      reservationsCompleted = await completedQb.getCount();
+
+      const pendingQb = this.reservationRepository
+        .createQueryBuilder('reservation')
+        .andWhere('reservation.status = :status', { status: 'pending' });
+      this.applyScopedQuery(pendingQb, 'reservation', scope);
+      reservationPending = await pendingQb.getCount();
+
+      const cancelledQb = this.reservationRepository
+        .createQueryBuilder('reservation')
+        .andWhere('reservation.status = :status', { status: 'cancelled' });
+      this.applyScopedQuery(cancelledQb, 'reservation', scope);
+      reservationCancelled = await cancelledQb.getCount();
+    }
+
+    let paymentsEstimatedMt = 0;
+    if (canRead('payments')) {
+      const sumQb = this.reservationRepository
+        .createQueryBuilder('reservation')
+        .leftJoin('reservation.listing', 'listing')
+        .select('COALESCE(SUM(listing.price), 0)', 'total')
+        .andWhere('reservation.status = :status', { status: 'completed' });
+      this.applyScopedQuery(sumQb, 'reservation', scope);
+      const raw = await sumQb.getRawOne<{ total?: string }>();
+      paymentsEstimatedMt = Number(raw?.total || 0);
+    }
+
+    const roleLens: Record<string, any> = {
+      director: {
+        pendingApprovals: reservationsActive,
+        operationalCoverage: usersTotal > 0 ? Math.round((usersActive / usersTotal) * 100) : 0,
+      },
+      professor: {
+        activeClassesApprox: listingsAvailable,
+        engagementApprox: reservationsTotal,
+      },
+      financeiro: {
+        paymentsEstimatedMt,
+        completedTransactions: reservationsCompleted,
+      },
+      secretaria: {
+        activeEnrollments: reservationsActive,
+        totalEnrollments: reservationsTotal,
+      },
+    };
+
+    let roleDistribution: Array<{ role: string; total: number }> = [];
+    if (canRead('users')) {
+      const roleQb = this.userRepository
+        .createQueryBuilder('user')
+        .select(`COALESCE(NULLIF(LOWER(user.role), ''), 'unknown')`, 'role')
+        .addSelect('COUNT(*)', 'total')
+        .andWhere('user.deletedAt IS NULL')
+        .groupBy(`COALESCE(NULLIF(LOWER(user.role), ''), 'unknown')`)
+        .orderBy('total', 'DESC');
+      this.applyScopedQuery(roleQb, 'user', scope);
+      const rawRoles = await roleQb.getRawMany<Array<{ role?: string; total?: string }>>();
+      roleDistribution = (rawRoles || []).map((item: any) => ({
+        role: String(item?.role || 'unknown'),
+        total: Number(item?.total || 0),
+      }));
+    }
+
+    const schoolUserQb = this.userRepository
+      .createQueryBuilder('user')
+      .select(`COALESCE(NULLIF(user.schoolId, ''), NULLIF(user.tenantId, ''), 'Sem escopo')`, 'scopeId')
+      .addSelect('COUNT(*)', 'users')
+      .addSelect(`SUM(CASE WHEN user.isActive = true THEN 1 ELSE 0 END)`, 'activeUsers')
+      .andWhere('user.deletedAt IS NULL')
+      .groupBy(`COALESCE(NULLIF(user.schoolId, ''), NULLIF(user.tenantId, ''), 'Sem escopo')`)
+      .orderBy('users', 'DESC');
+    this.applyScopedQuery(schoolUserQb, 'user', scope);
+    const rawSchoolUsers = (await schoolUserQb.getRawMany()) as Array<{ scopeId?: string; users?: string; activeUsers?: string }>;
+
+    const reservationSchoolQb = this.reservationRepository
+      .createQueryBuilder('reservation')
+      .select(`COALESCE(NULLIF(reservation.schoolId, ''), NULLIF(reservation.tenantId, ''), 'Sem escopo')`, 'scopeId')
+      .addSelect('COUNT(*)', 'movements')
+      .groupBy(`COALESCE(NULLIF(reservation.schoolId, ''), NULLIF(reservation.tenantId, ''), 'Sem escopo')`);
+    this.applyScopedQuery(reservationSchoolQb, 'reservation', scope);
+    const rawReservationByScope = (await reservationSchoolQb.getRawMany()) as Array<{ scopeId?: string; movements?: string }>;
+
+    const movementByScope = new Map<string, number>();
+    for (const item of rawReservationByScope || []) {
+      movementByScope.set(String(item?.scopeId || 'Sem escopo'), Number(item?.movements || 0));
+    }
+
+    const schoolDistribution = (rawSchoolUsers || []).map((item: any) => {
+      const scopeId = String(item?.scopeId || 'Sem escopo');
+      const users = Number(item?.users || 0);
+      const activeUsers = Number(item?.activeUsers || 0);
+      const movements = movementByScope.get(scopeId) || 0;
+      return {
+        id: scopeId,
+        name: scopeId,
+        users,
+        activeUsers,
+        movements,
+      };
+    });
+
+    const totalUsersForDistribution = schoolDistribution.reduce((sum, row) => sum + row.users, 0);
+    let allocatedStudents = 0;
+    const schoolDistributionWithStudents = schoolDistribution.map((row, index) => {
+      let students = 0;
+      if (studentsTotal > 0 && totalUsersForDistribution > 0) {
+        students = Math.round((row.users / totalUsersForDistribution) * studentsTotal);
+      }
+      if (index === schoolDistribution.length - 1) {
+        students = Math.max(0, studentsTotal - allocatedStudents);
+      }
+      allocatedStudents += students;
+      const frequency = students > 0
+        ? Math.max(0, Math.min(100, Math.round((Math.min(movementsByScopeValue(row.id, movementByScope), students) / students) * 100)))
+        : 0;
+      return {
+        ...row,
+        students,
+        frequency,
+      };
+    });
+
+    const reservationStatusDistribution = [
+      { status: 'active', total: reservationsActive },
+      { status: 'pending', total: reservationPending },
+      { status: 'completed', total: reservationsCompleted },
+      { status: 'cancelled', total: reservationCancelled },
+    ].filter((item) => item.total > 0);
+
+    const trendQb = this.reservationRepository
+      .createQueryBuilder('reservation')
+      .select(`DATE_TRUNC('day', reservation.createdAt)`, 'day')
+      .addSelect('COUNT(*)', 'total')
+      .andWhere(`reservation.createdAt >= NOW() - INTERVAL '180 days'`)
+      .groupBy(`DATE_TRUNC('day', reservation.createdAt)`)
+      .orderBy(`DATE_TRUNC('day', reservation.createdAt)`, 'ASC');
+    this.applyScopedQuery(trendQb, 'reservation', scope);
+    const rawTrend = await trendQb.getRawMany<Array<{ day?: Date | string; total?: string }>>();
+    const trendByDay = (rawTrend || []).map((item: any) => ({
+      day: new Date(item?.day || new Date()).toISOString(),
+      total: Number(item?.total || 0),
+    }));
+
+    return {
+      accessProfile,
+      scope: {
+        role: scope.role,
+        schoolId: scope.schoolId,
+        tenantId: scope.tenantId,
+      },
+      metrics: {
+        schoolsTotal,
+        studentsTotal,
+        usersTotal,
+        usersActive,
+        listingsTotal,
+        listingsAvailable,
+        reservationsTotal,
+        reservationsActive,
+        reservationsCompleted,
+        reservationsPending: reservationPending,
+        reservationsCancelled: reservationCancelled,
+        paymentsEstimatedMt,
+      },
+      breakdowns: {
+        schoolDistribution: schoolDistributionWithStudents,
+        userRoleDistribution: roleDistribution,
+        reservationStatusDistribution,
+        trendByDay,
+      },
+      roleLens: roleLens[scope.role] || {
+        operationalItems: reservationsTotal,
+        trackedUsers: usersTotal,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  async getAnalyticsRankings(scopeInput?: Partial<EnterpriseScope>) {
+    const scope = this.normalizeScope(scopeInput);
+    this.enforceTenantScope(scope);
+
+    const accessProfile = this.resolveAccessProfile({
+      role: scope.role,
+      schoolId: scope.schoolId,
+      tenantId: scope.tenantId,
+      userId: scope.userId,
+    });
+
+    const canRead = (domain: keyof typeof accessProfile.permissions) => {
+      const actions = accessProfile.permissions[domain] || [];
+      return Array.isArray(actions) && actions.includes('read');
+    };
+
+    let courses: Array<{ id: string; label: string; score: number; subtitle: string }> = [];
+    if (canRead('courses')) {
+      const coursesQb = this.listingRepository
+        .createQueryBuilder('listing')
+        .leftJoin('listing.reservations', 'reservation')
+        .select('listing.id', 'id')
+        .addSelect('listing.title', 'title')
+        .addSelect('listing.status', 'status')
+        .addSelect('COUNT(reservation.id)', 'enrollments')
+        .andWhere('listing.deletedAt IS NULL')
+        .groupBy('listing.id')
+        .addGroupBy('listing.title')
+        .addGroupBy('listing.status')
+        .orderBy('COUNT(reservation.id)', 'DESC')
+        .addOrderBy('listing.createdAt', 'DESC')
+        .limit(10);
+      this.applyScopedQuery(coursesQb, 'listing', scope);
+
+      const rawCourses = (await coursesQb.getRawMany()) as Array<{
+        id?: string;
+        title?: string;
+        status?: string;
+        enrollments?: string;
+      }>;
+
+      courses = (rawCourses || []).map((item) => ({
+        id: String(item?.id || ''),
+        label: String(item?.title || 'Curso sem título'),
+        score: Number(item?.enrollments || 0),
+        subtitle: `Status: ${String(item?.status || 'desconhecido')}`,
+      }));
+    }
+
+    let professors: Array<{ id: string; label: string; score: number; subtitle: string }> = [];
+    if (canRead('teachers') || canRead('users')) {
+      const professorQb = this.userRepository
+        .createQueryBuilder('user')
+        .leftJoin('user.listings', 'listing')
+        .leftJoin('listing.reservations', 'reservation', 'reservation.status = :completedStatus', { completedStatus: 'completed' })
+        .select('user.id', 'id')
+        .addSelect('user.name', 'name')
+        .addSelect('COUNT(DISTINCT listing.id)', 'courses')
+        .addSelect('COUNT(reservation.id)', 'completedTransactions')
+        .andWhere('user.deletedAt IS NULL')
+        .andWhere('(LOWER(user.role) = :roleTeacher OR LOWER(user.role) = :roleProfessor OR LOWER(user.role) = :roleDocente)', {
+          roleTeacher: 'teacher',
+          roleProfessor: 'professor',
+          roleDocente: 'docente',
+        })
+        .groupBy('user.id')
+        .addGroupBy('user.name')
+        .orderBy('COUNT(reservation.id)', 'DESC')
+        .addOrderBy('COUNT(DISTINCT listing.id)', 'DESC')
+        .limit(10);
+      this.applyScopedQuery(professorQb, 'user', scope);
+
+      const rawProfessors = (await professorQb.getRawMany()) as Array<{
+        id?: string;
+        name?: string;
+        courses?: string;
+        completedTransactions?: string;
+      }>;
+
+      professors = (rawProfessors || []).map((item) => {
+        const coursesTotal = Number(item?.courses || 0);
+        const completedTotal = Number(item?.completedTransactions || 0);
+        return {
+          id: String(item?.id || ''),
+          label: String(item?.name || 'Professor sem nome'),
+          score: completedTotal,
+          subtitle: `${coursesTotal} cursos · ${completedTotal} conclusões`,
+        };
+      });
+    }
+
+    return {
+      scope: {
+        role: scope.role,
+        schoolId: scope.schoolId,
+        tenantId: scope.tenantId,
+      },
+      courses,
+      professors,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+}
+
+function movementsByScopeValue(scopeId: string, movementByScope: Map<string, number>): number {
+  return movementByScope.get(scopeId) || 0;
 }

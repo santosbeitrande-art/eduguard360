@@ -99,7 +99,7 @@ export class ListingsService {
 
     // Filtros
     if (filters.type) {
-      query = query.where('listing.type = :type', { type: filters.type });
+      query = query.andWhere('listing.type = :type', { type: filters.type });
     }
 
     if (filters.status) {

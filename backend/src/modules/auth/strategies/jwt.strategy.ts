@@ -16,6 +16,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       sub: payload.sub,
       phone: payload.phone,
+      name: payload.name || null,
+      email: payload.email || null,
+      role: payload.role || payload.perfil || null,
+      perfil: payload.perfil || payload.role || null,
+      schoolId: payload.schoolId || payload.school_id || payload.escola_id || null,
+      school_id: payload.school_id || payload.schoolId || payload.escola_id || null,
+      escola_id: payload.escola_id || payload.schoolId || payload.school_id || null,
+      tenantId: payload.tenantId || payload.tenant_id || null,
+      tenant_id: payload.tenant_id || payload.tenantId || null,
     };
   }
 }

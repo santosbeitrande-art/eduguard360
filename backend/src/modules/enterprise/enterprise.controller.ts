@@ -2,10 +2,12 @@ import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards }
 import { EnterpriseService } from './enterprise.service';
 import { RequireEnterprisePermission } from './decorators/enterprise-permission.decorator';
 import { EnterpriseRbacGuard } from './guards/enterprise-rbac.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 const scopeFromRequest = (req: any) => req?.enterprisePrincipal || {};
 
 @Controller('enterprise')
+@UseGuards(JwtAuthGuard, EnterpriseRbacGuard)
 export class EnterpriseController {
   constructor(private readonly enterpriseService: EnterpriseService) {}
 
@@ -29,6 +31,20 @@ export class EnterpriseController {
   @RequireEnterprisePermission('analytics', 'read')
   async overview(@Req() req: any) {
     return this.enterpriseService.getOverview(scopeFromRequest(req));
+  }
+
+  @Get('analytics/overview')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('analytics', 'read')
+  async analyticsOverview(@Req() req: any) {
+    return this.enterpriseService.getAnalyticsOverview(scopeFromRequest(req));
+  }
+
+  @Get('analytics/rankings')
+  @UseGuards(EnterpriseRbacGuard)
+  @RequireEnterprisePermission('analytics', 'read')
+  async analyticsRankings(@Req() req: any) {
+    return this.enterpriseService.getAnalyticsRankings(scopeFromRequest(req));
   }
 
   @Get('audit')
@@ -131,7 +147,15 @@ export class EnterpriseController {
       requester: body?.requester,
       owner: body?.owner,
       priority: body?.priority || 'medium',
-      steps: Array.isArray(body?.steps) ? body.steps : ['Pedido', 'Secretaria', 'Direção', 'Concluído'],
+      steps: Array.isArray(body?.steps)
+        ? body.steps
+        : [
+            { stepName: 'Submissão', ownerRole: 'secretaria' },
+            { stepName: 'Validação Pedagógica', ownerRole: 'coordenador' },
+            { stepName: 'Aprovação Institucional', ownerRole: 'director' },
+            { stepName: 'Confirmação Financeira', ownerRole: 'financeiro' },
+            { stepName: 'Concluído', ownerRole: 'administrator' },
+          ],
       initialStatus: body?.initialStatus,
     }, scopeFromRequest(req));
   }

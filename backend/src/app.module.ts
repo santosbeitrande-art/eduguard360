@@ -6,6 +6,7 @@ import { UsersModule } from './modules/users/users.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { EnterpriseModule } from './modules/enterprise/enterprise.module';
+import { Building360Module } from './modules/building360/building360.module';
 import { DatabaseConfig } from './config/database.config';
 
 @Module({
@@ -20,6 +21,7 @@ import { DatabaseConfig } from './config/database.config';
     ListingsModule,
     ReservationsModule,
     EnterpriseModule,
+    Building360Module,
   ],
   controllers: [],
   providers: [],

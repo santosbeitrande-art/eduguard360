@@ -9,9 +9,12 @@ import { MfaEnrollment } from './entities/mfa-enrollment.entity';
 import { WorkflowProcess } from './entities/workflow-process.entity';
 import { WorkflowStep } from './entities/workflow-step.entity';
 import { EnterpriseRbacGuard } from './guards/enterprise-rbac.guard';
+import { User } from '../users/entities/user.entity';
+import { Listing } from '../listings/entities/listing.entity';
+import { Reservation } from '../reservations/entities/reservation.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog, ActiveSession, SecurityPolicy, MfaEnrollment, WorkflowProcess, WorkflowStep])],
+  imports: [TypeOrmModule.forFeature([AuditLog, ActiveSession, SecurityPolicy, MfaEnrollment, WorkflowProcess, WorkflowStep, User, Listing, Reservation])],
   controllers: [EnterpriseController],
   providers: [EnterpriseService, EnterpriseRbacGuard],
   exports: [EnterpriseService],

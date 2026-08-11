@@ -211,9 +211,9 @@ export class ReservationsService {
     }
 
     if (role === 'buyer') {
-      query = query.where('reservation.buyerId = :userId', { userId });
+      query = query.andWhere('reservation.buyerId = :userId', { userId });
     } else if (role === 'seller') {
-      query = query.where('reservation.sellerId = :userId', { userId });
+      query = query.andWhere('reservation.sellerId = :userId', { userId });
     }
 
     const [reservations, total] = await query
