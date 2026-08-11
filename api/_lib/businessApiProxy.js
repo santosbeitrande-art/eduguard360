@@ -1,4 +1,5 @@
 const DEFAULT_BUSINESS_API_BASE = 'https://business.eduguard360.co.mz';
+const DIRECT_BUSINESS_API_BASE = 'https://eduguard360-business-api.onrender.com';
 
 export function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -190,51 +191,61 @@ export function buildPermissionsByRole(roleInput) {
 }
 
 export async function proxyBusinessApi(req, path) {
-  const base = String(process.env.BUSINESS_API_BASE || DEFAULT_BUSINESS_API_BASE).replace(/\/$/, '');
-  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const configuredBase = String(process.env.BUSINESS_API_BASE || DEFAULT_BUSINESS_API_BASE).replace(/\/$/, '');
+  const candidates = configuredBase === DIRECT_BUSINESS_API_BASE
+    ? [configuredBase]
+    : [configuredBase, DIRECT_BUSINESS_API_BASE];
   const timeoutMs = Number(process.env.BUSINESS_API_TIMEOUT_MS || 3500);
 
-  try {
-    const headers = {
-      'content-type': req.headers['content-type'] || 'application/json',
-      authorization: req.headers.authorization || '',
-      'x-enterprise-role': req.headers['x-enterprise-role'] || '',
-      'x-school-id': req.headers['x-school-id'] || '',
-      'x-tenant-id': req.headers['x-tenant-id'] || '',
-      'x-user-id': req.headers['x-user-id'] || '',
-      'x-user-name': req.headers['x-user-name'] || '',
-    };
+  const urlPath = path.startsWith('/') ? path : `/${path}`;
 
-    const method = String(req.method || 'GET').toUpperCase();
-    const bodyAllowed = !['GET', 'HEAD'].includes(method);
-    const body = bodyAllowed ? JSON.stringify(req.body || {}) : undefined;
+  for (const base of candidates) {
+    const url = `${base}${urlPath}`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    let response;
     try {
-      response = await fetch(url, { method, headers, body, signal: controller.signal });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    const text = await response.text();
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
+      const headers = {
+        'content-type': req.headers['content-type'] || 'application/json',
+        authorization: req.headers.authorization || '',
+        'x-enterprise-role': req.headers['x-enterprise-role'] || '',
+        'x-school-id': req.headers['x-school-id'] || '',
+        'x-tenant-id': req.headers['x-tenant-id'] || '',
+        'x-user-id': req.headers['x-user-id'] || '',
+        'x-user-name': req.headers['x-user-name'] || '',
+      };
+
+      const method = String(req.method || 'GET').toUpperCase();
+      const bodyAllowed = !['GET', 'HEAD'].includes(method);
+      const body = bodyAllowed ? JSON.stringify(req.body || {}) : undefined;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let response;
+      try {
+        response = await fetch(url, { method, headers, body, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        data,
+      };
     } catch {
-      data = text;
+      // Try next candidate base URL.
     }
-
-    return {
-      ok: response.ok,
-      status: response.status,
-      data,
-    };
-  } catch {
-    return {
-      ok: false,
-      status: 502,
-      data: null,
-    };
   }
+
+  return {
+    ok: false,
+    status: 502,
+    data: { error: 'upstream-unavailable' },
+  };
 }

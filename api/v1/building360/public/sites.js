@@ -1,14 +1,5 @@
 import { cors, proxyBusinessApi } from '../../../_lib/businessApiProxy.js';
 
-const fallbackSites = [
-  {
-    id: 'site-maputo-central',
-    name: 'Maputo Central',
-    city: 'Maputo',
-    type: 'commercial',
-  },
-];
-
 export default function handler(req, res) {
   cors(res);
 
@@ -28,11 +19,10 @@ export default function handler(req, res) {
     : '/api/v1/building360/public/sites';
 
   proxyBusinessApi(req, path).then((upstream) => {
-    if (upstream.ok) {
-      res.status(upstream.status).json(upstream.data);
-      return;
-    }
-
-    res.status(200).json(fallbackSites);
+    res.status(upstream.status || 502).json(
+      upstream.ok
+        ? upstream.data
+        : { error: 'business-api-unavailable', upstreamStatus: upstream.status || 502 },
+    );
   });
 }

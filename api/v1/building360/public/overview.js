@@ -1,24 +1,5 @@
 import { cors, proxyBusinessApi } from '../../../_lib/businessApiProxy.js';
 
-const fallbackOverview = {
-  tenantId: 'tenant-demo-1',
-  portfolio: {
-    sites: 1,
-    buildings: 1,
-    units: 9,
-  },
-  operations: {
-    assets: 3,
-    workOrdersOpen: 0,
-    workOrdersDone: 0,
-  },
-  maintenance: {
-    criticalAssets: 1,
-    warningAssets: 1,
-  },
-  source: 'fallback',
-};
-
 export default function handler(req, res) {
   cors(res);
 
@@ -33,15 +14,10 @@ export default function handler(req, res) {
   }
 
   proxyBusinessApi(req, '/api/v1/building360/public/overview').then((upstream) => {
-    if (upstream.ok) {
-      res.status(upstream.status).json(upstream.data);
-      return;
-    }
-
-    res.status(200).json({
-      ...fallbackOverview,
-      generatedAt: new Date().toISOString(),
-      upstreamStatus: upstream.status,
-    });
+    res.status(upstream.status || 502).json(
+      upstream.ok
+        ? upstream.data
+        : { error: 'business-api-unavailable', upstreamStatus: upstream.status || 502 },
+    );
   });
 }
