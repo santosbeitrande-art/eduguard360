@@ -8,6 +8,7 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
 import { EnterpriseModule } from './modules/enterprise/enterprise.module';
 import { Building360Module } from './modules/building360/building360.module';
 import { DatabaseConfig } from './config/database.config';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { DatabaseConfig } from './config/database.config';
     EnterpriseModule,
     Building360Module,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [],
 })
 export class AppModule {}
