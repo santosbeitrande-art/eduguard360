@@ -27,3 +27,5 @@ services:
         sync: false
       - key: BUILDING360_PUBLIC_TENANT_ID
         value: tenant-demo-1
+      - key: BUILDING360_AUTO_SEED
+        value: 1
