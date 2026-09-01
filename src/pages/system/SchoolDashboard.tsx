@@ -55,6 +55,12 @@ type EntryRecord = {
   } | null;
 };
 
+const isUuid = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+};
+
 const SchoolDashboard = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<EntryRecord[]>([]);
@@ -128,6 +134,12 @@ const SchoolDashboard = () => {
           loadFromLocalFallback();
           return;
         }
+
+        if (!isUuid(currentUser.escola_id)) {
+          loadFromLocalFallback();
+          return;
+        }
+
         alunosQuery = alunosQuery.eq('escola_id', currentUser.escola_id);
       }
 
