@@ -149,6 +149,12 @@ const isAlreadyRegisteredError = (message: string): boolean => {
   return text.includes('already registered') || text.includes('already been registered') || text.includes('user already registered');
 };
 
+const isMissingColumnError = (error: any, columnName: string): boolean => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'PGRST204' && message.includes(String(columnName || '').toLowerCase());
+};
+
 const readLocalApprovedUsers = (): any[] => {
   try {
     const raw = localStorage.getItem(LOCAL_APPROVED_USERS_KEY);
@@ -388,6 +394,41 @@ const buildFallbackSchoolsFromUsers = async (): Promise<Array<{ id: string; nome
   } catch {
     return [];
   }
+};
+
+const fetchDomainUserForAccountStatus = async (email: string) => {
+  const attempts = [
+    'id,email,perfil,status,is_active,auth_id',
+    'id,email,perfil,auth_id',
+    'id,email,perfil',
+  ];
+
+  for (const selectClause of attempts) {
+    const result = await withTimeout(
+      supabase
+        .from('utilizadores')
+        .select(selectClause)
+        .eq('email', email)
+        .maybeSingle(),
+      12000,
+      'Account status check timeout'
+    );
+
+    if (!result.error) {
+      return { data: result.data, error: null };
+    }
+
+    const missingKnownColumn =
+      isMissingColumnError(result.error, 'status')
+      || isMissingColumnError(result.error, 'is_active')
+      || isMissingColumnError(result.error, 'auth_id');
+
+    if (!missingKnownColumn) {
+      return { data: null, error: result.error };
+    }
+  }
+
+  return { data: null, error: { message: 'unable-to-read-account-status' } };
 };
 
 const SystemLoginContent = () => {
@@ -819,15 +860,7 @@ const SystemLoginContent = () => {
       let domainUser: any = null;
       let serverIssue = false;
       try {
-        const { data, error } = await withTimeout(
-          supabase
-            .from('utilizadores')
-            .select('id,email,perfil,status,is_active,auth_id')
-            .eq('email', normalizedEmail)
-            .maybeSingle(),
-          12000,
-          'Account status check timeout'
-        );
+        const { data, error } = await fetchDomainUserForAccountStatus(normalizedEmail);
         if (error) {
           serverIssue = true;
         } else {
