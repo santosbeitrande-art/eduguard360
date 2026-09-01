@@ -88,15 +88,62 @@ const getCachedStudentsForParent = (viewerEmail: string) => {
   const normalizedEmail = String(viewerEmail || '').trim().toLowerCase();
 
   return allStudents.filter((student: any) => {
-    const guardianEmail = String(student?.guardian?.email || student?.guardianEmail || '').trim().toLowerCase();
+    const guardianEmail = String(
+      student?.guardian?.email
+      || student?.guardianEmail
+      || student?.encarregado_email
+      || ''
+    ).trim().toLowerCase();
     return guardianEmail === normalizedEmail;
   });
 };
 
+const isUuid = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+};
+
+const isMissingColumnError = (error: any, columnName: string): boolean => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'PGRST204' && message.includes(String(columnName || '').toLowerCase());
+};
+
+const readLegacySessionUser = () => {
+  for (const key of ['eduguard_user', 'currentUser']) {
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+};
+
 const resolveStoredParentIdentity = async (user: any) => {
-  const viewerEmail = String(user?.email || '').trim().toLowerCase();
+  const legacyUser = readLegacySessionUser();
+  const viewerEmail = String(user?.email || legacyUser?.email || '').trim().toLowerCase();
+  const candidateParentIds = Array.from(new Set([
+    user?.id,
+    user?.user_id,
+    legacyUser?.id,
+    legacyUser?.user_id,
+    legacyUser?.auth_id,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value) => isUuid(value))
+  ));
+
   if (!viewerEmail) {
-    return { viewerEmail: '', domainUserId: null as string | null };
+    return {
+      viewerEmail: '',
+      domainUserId: null as string | null,
+      candidateParentIds,
+    };
   }
 
   try {
@@ -106,12 +153,22 @@ const resolveStoredParentIdentity = async (user: any) => {
       .eq('email', viewerEmail)
       .maybeSingle(), 12000, 'Parent identity timeout');
 
+    const domainUserId = isUuid(domainUser?.id) ? String(domainUser.id) : null;
+    const nextCandidateIds = domainUserId
+      ? Array.from(new Set([domainUserId, ...candidateParentIds]))
+      : candidateParentIds;
+
     return {
       viewerEmail,
-      domainUserId: domainUser?.id || null,
+      domainUserId,
+      candidateParentIds: nextCandidateIds,
     };
   } catch {
-    return { viewerEmail, domainUserId: null as string | null };
+    return {
+      viewerEmail,
+      domainUserId: null as string | null,
+      candidateParentIds,
+    };
   }
 };
 
@@ -293,9 +350,42 @@ const ParentDashboardContent: React.FC = () => {
   const loadStudentStatuses = async () => {
     setLoading(true);
     try {
-      const { viewerEmail, domainUserId } = await resolveStoredParentIdentity(user);
+      const { viewerEmail, domainUserId, candidateParentIds } = await resolveStoredParentIdentity(user);
 
-      if (!domainUserId) {
+      let remoteStudents: any[] = [];
+
+      if (candidateParentIds.length > 0) {
+        const parentFilter = candidateParentIds.map((id: string) => `encarregado_id.eq.${id}`).join(',');
+        const { data: byParentIdData, error: byParentIdError } = await withTimeout(supabase
+          .from('alunos')
+          .select('*')
+          .or(parentFilter)
+          .order('nome'), 12000, 'Parent students by id timeout');
+
+        if (byParentIdError) {
+          console.error('Erro ao buscar educandos por encarregado_id:', byParentIdError);
+        } else {
+          remoteStudents = Array.isArray(byParentIdData) ? byParentIdData : [];
+        }
+      }
+
+      if (remoteStudents.length === 0 && viewerEmail) {
+        const { data: byEmailData, error: byEmailError } = await withTimeout(supabase
+          .from('alunos')
+          .select('*')
+          .eq('encarregado_email', viewerEmail)
+          .order('nome'), 12000, 'Parent students by email timeout');
+
+        if (byEmailError && !isMissingColumnError(byEmailError, 'encarregado_email')) {
+          console.error('Erro ao buscar educandos por encarregado_email:', byEmailError);
+        }
+
+        if (!byEmailError) {
+          remoteStudents = Array.isArray(byEmailData) ? byEmailData : [];
+        }
+      }
+
+      if (remoteStudents.length === 0 && !domainUserId) {
         const cachedStudents = getCachedStudentsForParent(viewerEmail).map((student: any) => ({
           id: student.id,
           nome: student.nome,
@@ -323,18 +413,8 @@ const ParentDashboardContent: React.FC = () => {
         return;
       }
 
-      const { data: alunosData, error: alunosError } = await withTimeout(supabase
-        .from('alunos')
-        .select('*')
-        .eq('encarregado_id', domainUserId)
-        .order('nome'), 12000, 'Parent students timeout');
-
-      if (alunosError) {
-        console.error('Erro ao buscar educandos do encarregado:', alunosError);
-      }
-
-      const effectiveStudents = Array.isArray(alunosData) && alunosData.length > 0
-        ? alunosData
+      const effectiveStudents = Array.isArray(remoteStudents) && remoteStudents.length > 0
+        ? remoteStudents
         : getCachedStudentsForParent(viewerEmail).map((student: any) => ({
             id: student.id,
             nome: student.nome,
@@ -420,7 +500,7 @@ const ParentDashboardContent: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
-      const { viewerEmail, domainUserId } = await resolveStoredParentIdentity(user);
+      const { viewerEmail, domainUserId, candidateParentIds } = await resolveStoredParentIdentity(user);
       const requestNotifications = viewerEmail ? buildRequestNotifications(viewerEmail) : [];
 
       if (!viewerEmail) {
@@ -428,25 +508,74 @@ const ParentDashboardContent: React.FC = () => {
         return;
       }
 
-      if (!domainUserId) {
-        setNotifications(requestNotifications);
-        return;
+      let alunosData: any[] = [];
+      if (candidateParentIds.length > 0) {
+        const parentFilter = candidateParentIds.map((id: string) => `encarregado_id.eq.${id}`).join(',');
+        const { data: byParentIdData, error: byParentIdError } = await withTimeout(supabase
+          .from('alunos')
+          .select('id, nome, classe, escola_id')
+          .or(parentFilter)
+          .order('nome'), 12000, 'Parent notifications students by id timeout');
+
+        if (byParentIdError) {
+          console.error('Erro ao buscar alunos por encarregado_id:', byParentIdError);
+        } else {
+          alunosData = Array.isArray(byParentIdData) ? byParentIdData : [];
+        }
       }
 
-      const { data: alunosData, error: alunosError } = await withTimeout(supabase
-        .from('alunos')
-        .select('id, nome, classe, escola_id')
-        .eq('encarregado_id', domainUserId)
-        .order('nome'), 12000, 'Parent notifications students timeout');
+      if (alunosData.length === 0 && viewerEmail) {
+        const { data: byEmailData, error: byEmailError } = await withTimeout(supabase
+          .from('alunos')
+          .select('id, nome, classe, escola_id')
+          .eq('encarregado_email', viewerEmail)
+          .order('nome'), 12000, 'Parent notifications students by email timeout');
 
-      if (alunosError) {
-        console.error('Erro ao buscar alunos:', alunosError);
+        if (byEmailError && !isMissingColumnError(byEmailError, 'encarregado_email')) {
+          console.error('Erro ao buscar alunos por encarregado_email:', byEmailError);
+        }
+
+        if (!byEmailError) {
+          alunosData = Array.isArray(byEmailData) ? byEmailData : [];
+        }
+      }
+
+      if (alunosData.length === 0 && !domainUserId) {
         setNotifications(requestNotifications);
         return;
       }
 
       const studentIds = (alunosData || []).map((s: any) => s.id);
       if (studentIds.length === 0) {
+        const { data: emailEntries, error: emailEntriesError } = await withTimeout(supabase
+          .from('entradas')
+          .select('id, tipo, data, aluno_id')
+          .eq('encarregado_email', viewerEmail)
+          .order('data', { ascending: false })
+          .limit(50), 12000, 'Parent notifications by email timeout');
+
+        if (emailEntriesError && !isMissingColumnError(emailEntriesError, 'encarregado_email')) {
+          console.error('Erro ao carregar notificações por email:', emailEntriesError);
+          setNotifications(requestNotifications);
+          return;
+        }
+
+        if (!emailEntriesError && Array.isArray(emailEntries) && emailEntries.length > 0) {
+          const mappedByEmail = emailEntries.map((entry: any) => ({
+            notification_id: entry.id,
+            title: `Educando ${entry.tipo === 'entrada' ? 'entrou' : 'saiu'}`,
+            message: `Movimento de ${entry.tipo === 'entrada' ? 'entrada' : 'saida'} registado as ${new Date(entry.data).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })}.`,
+            type: entry.tipo.toUpperCase(),
+            created_at: entry.data,
+            channel: 'app',
+          }));
+
+          const mergedByEmail = [...mappedByEmail, ...requestNotifications]
+            .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+          setNotifications(mergedByEmail);
+          return;
+        }
+
         setNotifications(requestNotifications);
         return;
       }

@@ -147,7 +147,10 @@ export async function saveStudentEntry(student: any) {
     encarregado_email: guardian?.email || null,
   };
 
-  let { data, error } = await supabase.from('entradas').insert([fullEntryPayload]);
+  let { data, error } = await supabase
+    .from('entradas')
+    .insert([fullEntryPayload])
+    .select('id, tipo, data, aluno_id');
 
   if (error && isMissingEncarregadoEmailColumnError(error)) {
     const fallbackEntryPayload = {
@@ -155,7 +158,10 @@ export async function saveStudentEntry(student: any) {
       tipo: nextType,
     };
 
-    const fallbackInsert = await supabase.from('entradas').insert([fallbackEntryPayload]);
+    const fallbackInsert = await supabase
+      .from('entradas')
+      .insert([fallbackEntryPayload])
+      .select('id, tipo, data, aluno_id');
     data = fallbackInsert.data;
     error = fallbackInsert.error;
   }
@@ -182,6 +188,10 @@ export async function saveStudentEntry(student: any) {
     } catch (sendError) {
       console.warn('Falha ao enviar alerta para encarregado:', sendError);
     }
+  }
+
+  if (!data || data.length === 0) {
+    return [{ tipo: nextType, aluno_id: aluno.id, data: entryTimestamp.toISOString() }];
   }
 
   return data;

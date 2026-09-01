@@ -42,15 +42,16 @@ const SchoolDashboard = () => {
       }
 
       // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
-      if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'director')) {
+      if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'super_admin' && currentUser.perfil !== 'director' && currentUser.perfil !== 'seguranca')) {
         setData([]);
+        navigate('/sistema/login?returnTo=%2Fsistema%2Fescola');
         return;
       }
 
       let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
 
       // Se não for Administração Geral (global), restringe à sua própria escola
-      if (currentUser.perfil !== 'admin') {
+      if (currentUser.perfil !== 'admin' && currentUser.perfil !== 'super_admin') {
         if (!currentUser.escola_id) {
           console.error("Utilizador não tem escola associada.");
           return;
@@ -139,6 +140,32 @@ const SchoolDashboard = () => {
     });
   }, [data, dateFrom, dateTo, searchTerm, selectedClass, selectedStudentId, selectedType]);
 
+  const summary = useMemo(() => {
+    const latestByStudent = new Map<string, EntryRecord>();
+    for (const item of data) {
+      if (!item?.aluno_id) continue;
+      if (!latestByStudent.has(item.aluno_id)) {
+        latestByStudent.set(item.aluno_id, item);
+      }
+    }
+
+    const studentsInSchool = Array.from(latestByStudent.values()).filter((item) => item.tipo === 'entrada').length;
+    const studentsLeftSchool = Array.from(latestByStudent.values()).filter((item) => item.tipo === 'saida').length;
+
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const movementsToday = data.filter((item) => {
+      if (!item?.data) return false;
+      return format(new Date(item.data), 'yyyy-MM-dd') === today;
+    }).length;
+
+    return {
+      totalStudentsTracked: latestByStudent.size,
+      studentsInSchool,
+      studentsLeftSchool,
+      movementsToday,
+    };
+  }, [data]);
+
   const exportFilteredCsv = () => {
     const headers = ['Aluno', 'Turma/Classe', 'Tipo', 'Data', 'Hora'];
     const rows = filteredData.map((item) => {
@@ -175,7 +202,7 @@ const SchoolDashboard = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema');
+    navigate('/sistema?returnTo=%2Fsistema%2Fescola');
   };
 
   useEffect(() => {
@@ -256,6 +283,25 @@ const SchoolDashboard = () => {
       </div>
 
       <div className="card p-4 sm:p-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+          <div className="rounded-xl border border-white/10 bg-[#03121e] px-4 py-3">
+            <p className="text-xs text-gray-400">Alunos monitorados</p>
+            <p className="text-2xl font-bold text-white">{summary.totalStudentsTracked}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <p className="text-xs text-emerald-200">Na escola agora</p>
+            <p className="text-2xl font-bold text-emerald-100">{summary.studentsInSchool}</p>
+          </div>
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <p className="text-xs text-amber-200">Fora da escola</p>
+            <p className="text-2xl font-bold text-amber-100">{summary.studentsLeftSchool}</p>
+          </div>
+          <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
+            <p className="text-xs text-sky-200">Movimentos hoje</p>
+            <p className="text-2xl font-bold text-sky-100">{summary.movementsToday}</p>
+          </div>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <input
             type="text"

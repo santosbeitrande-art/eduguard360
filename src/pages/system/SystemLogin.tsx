@@ -5,7 +5,6 @@ import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
-import { resolvePortalRouteByRole } from "@/lib/enterpriseGovernance";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -74,6 +73,7 @@ const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 const KNOWN_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
+const SECURITY_PORTAL_ROLE = 'seguranca';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -257,14 +257,31 @@ const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
   return accessProfile;
 };
 
+const getRequestedReturnRoute = (): string | null => {
+  const searchParams = new URLSearchParams(window.location.search);
+  const returnTo = searchParams.get('returnTo')?.trim() || '';
+
+  if (!returnTo) return '/sistema/escola';
+  if (!returnTo.startsWith('/') || returnTo.startsWith('//')) return null;
+
+  return returnTo;
+};
+
+const getDefaultRouteByProfile = (perfil: string): string => {
+  const normalized = normalizeLegacyProfile(perfil);
+  if (normalized === 'super_admin') return '/sistema/admin';
+  if (normalized === 'parent' || normalized === 'student') return '/sistema/pais';
+  return '/sistema/escola';
+};
+
 const normalizeKnownAdminUser = (user: any): any => {
   if (!user) return user;
   const normalizedEmail = String(user?.email || '').trim().toLowerCase();
   if (normalizedEmail !== KNOWN_ADMIN_EMAIL) return user;
   return {
     ...user,
-    perfil: 'admin',
-    role: 'admin',
+    perfil: SECURITY_PORTAL_ROLE,
+    role: SECURITY_PORTAL_ROLE,
     status: 'active',
     is_active: true,
   };
@@ -451,7 +468,8 @@ const SystemLoginContent = () => {
   const isPendingUser = (user: any): boolean => user?.status === 'pending' || user?.status === 'inactive' || user?.is_active === false;
 
   const redirectByProfile = (perfil: string) => {
-    const route = resolvePortalRouteByRole(perfil);
+    const requestedRoute = getRequestedReturnRoute();
+    const route = requestedRoute || getDefaultRouteByProfile(perfil);
     navigate(route);
   };
 
@@ -487,7 +505,7 @@ const SystemLoginContent = () => {
     const perfil = normalizeLegacyProfile(normalizedUser?.perfil || normalizedUser?.role);
 
     const schoolId = normalizedUser.escola_id || null;
-    if (schoolId && perfil !== 'admin') {
+    if (schoolId && perfil !== 'super_admin') {
       const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
       const subscription = getSchoolSubscription(schoolId);
       const trialActive = isTrialActive(trial);
@@ -528,7 +546,7 @@ const SystemLoginContent = () => {
           if (currentEmail === normalizedEmail && currentPassword && currentPassword === normalizedPassword) {
             return {
               ...currentUser,
-              perfil: 'admin',
+              perfil: SECURITY_PORTAL_ROLE,
               status: 'active',
               is_active: true,
             };
@@ -577,6 +595,7 @@ const SystemLoginContent = () => {
     setInfoMessage(null);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
+    const isSecurityPortalAccount = normalizedEmail === KNOWN_ADMIN_EMAIL;
 
     if (!normalizedEmail || !normalizedPassword) {
       setLoading(false);
@@ -588,28 +607,32 @@ const SystemLoginContent = () => {
     let domainUserByEmail: any = null;
 
     try {
-      // Single login entrypoint: try both user types automatically.
-      const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
-      for (const attemptType of edgeAttempts) {
-        const edgeResult = await withTimeout(
-          edgeLogin(normalizedEmail, normalizedPassword, attemptType),
-          12000,
-          'Edge login timeout'
-        );
-        edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
-        if (!edgeResult.success) continue;
+      // The school security account must not pass through the enterprise edge auth path,
+      // because that backend can elevate it to a generic admin role.
+      if (!isSecurityPortalAccount) {
+        // Single login entrypoint: try both user types automatically.
+        const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
+        for (const attemptType of edgeAttempts) {
+          const edgeResult = await withTimeout(
+            edgeLogin(normalizedEmail, normalizedPassword, attemptType),
+            12000,
+            'Edge login timeout'
+          );
+          edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
+          if (!edgeResult.success) continue;
 
-        const edgeUserRaw = localStorage.getItem('eduguard_user');
-        if (!edgeUserRaw) continue;
+          const edgeUserRaw = localStorage.getItem('eduguard_user');
+          if (!edgeUserRaw) continue;
 
-        try {
-          const edgeUser = JSON.parse(edgeUserRaw);
-          persistLegacyUserFromEdgeAuth(edgeUser);
-          const perfil = mapEdgeUserToLegacyProfile(edgeUser);
-          redirectByProfile(perfil);
-          return;
-        } catch (parseError) {
-          console.warn('Falha ao ler eduguard_user apos edge login', parseError);
+          try {
+            const edgeUser = JSON.parse(edgeUserRaw);
+            persistLegacyUserFromEdgeAuth(edgeUser);
+            const perfil = mapEdgeUserToLegacyProfile(edgeUser);
+            redirectByProfile(perfil);
+            return;
+          } catch (parseError) {
+            console.warn('Falha ao ler eduguard_user apos edge login', parseError);
+          }
         }
       }
 
@@ -673,7 +696,7 @@ const SystemLoginContent = () => {
               localStorage.setItem('currentUser', JSON.stringify({
                 ...domainUserByEmail,
                 senha: normalizedPassword,
-                perfil: 'admin',
+                perfil: SECURITY_PORTAL_ROLE,
                 status: 'active',
                 is_active: true,
               }));
@@ -844,7 +867,7 @@ const SystemLoginContent = () => {
       const sourceUser = domainUser || localFallbackUser;
       const profileSource = sourceUser?.perfil || '';
       const normalizedProfile = normalizeLegacyProfile(profileSource);
-      const profileMatches = normalizedProfile === expectedLegacyProfile || normalizedProfile === 'admin';
+      const profileMatches = normalizedProfile === expectedLegacyProfile || normalizedProfile === 'super_admin';
       const profileTone: AccountStatusTone = profileMatches ? 'ok' : 'warn';
       const profileValue = profileMatches
         ? `${getLegacyProfileLabel(normalizedProfile)} (ok para este acesso)`
@@ -966,6 +989,12 @@ const SystemLoginContent = () => {
       return;
     }
 
+    if (selectedRole === 'director' && !paymentDone) {
+      setErrorMessage('Conclua o pagamento do plano escolar antes de concluir o registo.');
+      setLoading(false);
+      return;
+    }
+
     if (selectedSchoolId) {
       ensureSchoolTrial(selectedSchoolId);
     }
@@ -983,6 +1012,8 @@ const SystemLoginContent = () => {
         return;
       }
 
+      const isDirectorAutoApproved = selectedRole === 'director' && paymentDone;
+
       const pendingUser = {
         id: data?.user?.id || `pending-${Date.now()}`,
         auth_id: data?.user?.id || null,
@@ -991,8 +1022,8 @@ const SystemLoginContent = () => {
         perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : selectedRole === 'scanner' ? 'scanner' : 'director',
         escola_id: selectedSchoolId || null,
         senha: normalizedPassword,
-        is_active: false,
-        status: 'pending',
+        is_active: isDirectorAutoApproved,
+        status: isDirectorAutoApproved ? 'active' : 'pending',
         password_changed: false,
         source: 'supabase'
       };
@@ -1004,15 +1035,28 @@ const SystemLoginContent = () => {
         perfil: pendingUser.perfil,
         escola_id: pendingUser.escola_id,
         telefone: null,
-        senha: normalizedPassword
+        senha: normalizedPassword,
+        status: pendingUser.status,
+        is_active: pendingUser.is_active
       }), 12000, 'Registration profile timeout');
 
-      const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
-      existingPending.push({ ...pendingUser, source: insertError ? 'local' : 'supabase' });
-      localStorage.setItem('eduguard_pending_registrations', JSON.stringify(existingPending));
+      if (isDirectorAutoApproved) {
+        const existingApproved = readLocalApprovedUsers();
+        const nextApproved = [
+          ...existingApproved.filter((item) => String(item?.email || '').trim().toLowerCase() !== normalizedEmail),
+          { ...pendingUser, source: insertError ? 'local' : 'supabase' },
+        ];
+        localStorage.setItem(LOCAL_APPROVED_USERS_KEY, JSON.stringify(nextApproved));
+      } else {
+        const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
+        existingPending.push({ ...pendingUser, source: insertError ? 'local' : 'supabase' });
+        localStorage.setItem('eduguard_pending_registrations', JSON.stringify(existingPending));
+      }
 
       setRegisterMode(false);
-      setInfoMessage(t('sistema.registo_pendente'));
+      setInfoMessage(isDirectorAutoApproved
+        ? 'Registo concluido com sucesso. Ja pode iniciar sessao no School Security.'
+        : t('sistema.registo_pendente'));
       setPassword('');
       setFullName('');
       setSelectedRole('director');

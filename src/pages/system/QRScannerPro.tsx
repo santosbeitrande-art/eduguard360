@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import QrScanner from 'qr-scanner/qr-scanner.min.js';
 import { saveStudentEntry } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import { CheckCircle2, ScanLine, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -28,7 +29,7 @@ const QRScannerPro = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema');
+    navigate('/sistema?returnTo=%2Fsistema%2Fescola');
   };
 
   const parseStudentPayload = (rawData: string): Student | null => {
