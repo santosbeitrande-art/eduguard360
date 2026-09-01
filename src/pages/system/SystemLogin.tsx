@@ -550,7 +550,17 @@ const SystemLoginContent = () => {
   };
 
   const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
-    const normalizedUser = normalizeKnownAdminUser(user);
+    let normalizedUser = normalizeKnownAdminUser(user);
+
+    const normalizedEmail = String(normalizedUser?.email || '').trim().toLowerCase();
+    const localApproved = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+    if (localApproved) {
+      normalizedUser = {
+        ...normalizedUser,
+        status: 'active',
+        is_active: true,
+      };
+    }
 
     if (!normalizedUser) {
       setErrorMessage(t('sistema.erro_login'));
@@ -1065,6 +1075,7 @@ const SystemLoginContent = () => {
       }
 
       const isDirectorAutoApproved = selectedRole === 'director' && paymentDone;
+      const isOperationalAutoApproved = selectedRole === 'scanner' || selectedRole === 'parent';
 
       const pendingUser = {
         id: data?.user?.id || `pending-${Date.now()}`,
@@ -1074,8 +1085,8 @@ const SystemLoginContent = () => {
         perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : selectedRole === 'scanner' ? 'scanner' : 'director',
         escola_id: selectedSchoolId || null,
         senha: normalizedPassword,
-        is_active: isDirectorAutoApproved,
-        status: isDirectorAutoApproved ? 'active' : 'pending',
+        is_active: isDirectorAutoApproved || isOperationalAutoApproved,
+        status: (isDirectorAutoApproved || isOperationalAutoApproved) ? 'active' : 'pending',
         password_changed: false,
         source: 'supabase'
       };
@@ -1094,7 +1105,7 @@ const SystemLoginContent = () => {
 
       const isLocalFallbackApproval = Boolean(insertError && isPermissionDeniedError(insertError) && selectedRole !== 'director');
 
-      if (isDirectorAutoApproved || isLocalFallbackApproval) {
+      if (isDirectorAutoApproved || isOperationalAutoApproved || isLocalFallbackApproval) {
         const approvedUser = {
           ...pendingUser,
           status: 'active',
@@ -1113,7 +1124,7 @@ const SystemLoginContent = () => {
       }
 
       setRegisterMode(false);
-      setInfoMessage((isDirectorAutoApproved || isLocalFallbackApproval)
+      setInfoMessage((isDirectorAutoApproved || isOperationalAutoApproved || isLocalFallbackApproval)
         ? 'Registo concluido com sucesso. Ja pode iniciar sessao no School Security.'
         : t('sistema.registo_pendente'));
       setPassword('');
