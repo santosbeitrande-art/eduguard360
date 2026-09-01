@@ -12,6 +12,13 @@ interface Student {
   className: string;
 }
 
+const normalizeProfile = (value: unknown): string => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'security' || normalized === 'scanner') return 'seguranca';
+  if (normalized === 'superadmin') return 'super_admin';
+  return normalized;
+};
+
 const QRScannerPro = () => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -23,6 +30,25 @@ const QRScannerPro = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [cameraReady, setCameraReady] = useState(false);
   const [scannerStatus, setScannerStatus] = useState('A iniciar scanner...');
+
+  useEffect(() => {
+    const raw = localStorage.getItem('currentUser') || localStorage.getItem('eduguard_user');
+    if (!raw) {
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const profile = normalizeProfile(parsed?.perfil || parsed?.role);
+      const allowed = ['seguranca', 'director', 'administrator', 'super_admin', 'admin'];
+      if (!allowed.includes(profile)) {
+        navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+      }
+    } catch {
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+    }
+  }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');

@@ -292,7 +292,28 @@ const getDefaultRouteByProfile = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
   if (normalized === 'super_admin') return '/sistema/admin';
   if (normalized === 'parent' || normalized === 'student') return '/sistema/pais';
+  if (normalized === 'seguranca') return '/sistema/scanner';
   return '/sistema/escola';
+};
+
+const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
+  const normalized = normalizeLegacyProfile(perfil);
+
+  if (normalized === 'super_admin') return true;
+
+  if (normalized === 'parent' || normalized === 'student') {
+    return route.startsWith('/sistema/pais');
+  }
+
+  if (normalized === 'seguranca') {
+    return route.startsWith('/sistema/scanner') || route.startsWith('/sistema/escola');
+  }
+
+  if (['director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh'].includes(normalized)) {
+    return route.startsWith('/sistema/escola');
+  }
+
+  return route.startsWith('/sistema/escola');
 };
 
 const normalizeKnownAdminUser = (user: any): any => {
@@ -529,7 +550,9 @@ const SystemLoginContent = () => {
 
   const redirectByProfile = (perfil: string) => {
     const requestedRoute = getRequestedReturnRoute();
-    const route = requestedRoute || getDefaultRouteByProfile(perfil);
+    const route = requestedRoute && canAccessRequestedRoute(perfil, requestedRoute)
+      ? requestedRoute
+      : getDefaultRouteByProfile(perfil);
     navigate(route);
   };
 

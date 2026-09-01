@@ -8,6 +8,18 @@ import { useNavigate } from "react-router-dom";
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
 const LOCAL_STUDENTS_KEY = 'eduguard_local_students';
 const LOCAL_ENTRIES_KEY = 'eduguard_local_entries';
+const SCHOOL_DASHBOARD_ALLOWED_PROFILES = [
+  'admin',
+  'super_admin',
+  'director',
+  'administrator',
+  'secretaria',
+  'coordenador',
+  'professor',
+  'financeiro',
+  'rh',
+  'seguranca',
+];
 
 type EntryRecord = {
   id: string;
@@ -79,7 +91,8 @@ const SchoolDashboard = () => {
       }
 
       // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
-      if (!currentUser || (currentUser.perfil !== 'admin' && currentUser.perfil !== 'super_admin' && currentUser.perfil !== 'director' && currentUser.perfil !== 'seguranca')) {
+      const profile = String(currentUser?.perfil || '').trim().toLowerCase();
+      if (!currentUser || !SCHOOL_DASHBOARD_ALLOWED_PROFILES.includes(profile)) {
         setData([]);
         navigate('/sistema/login?returnTo=%2Fsistema%2Fescola');
         return;
@@ -88,7 +101,7 @@ const SchoolDashboard = () => {
       let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
 
       // Se não for Administração Geral (global), restringe à sua própria escola
-      if (currentUser.perfil !== 'admin' && currentUser.perfil !== 'super_admin') {
+      if (profile !== 'admin' && profile !== 'super_admin') {
         if (!currentUser.escola_id) {
           console.error("Utilizador não tem escola associada.");
           loadFromLocalFallback();
