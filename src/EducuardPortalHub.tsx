@@ -123,7 +123,7 @@ const PORTALS: PortalDef[] = [
     icon: <Shield className="w-8 h-8" />,
     color: 'from-blue-600 to-blue-700',
     route: '/sistema',
-    allowedRoles: ['super_admin', 'admin', 'director', 'seguranca', 'professor', 'secretaria', 'financeiro', 'administrator'],
+    allowedRoles: ['super_admin', 'admin', 'seguranca'],
     restrictedRoles: ['parent', 'guardian', 'student'],
   },
   {
@@ -167,7 +167,7 @@ const PORTALS: PortalDef[] = [
     icon: <BookOpen className="w-8 h-8" />,
     color: 'from-amber-500 to-orange-500',
     route: '/literatura',
-    allowedRoles: ['super_admin', 'admin', 'director', 'professor', 'secretaria', 'financeiro', 'seguranca', 'administrator', 'student', 'parent'],
+    allowedRoles: ['super_admin', 'admin', 'director', 'professor', 'secretaria', 'financeiro', 'administrator', 'student', 'parent'],
   },
   {
     id: 'enterprise',
@@ -177,7 +177,7 @@ const PORTALS: PortalDef[] = [
     icon: <Users className="w-8 h-8" />,
     color: 'from-green-600 to-emerald-600',
     route: '/enterprise',
-    allowedRoles: ['super_admin', 'admin', 'director', 'secretaria', 'financeiro', 'professor', 'coordenador', 'rh', 'administrator'],
+    allowedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh'],
   },
   {
     id: 'analytics',
@@ -477,11 +477,11 @@ const EducuardPortalHub: React.FC = () => {
           {PORTALS.map((portal) => {
             const access = getAccess(portal);
             const blocked = access === 'none';
+            if (blocked) return null;
             const portalRoleLabel = getPortalRole(portal.id);
             const accessLabel =
               access === 'full' ? `✓ ${portalRoleLabel || roleLabel || activeRole}` :
               access === 'restricted' ? `Acesso limitado · ${portalRoleLabel || roleLabel}` :
-              access === 'none' ? 'Sem acesso' :
               'Requer autenticação';
 
             return (

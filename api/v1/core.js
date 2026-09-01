@@ -27,12 +27,12 @@ function getSupabase() {
 
 /* ── Portal access matrix ─────────────────────────────────────────── */
 const PORTAL_ACCESS = {
-  security:    { full: ['super_admin','admin','director','seguranca','professor','secretaria','financeiro','administrator'], restricted: ['parent','guardian','student'] },
+  security:    { full: ['super_admin','admin','seguranca'], restricted: ['director','administrator','secretaria','coordenador','professor','financeiro','rh','parent','guardian','student'] },
   building360: { full: ['super_admin','admin','director','administrator'], restricted: ['secretaria','financeiro'] },
   edumarket:   { full: ['super_admin','admin','professor','teacher','administrator'], restricted: ['student','parent'] },
   'verify-ai': { full: ['super_admin','admin','administrator'], restricted: [] },
-  literature:  { full: ['super_admin','admin','director','professor','secretaria','financeiro','seguranca','administrator','student','parent'], restricted: [] },
-  enterprise:  { full: ['super_admin','admin','director','secretaria','financeiro','professor','coordenador','rh','administrator'], restricted: [] },
+  literature:  { full: ['super_admin','admin','director','professor','secretaria','financeiro','administrator','student','parent'], restricted: [] },
+  enterprise:  { full: ['super_admin','admin','director','secretaria','financeiro','professor','coordenador','rh','administrator'], restricted: ['seguranca'] },
   analytics:   { full: ['super_admin','admin','director','administrator'], restricted: ['financeiro','secretaria'] },
 };
 
@@ -47,12 +47,12 @@ const ROLE_LABELS = {
 /* ── Multi-product membership table (demo/fallback only) ────────── */
 const DEMO_MEMBERSHIPS = {
   demo: {
-    security:    { role: 'professor',     organizationId: 'escola-demo' },
+    security:    { role: 'seguranca',      organizationId: 'escola-demo' },
     building360: { role: 'administrator', organizationId: 'condo-alpha' },
     edumarket:   { role: 'teacher',       organizationId: 'edumarket-global' },
     'verify-ai': null,
     literature:  { role: 'student',       organizationId: 'public' },
-    enterprise:  { role: 'professor',     organizationId: 'escola-demo' },
+    enterprise:  { role: 'director',      organizationId: 'escola-demo' },
     analytics:   null,
   },
 };
