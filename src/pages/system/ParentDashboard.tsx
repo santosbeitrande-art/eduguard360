@@ -11,6 +11,25 @@ const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
 const LOCAL_ENTRIES_KEY = 'eduguard_local_entries';
 
+const normalizeProfile = (value: unknown): string => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'admin' || normalized === 'superadmin') return 'super_admin';
+  if (normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'parent';
+  if (normalized === 'aluno') return 'student';
+  if (normalized === 'scanner' || normalized === 'security') return 'seguranca';
+  return normalized;
+};
+
+const getDefaultRouteByProfile = (perfil: string): string => {
+  const normalized = normalizeProfile(perfil);
+  if (normalized === 'super_admin') return '/sistema/admin';
+  if (normalized === 'parent' || normalized === 'student') return '/sistema/pais';
+  if (normalized === 'seguranca') return '/sistema/scanner';
+  return '/sistema/escola';
+};
+
+const PARENT_ALLOWED_PROFILES = new Set(['parent', 'student', 'super_admin']);
+
 const emitGlobalSync = (reason: string) => {
   try {
     localStorage.setItem(GLOBAL_SYNC_KEY, JSON.stringify({ reason, at: new Date().toISOString() }));
@@ -226,7 +245,22 @@ const ParentDashboardContent: React.FC = () => {
 
   useEffect(() => {
     const legacyAuth = localStorage.getItem('eduguard_user') || localStorage.getItem('currentUser');
-    if (!isLoading && !isAuthenticated && !legacyAuth) navigate('/sistema/login');
+    if (!isLoading && !isAuthenticated && !legacyAuth) {
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fpais');
+      return;
+    }
+
+    if (!legacyAuth) return;
+
+    try {
+      const parsed = JSON.parse(legacyAuth);
+      const profile = normalizeProfile(parsed?.perfil || parsed?.role);
+      if (!PARENT_ALLOWED_PROFILES.has(profile)) {
+        navigate(getDefaultRouteByProfile(profile), { replace: true });
+      }
+    } catch {
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fpais');
+    }
   }, [isAuthenticated, isLoading, navigate]);
 
   useEffect(() => {
