@@ -6,6 +6,8 @@ import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
+const LOCAL_STUDENTS_KEY = 'eduguard_local_students';
+const LOCAL_ENTRIES_KEY = 'eduguard_local_entries';
 
 type EntryRecord = {
   id: string;
@@ -30,6 +32,41 @@ const SchoolDashboard = () => {
   const [selectedType, setSelectedType] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  const loadFromLocalFallback = () => {
+    try {
+      const localStudentsRaw = localStorage.getItem(LOCAL_STUDENTS_KEY);
+      const localEntriesRaw = localStorage.getItem(LOCAL_ENTRIES_KEY);
+      const localStudents = localStudentsRaw ? JSON.parse(localStudentsRaw) : [];
+      const localEntries = localEntriesRaw ? JSON.parse(localEntriesRaw) : [];
+
+      const students = Array.isArray(localStudents) ? localStudents : [];
+      const entries = Array.isArray(localEntries) ? localEntries : [];
+
+      const studentMap = new Map(students.map((student: any) => [student.id, student]));
+      const fallbackData: EntryRecord[] = entries
+        .map((entry: any) => ({
+          id: String(entry.id || ''),
+          tipo: String(entry.tipo || ''),
+          data: String(entry.data || ''),
+          aluno_id: String(entry.aluno_id || ''),
+          alunos: studentMap.has(entry.aluno_id)
+            ? {
+                id: String(studentMap.get(entry.aluno_id)?.id || ''),
+                nome: String(studentMap.get(entry.aluno_id)?.nome || 'Aluno'),
+                classe: String(studentMap.get(entry.aluno_id)?.classe || ''),
+                escola_id: String(studentMap.get(entry.aluno_id)?.escola_id || ''),
+              }
+            : null,
+        }))
+        .filter((item: EntryRecord) => Boolean(item.aluno_id))
+        .sort((a, b) => new Date(b.data || 0).getTime() - new Date(a.data || 0).getTime());
+
+      setData(fallbackData);
+    } catch {
+      setData([]);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -63,12 +100,13 @@ const SchoolDashboard = () => {
 
       if (alunosError) {
         console.error("Erro ao buscar alunos:", alunosError);
+        loadFromLocalFallback();
         return;
       }
 
       const studentIds = (alunosData || []).map((a) => a.id);
       if (studentIds.length === 0) {
-        setData([]);
+        loadFromLocalFallback();
         return;
       }
 
@@ -84,6 +122,7 @@ const SchoolDashboard = () => {
 
       if (entradasError) {
         console.error("Erro ao buscar dados:", entradasError);
+        loadFromLocalFallback();
       } else if (entradasData) {
         const alunosMap = new Map((alunosData || []).map((a) => [a.id, a]));
 

@@ -9,6 +9,7 @@ import ChangePasswordModal from '@/components/eduguard/ChangePasswordModal';
 const PARENT_STUDENT_REQUESTS_KEY = 'eduguard_parent_student_requests';
 const STUDENTS_CACHE_KEY = 'eduguard_admin_students_cache';
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
+const LOCAL_ENTRIES_KEY = 'eduguard_local_entries';
 
 const emitGlobalSync = (reason: string) => {
   try {
@@ -40,6 +41,16 @@ const readStudentsCache = (): Record<string, any[]> => {
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
+  }
+};
+
+const readLocalEntries = (): any[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_ENTRIES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 };
 
@@ -399,12 +410,47 @@ const ParentDashboardContent: React.FC = () => {
           return;
         }
 
-        const cachedStatuses = cachedStudents.map((student: any) => ({
-          student: { id: student.id, name: student.nome, grade: student.classe, class: '' },
-          status: 'not_arrived',
-          today_logs: [],
-          last_movement: null,
-        }));
+        const localEntries = readLocalEntries();
+        const latestByStudent = new Map<string, any>();
+        const todayByStudent = new Map<string, any[]>();
+        const today = new Date().toISOString().split('T')[0];
+
+        for (const entry of localEntries) {
+          const studentId = String(entry?.aluno_id || '');
+          if (!studentId) continue;
+          const when = new Date(entry?.data || 0);
+
+          if (!latestByStudent.has(studentId) || when.getTime() > new Date(latestByStudent.get(studentId)?.data || 0).getTime()) {
+            latestByStudent.set(studentId, entry);
+          }
+
+          if (entry?.data && String(entry.data).startsWith(today)) {
+            if (!todayByStudent.has(studentId)) todayByStudent.set(studentId, []);
+            todayByStudent.get(studentId)!.push(entry);
+          }
+        }
+
+        const cachedStatuses = cachedStudents.map((student: any) => {
+          const lastEntry = latestByStudent.get(student.id);
+          const status = lastEntry
+            ? (lastEntry.tipo === 'entrada' ? 'in_school' : 'left_school')
+            : 'not_arrived';
+
+          const todayLogs = (todayByStudent.get(student.id) || []).map((log: any) => ({
+            movement_type: String(log?.tipo || '').toUpperCase(),
+            time: new Date(log?.data || 0).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' }),
+          }));
+
+          return {
+            student: { id: student.id, name: student.nome, grade: student.classe, class: '' },
+            status,
+            today_logs: todayLogs,
+            last_movement: lastEntry ? {
+              type: String(lastEntry?.tipo || '').toUpperCase(),
+              time: new Date(lastEntry?.data || 0).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' }),
+            } : null,
+          };
+        });
 
         setStudentStatuses(cachedStatuses);
         if (cachedStatuses.length > 0 && !selectedStudent) {
@@ -547,6 +593,31 @@ const ParentDashboardContent: React.FC = () => {
 
       const studentIds = (alunosData || []).map((s: any) => s.id);
       if (studentIds.length === 0) {
+        const localEntries = readLocalEntries();
+        const localStudents = getCachedStudentsForParent(viewerEmail);
+        const localStudentMap = new Map(localStudents.map((student: any) => [student.id, student]));
+
+        const localNotifications = localEntries
+          .filter((entry: any) => localStudentMap.has(String(entry?.aluno_id || '')))
+          .map((entry: any) => {
+            const aluno = localStudentMap.get(String(entry?.aluno_id || ''));
+            return {
+              notification_id: String(entry?.id || `local-${Math.random()}`),
+              title: `${aluno?.nome || 'Aluno'} ${entry?.tipo === 'entrada' ? 'entrou' : 'saiu'}`,
+              message: `O seu educando ${aluno?.nome || 'Aluno'} ${entry?.tipo === 'entrada' ? 'entrou' : 'saiu'} da escola às ${new Date(entry?.data || 0).toLocaleTimeString('pt-MZ', { hour: '2-digit', minute: '2-digit' })}.`,
+              type: String(entry?.tipo || '').toUpperCase(),
+              created_at: entry?.data,
+              channel: 'app',
+            };
+          });
+
+        if (localNotifications.length > 0) {
+          const mergedLocal = [...localNotifications, ...requestNotifications]
+            .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+          setNotifications(mergedLocal);
+          return;
+        }
+
         const { data: emailEntries, error: emailEntriesError } = await withTimeout(supabase
           .from('entradas')
           .select('id, tipo, data, aluno_id')
