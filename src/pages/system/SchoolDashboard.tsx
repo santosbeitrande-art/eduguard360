@@ -91,6 +91,7 @@ const SchoolDashboard = () => {
       if (currentUser.perfil !== 'admin' && currentUser.perfil !== 'super_admin') {
         if (!currentUser.escola_id) {
           console.error("Utilizador não tem escola associada.");
+          loadFromLocalFallback();
           return;
         }
         alunosQuery = alunosQuery.eq('escola_id', currentUser.escola_id);
