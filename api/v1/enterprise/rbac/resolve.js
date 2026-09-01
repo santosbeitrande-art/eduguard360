@@ -1,4 +1,4 @@
-import { buildPermissionsByRole, cors, resolveScope } from '../../../_lib/businessApiProxy.js';
+import { buildPermissionsByRole, cors, requireEnterpriseScope, resolveScope } from '../../../_lib/businessApiProxy.js';
 
 export default function handler(req, res) {
   cors(res);
@@ -15,6 +15,11 @@ export default function handler(req, res) {
 
   const scope = resolveScope(req);
   const role = scope.role;
+  const guard = requireEnterpriseScope(scope);
+  if (!guard.ok) {
+    res.status(guard.status).json(guard.body);
+    return;
+  }
 
   res.status(200).json({
     role,

@@ -1,4 +1,4 @@
-import { cors, resolveScope, buildPermissionsByRole } from '../../../_lib/businessApiProxy.js';
+import { cors, resolveScope, requireEnterpriseScope } from '../../../_lib/businessApiProxy.js';
 
 export default function handler(req, res) {
   cors(res);
@@ -11,11 +11,13 @@ export default function handler(req, res) {
   const scope = resolveScope(req);
   const role = scope.role;
 
-  // Validar permissão para workflows
-  const permissions = buildPermissionsByRole(role);
-  const canManageWorkflows = Array.isArray(permissions?.workflow) && permissions.workflow.includes('create');
-
   if (req.method === 'GET') {
+    const guard = requireEnterpriseScope(scope, { domain: 'workflow', action: 'read' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
+      return;
+    }
+
     // Retornar workflows simulados para o utilizador
     const workflows = [
       {
@@ -77,15 +79,13 @@ export default function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    // Criar novo workflow
-    if (!canManageWorkflows) {
-      res.status(403).json({
-        error: 'forbidden',
-        message: `Role '${role}' não tem permissão para criar workflows`,
-      });
+    const guard = requireEnterpriseScope(scope, { domain: 'workflow', action: 'create' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
       return;
     }
 
+    // Criar novo workflow
     const body2 = req.body || {};
     const newWorkflow = {
       id: `wf-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,

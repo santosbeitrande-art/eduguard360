@@ -1,4 +1,4 @@
-import { cors, resolveScope, buildPermissionsByRole } from '../../../../_lib/businessApiProxy.js';
+import { cors, resolveScope, requireEnterpriseScope } from '../../../../_lib/businessApiProxy.js';
 
 export default function handler(req, res) {
   cors(res);
@@ -12,16 +12,10 @@ export default function handler(req, res) {
   const scope = resolveScope(req);
   const role = scope.role;
 
-  // Validar permissão para segurança
-  const permissions = buildPermissionsByRole(role);
-  const canManageSecurity = Array.isArray(permissions?.security) && (permissions.security.includes('update') || permissions.security.includes('approve'));
-
   if (req.method === 'PUT') {
-    if (!canManageSecurity && role !== 'director' && role !== 'super_admin' && role !== 'admin') {
-      res.status(403).json({
-        error: 'forbidden',
-        message: `Role '${role}' não tem permissão para atualizar políticas de segurança`,
-      });
+    const guard = requireEnterpriseScope(scope, { domain: 'security', action: 'update' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
       return;
     }
 
@@ -45,6 +39,12 @@ export default function handler(req, res) {
   }
 
   if (req.method === 'GET') {
+    const guard = requireEnterpriseScope(scope, { domain: 'security', action: 'read' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
+      return;
+    }
+
     const policyKey = String(req.query?.key || 'unknown').trim();
 
     const policy = {

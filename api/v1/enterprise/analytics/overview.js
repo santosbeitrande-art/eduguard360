@@ -1,4 +1,4 @@
-import { buildPermissionsByRole, cors, proxyBusinessApi, resolveScope } from '../../../_lib/businessApiProxy.js';
+import { buildPermissionsByRole, cors, proxyBusinessApi, requireEnterpriseScope, resolveScope } from '../../../_lib/businessApiProxy.js';
 
 function resolveAccess(req) {
   const scope = resolveScope(req);
@@ -37,6 +37,13 @@ export default function handler(req, res) {
   proxyBusinessApi(req, '/api/v1/enterprise/analytics/overview').then((upstream) => {
     if (upstream.ok && upstream.data && typeof upstream.data === 'object') {
       res.status(200).json(upstream.data);
+      return;
+    }
+
+    const preScope = resolveScope(req);
+    const guard = requireEnterpriseScope(preScope, { domain: 'analytics', action: 'read' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
       return;
     }
 

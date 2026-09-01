@@ -32,16 +32,61 @@ export function cors(res) {
 
 export function normalizeRole(roleInput) {
   const normalized = String(roleInput || '').trim().toLowerCase();
-  return ROLE_ALIASES[normalized] || normalized || 'director';
+  if (!normalized) return 'unknown';
+  return ROLE_ALIASES[normalized] || normalized;
 }
 
 export function resolveScope(req) {
-  const role = normalizeRole(req.headers['x-enterprise-role'] || req.body?.role || req.query?.role || 'director');
+  const role = normalizeRole(req.headers['x-enterprise-role'] || req.body?.role || req.query?.role);
   const schoolId = String(
-    req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || req.query?.schoolId || req.query?.tenantId || 'school-demo',
-  ).trim() || 'school-demo';
-  const tenantId = String(req.headers['x-tenant-id'] || req.body?.tenantId || req.query?.tenantId || schoolId).trim() || schoolId;
+    req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || req.query?.schoolId || req.query?.tenantId || '',
+  ).trim() || null;
+  const tenantId = String(req.headers['x-tenant-id'] || req.body?.tenantId || req.query?.tenantId || schoolId || '').trim() || null;
   return { role, schoolId, tenantId };
+}
+
+export function requireEnterpriseScope(scope, requiredPermission) {
+  const role = normalizeRole(scope?.role);
+  if (!role || role === 'unknown') {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'forbidden',
+        message: 'Role is required for enterprise endpoints.',
+      },
+    };
+  }
+
+  if (role !== 'super_admin' && !scope?.schoolId && !scope?.tenantId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'forbidden',
+        message: 'Tenant or school scope is required for this role.',
+      },
+    };
+  }
+
+  if (requiredPermission) {
+    const permissions = buildPermissionsByRole(role);
+    const allowed = Array.isArray(permissions?.[requiredPermission.domain])
+      ? permissions[requiredPermission.domain]
+      : [];
+    if (!allowed.includes(requiredPermission.action)) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: 'forbidden',
+          message: `Role '${role}' cannot ${requiredPermission.action} on ${requiredPermission.domain}`,
+        },
+      };
+    }
+  }
+
+  return { ok: true, role };
 }
 
 export function buildPermissionsByRole(roleInput) {
@@ -159,15 +204,16 @@ export function buildPermissionsByRole(roleInput) {
     };
   }
 
-  if (role === 'security') {
+  if (role === 'seguranca') {
     return {
       ...base,
       schools: readOnly,
       users: readOnly,
+      qr: ['create', 'read', 'update'],
       incidents: ['create', 'read', 'update'],
-      security: ['read', 'update', 'approve'],
-      workflow: ['read', 'update'],
-      analytics: readOnly,
+      security: ['read'],
+      workflow: ['read'],
+      analytics: [],
       documents: readOnly,
     };
   }

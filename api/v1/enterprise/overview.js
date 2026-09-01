@@ -1,4 +1,4 @@
-import { cors, proxyBusinessApi, resolveScope } from '../../_lib/businessApiProxy.js';
+import { cors, proxyBusinessApi, requireEnterpriseScope, resolveScope } from '../../_lib/businessApiProxy.js';
 
 const baseOverview = {
   audit: {
@@ -56,6 +56,12 @@ export default function handler(req, res) {
     }
 
     const scope = resolveScope(req);
+    const guard = requireEnterpriseScope(scope, { domain: 'analytics', action: 'read' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
+      return;
+    }
+
     res.status(200).json({
       ...baseOverview,
       scope,
