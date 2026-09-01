@@ -24,7 +24,7 @@ const getDefaultRouteByProfile = (perfil: string): string => {
   const normalized = normalizeProfile(perfil);
   if (normalized === 'super_admin') return '/sistema/admin';
   if (normalized === 'parent' || normalized === 'student') return '/sistema/pais';
-  if (normalized === 'seguranca') return '/sistema/scanner';
+  if (normalized === 'seguranca') return '/sistema/seguranca';
   return '/sistema/escola';
 };
 

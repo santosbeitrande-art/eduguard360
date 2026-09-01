@@ -304,7 +304,7 @@ const getRequestedReturnRoute = (): string | null => {
   const searchParams = new URLSearchParams(window.location.search);
   const returnTo = searchParams.get('returnTo')?.trim() || '';
 
-  if (!returnTo) return '/sistema/escola';
+  if (!returnTo) return null;
   if (!returnTo.startsWith('/') || returnTo.startsWith('//')) return null;
 
   return returnTo;
@@ -312,26 +312,53 @@ const getRequestedReturnRoute = (): string | null => {
 
 const getDefaultRouteByProfile = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
-  if (normalized === 'super_admin') return '/sistema/admin';
-  if (normalized === 'parent' || normalized === 'student') return '/sistema/pais';
-  if (normalized === 'seguranca') return '/sistema/scanner';
+  if (normalized === 'super_admin') return '/sistema/enterprise';
+  if (normalized === 'parent') return '/sistema/encarregado';
+  if (normalized === 'student') return '/sistema/aluno';
+  if (normalized === 'seguranca') return '/sistema/seguranca';
+  if (normalized === 'director') return '/sistema/direcao';
+  if (normalized === 'secretaria') return '/sistema/secretaria';
+  if (normalized === 'professor') return '/sistema/professor';
+  if (normalized === 'financeiro') return '/sistema/financeiro';
   return '/sistema/escola';
 };
 
 const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
   const normalized = normalizeLegacyProfile(perfil);
 
-  if (normalized === 'super_admin') return true;
+  if (normalized === 'super_admin') {
+    return route.startsWith('/sistema/enterprise') || route.startsWith('/enterprise');
+  }
 
-  if (normalized === 'parent' || normalized === 'student') {
-    return route.startsWith('/sistema/pais');
+  if (normalized === 'parent') {
+    return route.startsWith('/sistema/encarregado') || route.startsWith('/sistema/pais');
+  }
+
+  if (normalized === 'student') {
+    return route.startsWith('/sistema/aluno');
   }
 
   if (normalized === 'seguranca') {
-    return route.startsWith('/sistema/scanner') || route.startsWith('/sistema/escola');
+    return route.startsWith('/sistema/seguranca') || route.startsWith('/sistema/scanner');
   }
 
-  if (['director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh'].includes(normalized)) {
+  if (normalized === 'director') {
+    return route.startsWith('/sistema/direcao') || route.startsWith('/sistema/escola');
+  }
+
+  if (normalized === 'secretaria') {
+    return route.startsWith('/sistema/secretaria') || route.startsWith('/sistema/escola');
+  }
+
+  if (normalized === 'professor') {
+    return route.startsWith('/sistema/professor') || route.startsWith('/sistema/escola');
+  }
+
+  if (normalized === 'financeiro') {
+    return route.startsWith('/sistema/financeiro') || route.startsWith('/sistema/escola');
+  }
+
+  if (['administrator', 'coordenador', 'rh'].includes(normalized)) {
     return route.startsWith('/sistema/escola');
   }
 

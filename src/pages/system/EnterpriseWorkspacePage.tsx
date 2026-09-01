@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { withTimeout } from '@/lib/networkPerformance';
-import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
+import { isEnterpriseRole, normalizeEnterpriseRole, resolvePortalRouteByRole } from '@/lib/enterpriseGovernance';
 
 type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'approve' | 'export';
 type PermissionDomain =
@@ -135,6 +135,17 @@ const buildHeaders = (currentUser: any): HeadersInit => {
   };
 };
 
+const formatErrorMessage = (data: any): string => {
+  if (typeof data === 'string') return data.slice(0, 200);
+  if (data?.message) return String(data.message).slice(0, 200);
+  if (data?.error) return String(data.error).slice(0, 200);
+  try {
+    return JSON.stringify(data).slice(0, 200);
+  } catch {
+    return 'Erro desconhecido';
+  }
+};
+
 const EnterpriseWorkspacePage = () => {
   const { role, module } = useParams();
   const navigate = useNavigate();
@@ -161,49 +172,77 @@ const EnterpriseWorkspacePage = () => {
     const response = await withTimeout(fetch(url, init), 10000, timeoutLabel);
     const text = await response.text();
     let data: any = null;
+    
     try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = text;
+      // Verificar se a resposta é JSON válida
+      if (text && response.headers.get('content-type')?.includes('application/json')) {
+        data = JSON.parse(text);
+      } else if (text && !response.ok) {
+        // Se resposta falhou, tentar parsear mesmo assim (pode ser erro JSON)
+        try {
+          data = JSON.parse(text);
+        } catch {
+          // Se falhar, usar texto puro
+          data = {
+            error: 'response-parse-error',
+            message: text.slice(0, 200),
+            fullError: text,
+          };
+        }
+      } else if (text) {
+        data = JSON.parse(text);
+      }
+    } catch (error) {
+      data = {
+        error: 'parse-error',
+        message: `Falha ao fazer parsing da resposta: ${String(error).slice(0, 100)}`,
+        raw: text.slice(0, 200),
+      };
     }
+    
     return { response, data };
   };
 
   const loadModuleData = async (currentUser: any, selected: ModuleDef) => {
     const headers = buildHeaders(currentUser);
 
-    if (selected.backendTarget === 'users') {
-      const userId = String(currentUser?.id || currentUser?.user_id || '').trim();
-      if (!userId) {
-        setModuleData([]);
+    try {
+      if (selected.backendTarget === 'users') {
+        const userId = String(currentUser?.id || currentUser?.user_id || '').trim();
+        if (!userId) {
+          setModuleData([]);
+          return;
+        }
+        const { response, data } = await requestJson(`/api/v1/users/${encodeURIComponent(userId)}`, { headers }, 'Workspace user load timeout');
+        setModuleData(response.ok && data ? [data] : []);
         return;
       }
-      const { response, data } = await requestJson(`/api/v1/users/${encodeURIComponent(userId)}`, { headers }, 'Workspace user load timeout');
-      setModuleData(response.ok && data ? [data] : []);
-      return;
-    }
 
-    if (selected.backendTarget === 'listings') {
-      const { response, data } = await requestJson('/api/v1/listings?page=1&limit=20', { headers }, 'Workspace listings load timeout');
-      const rows = Array.isArray(data?.data) ? data.data : [];
-      setModuleData(response.ok ? rows : []);
-      return;
-    }
+      if (selected.backendTarget === 'listings') {
+        const { response, data } = await requestJson('/api/v1/listings?page=1&limit=20', { headers }, 'Workspace listings load timeout');
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        setModuleData(response.ok ? rows : []);
+        return;
+      }
 
-    if (selected.backendTarget === 'reservations') {
-      const { response, data } = await requestJson('/api/v1/reservations?role=buyer&page=1&limit=20', { headers }, 'Workspace reservations load timeout');
-      const rows = Array.isArray(data?.data) ? data.data : [];
-      setModuleData(response.ok ? rows : []);
-      return;
-    }
+      if (selected.backendTarget === 'reservations') {
+        const { response, data } = await requestJson('/api/v1/reservations?role=buyer&page=1&limit=20', { headers }, 'Workspace reservations load timeout');
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        setModuleData(response.ok ? rows : []);
+        return;
+      }
 
-    if (selected.backendTarget === 'payments') {
-      const { response, data } = await requestJson('/api/payouts/earnings', { headers }, 'Workspace payments load timeout');
-      setModuleData(response.ok && data ? [data] : []);
-      return;
-    }
+      if (selected.backendTarget === 'payments') {
+        const { response, data } = await requestJson('/api/payouts/earnings', { headers }, 'Workspace payments load timeout');
+        setModuleData(response.ok && data ? [data] : []);
+        return;
+      }
 
-    setModuleData([]);
+      setModuleData([]);
+    } catch {
+      // Falha no endpoint do módulo não deve bloquear o workspace
+      setModuleData([]);
+    }
   };
 
   const loadWorkspace = async () => {
@@ -216,45 +255,60 @@ const EnterpriseWorkspacePage = () => {
       return;
     }
 
+    const currentRole = normalizeEnterpriseRole(currentUser?.perfil || currentUser?.role);
+    if (!isEnterpriseRole(currentRole)) {
+      navigate(resolvePortalRouteByRole(currentRole));
+      return;
+    }
+
     const headers = buildHeaders(currentUser);
 
     try {
-      const [resolvedRes, workflowsRes] = await Promise.all([
-        withTimeout(
-          fetch('/api/v1/enterprise/rbac/resolve', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              role: String(currentUser?.perfil || currentUser?.role || ''),
-              schoolId: String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
-              tenantId: String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
-              userId: String(currentUser?.id || currentUser?.user_id || ''),
-            }),
+      const resolvedRes = await withTimeout(
+        fetch('/api/v1/enterprise/rbac/resolve', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            role: String(currentUser?.perfil || currentUser?.role || ''),
+            schoolId: String(currentUser?.escola_id || currentUser?.school_id || currentUser?.tenant_id || ''),
+            tenantId: String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
+            userId: String(currentUser?.id || currentUser?.user_id || ''),
           }),
-          8000,
-          'Workspace resolve timeout'
-        ),
-        withTimeout(fetch('/api/v1/enterprise/workflows', { headers }), 8000, 'Workspace workflows timeout'),
-      ]);
+        }),
+        8000,
+        'Workspace resolve timeout'
+      );
 
       if (resolvedRes.ok) {
         setAccessProfile(await resolvedRes.json());
       }
+    } catch {
+      // RBAC resolve falhou — continuar sem perfil de acesso (botões ficam desabilitados)
+    }
 
+    try {
+      const workflowsRes = await withTimeout(
+        fetch('/api/v1/enterprise/workflows', { headers }),
+        8000,
+        'Workspace workflows timeout'
+      );
       if (workflowsRes.ok) {
         const data = await workflowsRes.json();
         setWorkflows(Array.isArray(data?.data) ? data.data : []);
       }
+    } catch {
+      // Workflows não disponíveis — sem fluxos recentes
+    }
 
+    try {
       if (selectedModule) {
         await loadModuleData(currentUser, selectedModule);
       }
-    } catch (error) {
-      setMessage('Falha ao carregar espaço de trabalho deste perfil.');
-      console.error(error);
-    } finally {
-      setLoading(false);
+    } catch {
+      setModuleData([]);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -262,6 +316,7 @@ const EnterpriseWorkspacePage = () => {
   }, [role, module]);
 
   const handleNew = async () => {
+    try {
     const currentUser = resolveCurrentUserSnapshot();
     if (!currentUser || !selectedModule) return;
 
@@ -287,7 +342,8 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Novo registo criado no módulo de listings.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao criar listing: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        const errorMsg = typeof data === 'string' ? data : (data?.message || data?.error || JSON.stringify(data));
+        setMessage(`Falha ao criar listing: ${errorMsg}`);
       }
       return;
     }
@@ -308,7 +364,8 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Nova reserva criada com sucesso.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao criar reserva: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        const errorMsg = typeof data === 'string' ? data : (data?.message || data?.error || JSON.stringify(data));
+        setMessage(`Falha ao criar reserva: ${errorMsg}`);
       }
       return;
     }
@@ -328,7 +385,8 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Pedido de pagamento criado no módulo financeiro.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao criar pagamento: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        const errorMsg = typeof data === 'string' ? data : (data?.message || data?.error || JSON.stringify(data));
+        setMessage(`Falha ao criar pagamento: ${errorMsg}`);
       }
       return;
     }
@@ -361,10 +419,17 @@ const EnterpriseWorkspacePage = () => {
     }
 
     const error = await response.text();
-    setMessage(`Falha ao criar: ${error}`);
+    const errorData = (() => {
+      try { return JSON.parse(error); } catch { return { message: error }; }
+    })();
+    setMessage(`Falha ao criar: ${formatErrorMessage(errorData)}`);
+    } catch (e) {
+      setMessage(`Erro ao executar ação Novo: ${e instanceof Error ? e.message : 'Erro desconhecido'}`);
+    }
   };
 
   const handleEdit = async () => {
+    try {
     const currentUser = resolveCurrentUserSnapshot();
     if (!currentUser || !selectedModule) return;
 
@@ -387,7 +452,7 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Endpoint de edição de utilizador executado com sucesso.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao editar utilizador: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao editar utilizador: ${formatErrorMessage(data)}`);
       }
       return;
     }
@@ -411,7 +476,7 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Listing atualizado com sucesso.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao editar listing: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao editar listing: ${formatErrorMessage(data)}`);
       }
       return;
     }
@@ -432,7 +497,7 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Reserva atualizada (cancelada) com sucesso.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao atualizar reserva: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao atualizar reserva: ${formatErrorMessage(data)}`);
       }
       return;
     }
@@ -447,13 +512,13 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Módulo financeiro sincronizado via endpoint protegido.');
         setModuleData(Array.isArray(data) ? data : [data]);
       } else {
-        setMessage(`Falha ao sincronizar pagamentos: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao sincronizar pagamentos: ${formatErrorMessage(data)}`);
       }
       return;
     }
 
     const policyKey = `workspace.${normalizedRole}.${selectedModule.slug}.last-edit`;
-    const response = await fetch(`/api/v1/enterprise/security/policies/${encodeURIComponent(policyKey)}`, {
+    const response = await fetch(`/api/v1/enterprise/security/policies?key=${encodeURIComponent(policyKey)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
@@ -472,10 +537,14 @@ const EnterpriseWorkspacePage = () => {
     }
 
     const error = await response.text();
-    setMessage(`Falha ao editar: ${error}`);
+    setMessage(`Falha ao editar: ${formatErrorMessage({ message: error })}`);
+    } catch (e) {
+      setMessage(`Erro ao editar: ${e instanceof Error ? e.message : 'Erro desconhecido'}`);
+    }
   };
 
   const handleApprove = async () => {
+    try {
     const currentUser = resolveCurrentUserSnapshot();
     if (!currentUser || !selectedModule) return;
 
@@ -497,7 +566,7 @@ const EnterpriseWorkspacePage = () => {
         setMessage('Reserva concluída/aprovada com sucesso.');
         await loadWorkspace();
       } else {
-        setMessage(`Falha ao aprovar reserva: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao aprovar reserva: ${formatErrorMessage(data)}`);
       }
       return;
     }
@@ -525,10 +594,21 @@ const EnterpriseWorkspacePage = () => {
     }
 
     const error = await response.text();
-    setMessage(`Falha ao aprovar: ${error}`);
+    const errorData = (() => {
+      try {
+        return JSON.parse(error);
+      } catch {
+        return { message: error };
+      }
+    })();
+    setMessage(`Falha ao aprovar: ${formatErrorMessage(errorData)}`);
+    } catch (e) {
+      setMessage(`Erro ao aprovar: ${e instanceof Error ? e.message : 'Erro desconhecido'}`);
+    }
   };
 
   const handleExport = async () => {
+    try {
     const currentUser = resolveCurrentUserSnapshot();
     if (!currentUser || !selectedModule) return;
 
@@ -539,35 +619,35 @@ const EnterpriseWorkspacePage = () => {
       const userId = String(currentUser?.id || currentUser?.user_id || '').trim();
       const { response, data } = await requestJson(`/api/v1/users/${encodeURIComponent(userId)}/ratings?page=1&limit=50`, { headers }, 'Workspace users export timeout');
       if (!response.ok) {
-        setMessage(`Falha ao exportar utilizadores: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao exportar utilizadores: ${formatErrorMessage(data)}`);
         return;
       }
       rows = Array.isArray(data?.data) ? data.data : [];
     } else if (selectedModule.backendTarget === 'listings') {
       const { response, data } = await requestJson('/api/v1/listings?page=1&limit=50', { headers }, 'Workspace listings export timeout');
       if (!response.ok) {
-        setMessage(`Falha ao exportar listings: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao exportar listings: ${formatErrorMessage(data)}`);
         return;
       }
       rows = Array.isArray(data?.data) ? data.data : [];
     } else if (selectedModule.backendTarget === 'reservations') {
       const { response, data } = await requestJson('/api/v1/reservations?role=buyer&page=1&limit=50', { headers }, 'Workspace reservations export timeout');
       if (!response.ok) {
-        setMessage(`Falha ao exportar reservas: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao exportar reservas: ${formatErrorMessage(data)}`);
         return;
       }
       rows = Array.isArray(data?.data) ? data.data : [];
     } else if (selectedModule.backendTarget === 'payments') {
       const { response, data } = await requestJson('/api/payouts/earnings', { headers }, 'Workspace payments export timeout');
       if (!response.ok) {
-        setMessage(`Falha ao exportar pagamentos: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao exportar pagamentos: ${formatErrorMessage(data)}`);
         return;
       }
       rows = Array.isArray(data) ? data : [data];
     } else {
       const { response, data } = await requestJson('/api/v1/enterprise/audit?limit=120', { headers }, 'Workspace audit export timeout');
       if (!response.ok) {
-        setMessage(`Falha ao exportar auditoria: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+        setMessage(`Falha ao exportar auditoria: ${formatErrorMessage(data)}`);
         return;
       }
       rows = Array.isArray(data?.data) ? data.data : [];
@@ -589,6 +669,9 @@ const EnterpriseWorkspacePage = () => {
     URL.revokeObjectURL(url);
 
     setMessage('Exportação concluída.');
+    } catch (e) {
+      setMessage(`Erro ao exportar: ${e instanceof Error ? e.message : 'Erro desconhecido'}`);
+    }
   };
 
   if (loading) {

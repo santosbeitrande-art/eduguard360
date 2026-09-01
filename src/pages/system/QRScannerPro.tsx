@@ -71,7 +71,7 @@ const QRScannerPro = () => {
   useEffect(() => {
     const raw = localStorage.getItem('currentUser') || localStorage.getItem('eduguard_user');
     if (!raw) {
-      navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fseguranca');
       return;
     }
 
@@ -81,10 +81,10 @@ const QRScannerPro = () => {
       setActiveProfileLabel(getProfileLabel(profile));
 
       if (!SCANNER_ALLOWED_PROFILES.has(profile)) {
-        navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+        navigate('/sistema/login?returnTo=%2Fsistema%2Fseguranca');
       }
     } catch {
-      navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
+      navigate('/sistema/login?returnTo=%2Fsistema%2Fseguranca');
     }
   }, [navigate]);
 
@@ -93,7 +93,7 @@ const QRScannerPro = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema?returnTo=%2Fsistema%2Fescola');
+    navigate('/sistema?returnTo=%2Fsistema%2Fseguranca');
   };
 
   const parseStudentPayload = (rawData: string): Student | null => {

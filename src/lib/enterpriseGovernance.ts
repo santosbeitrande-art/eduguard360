@@ -1,6 +1,8 @@
 export type EnterprisePortal = 'enterprise' | 'parent' | 'student';
 
 export type EnterpriseRole =
+  | 'enterprise'
+  | 'admin'
   | 'super_admin'
   | 'director'
   | 'administrator'
@@ -15,8 +17,10 @@ export type EnterpriseRole =
   | 'unknown';
 
 const aliases: Record<string, EnterpriseRole> = {
+  enterprise: 'enterprise',
   admin: 'super_admin',
   superadmin: 'super_admin',
+  platform_admin: 'admin',
   school_admin: 'director',
   diretor: 'director',
   coordinator: 'coordenador',
@@ -33,6 +37,8 @@ export const normalizeEnterpriseRole = (value: unknown): EnterpriseRole => {
   if (!normalized) return 'unknown';
 
   const known = [
+    'enterprise',
+    'admin',
     'super_admin',
     'director',
     'administrator',
@@ -58,11 +64,17 @@ export const resolvePortalByRole = (role: EnterpriseRole): EnterprisePortal => {
 
 export const resolvePortalRouteByRole = (roleValue: unknown): string => {
   const role = normalizeEnterpriseRole(roleValue);
-  const portal = resolvePortalByRole(role);
-
-  if (portal === 'parent') return '/sistema/pais';
-  if (portal === 'student') return '/cursos';
-  return '/enterprise';
+  if (role === 'enterprise' || role === 'super_admin') return '/sistema/enterprise';
+  if (role === 'admin') return '/sistema/admin';
+  if (role === 'parent') return '/sistema/encarregado';
+  if (role === 'student') return '/sistema/aluno';
+  if (role === 'seguranca') return '/sistema/seguranca';
+  if (role === 'director') return '/sistema/direcao';
+  if (role === 'secretaria') return '/sistema/secretaria';
+  if (role === 'professor') return '/sistema/professor';
+  if (role === 'financeiro') return '/sistema/financeiro';
+  if (role === 'administrator' || role === 'coordenador' || role === 'rh') return '/sistema/escola';
+  return '/sistema/login';
 };
 
 export const getRoleLabel = (roleValue: unknown): string => {
@@ -84,7 +96,7 @@ export const getRoleLabel = (roleValue: unknown): string => {
 
 export const isEnterpriseRole = (roleValue: unknown): boolean => {
   const role = normalizeEnterpriseRole(roleValue);
-  return role !== 'parent' && role !== 'student' && role !== 'unknown';
+  return role === 'enterprise' || role === 'admin' || role === 'super_admin';
 };
 
 export const dataOwnershipByDomain = [

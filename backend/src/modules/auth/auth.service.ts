@@ -108,14 +108,39 @@ export class AuthService {
     }
 
     // Gerar tokens JWT
+    // Fetch product memberships for this user (if memberships table exists)
+    let memberships: Array<{productId: string; organizationId: string; role: string}> = [];
+    try {
+      // In production: query core_memberships WHERE user_id = user.id AND status = 'active'
+      // For now: encode the user's primary role as their membership in the relevant products
+      const role = user.role || 'student';
+      const orgId = user.schoolId || user.tenantId || null;
+      if (orgId && role) {
+        const productMap: Record<string, string[]> = {
+          director:      ['security', 'enterprise', 'analytics'],
+          administrator: ['security', 'enterprise', 'building360'],
+          secretaria:    ['security', 'enterprise'],
+          financeiro:    ['security', 'enterprise', 'analytics'],
+          professor:     ['security', 'enterprise', 'edumarket'],
+          seguranca:     ['security'],
+          student:       ['security', 'literature'],
+          parent:        ['security', 'literature'],
+        };
+        const products = productMap[role] || ['enterprise'];
+        memberships = products.map((productId) => ({ productId, organizationId: orgId, role }));
+      }
+    } catch { /* non-critical */ }
+
     const accessToken = this.jwtService.sign({
       sub: user.id,
       phone: user.phone,
       name: user.name,
       email: user.email || null,
       role: user.role || null,
+      perfil: user.role || null,
       schoolId: user.schoolId || null,
       tenantId: user.tenantId || user.schoolId || null,
+      memberships,   // per-product role claims
     });
 
     const refreshToken = this.jwtService.sign(

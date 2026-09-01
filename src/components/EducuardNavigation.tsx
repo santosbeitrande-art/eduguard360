@@ -14,6 +14,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
   const { t, language } = useLanguage();
   const [isOpen, setIsOpen] = React.useState(false);
   const [showPortalsMenu, setShowPortalsMenu] = React.useState(false);
+  const securityLoginRoute = '/sistema?returnTo=%2Fsistema%2Fseguranca';
 
   const isPortalRoute = location.pathname.includes('/portais') || 
                         location.pathname.includes('/edumarket') || 
@@ -26,12 +27,12 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
   ];
 
   const portals = [
-    { label: language === 'pt' ? '🛡️ Segurança Escolar' : '🛡️ School Security', href: '/sistema' },
+    { label: language === 'pt' ? '🛡️ Segurança Escolar' : '🛡️ School Security', href: securityLoginRoute },
     { label: '🏢 Building360', href: '/building360' },
     { label: '📚 EduMarket', href: '/edumarket' },
     { label: language === 'pt' ? '📖 Literatura Aberta' : '📖 Open Literature', href: '/literatura' },
     { label: '🔐 EduGuard Verify AI', href: '/public/login', external: true },
-    { label: '🏢 Enterprise', href: '/enterprise' },
+    { label: '🏢 Enterprise', href: '/sistema/enterprise' },
     { label: '📊 Analytics', href: '/analytics' },
   ];
 

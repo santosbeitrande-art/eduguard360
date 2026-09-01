@@ -18,7 +18,6 @@ const SCHOOL_DASHBOARD_ALLOWED_PROFILES = [
   'professor',
   'financeiro',
   'rh',
-  'seguranca',
 ];
 
 const normalizeProfile = (value: unknown): string => {
@@ -61,7 +60,21 @@ const isUuid = (value: unknown): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
 };
 
-const SchoolDashboard = () => {
+type SchoolDashboardProps = {
+  title: string;
+  description: string;
+  logoutReturnTo: string;
+  blockedRedirectTo: string;
+  allowedProfiles: string[];
+};
+
+const SchoolDashboardContent = ({
+  title,
+  description,
+  logoutReturnTo,
+  blockedRedirectTo,
+  allowedProfiles,
+}: SchoolDashboardProps) => {
   const navigate = useNavigate();
   const [data, setData] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,9 +132,9 @@ const SchoolDashboard = () => {
 
       // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
       const profile = normalizeProfile(currentUser?.perfil || currentUser?.role);
-      if (!currentUser || !SCHOOL_DASHBOARD_ALLOWED_PROFILES.includes(profile)) {
+      if (!currentUser || !allowedProfiles.includes(profile)) {
         setData([]);
-        navigate('/sistema/login?returnTo=%2Fsistema%2Fescola');
+        navigate(profile === 'seguranca' ? '/sistema/seguranca' : blockedRedirectTo);
         return;
       }
 
@@ -288,7 +301,7 @@ const SchoolDashboard = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema?returnTo=%2Fsistema%2Fescola');
+    navigate(logoutReturnTo);
   };
 
   useEffect(() => {
@@ -342,9 +355,9 @@ const SchoolDashboard = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white">
-            Painel da Escola
+            {title}
           </h1>
-          <p className="text-gray-400 mt-1">Histórico completo de entradas e saídas com filtros por dia, mês, ano, turma/classe e aluno.</p>
+          <p className="text-gray-400 mt-1">{description}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -510,5 +523,19 @@ const SchoolDashboard = () => {
     </div>
   );
 };
+
+export const SchoolDashboardPage: React.FC<SchoolDashboardProps> = (props) => (
+  <SystemAuthProvider><SchoolDashboardContent {...props} /></SystemAuthProvider>
+);
+
+const SchoolDashboard: React.FC = () => (
+  <SchoolDashboardPage
+    title="Painel da Escola"
+    description="Histórico completo de entradas e saídas com filtros por dia, mês, ano, turma/classe e aluno."
+    logoutReturnTo="/sistema?returnTo=%2Fsistema%2Fescola"
+    blockedRedirectTo="/sistema/login?returnTo=%2Fsistema%2Fescola"
+    allowedProfiles={SCHOOL_DASHBOARD_ALLOWED_PROFILES}
+  />
+);
 
 export default SchoolDashboard;

@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { withTimeout, NetworkTimeoutError } from '@/lib/networkPerformance';
+import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
 
 interface Student {
   id: string;
@@ -69,16 +70,18 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
     const normalizedPerfilNoSymbols = normalizedPerfil.replace(/[^a-z0-9]+/g, ' ').trim();
 
     const type = legacy.perfil === 'pai' ? 'parent' : 'system_user';
-    const role = normalizedPerfil === 'admin' ? 'super_admin'
-      : normalizedPerfil === 'director' ? 'school_admin'
+    const legacyRole = normalizedPerfil === 'admin' ? 'super_admin'
+      : normalizedPerfil === 'director' ? 'director'
       : normalizedPerfil === 'scanner'
         || normalizedPerfil === 'seguranca'
         || normalizedPerfil === 'security'
         || normalizedPerfil === 'security_officer'
         || normalizedPerfilNoSymbols.includes('seguranca operacional')
         || normalizedPerfilNoSymbols.includes('security officer')
-        ? 'security'
+        ? 'seguranca'
       : legacy.role;
+
+    const role = normalizeEnterpriseRole(legacyRole);
 
     return {
       id: legacy.id || legacy.auth_id || legacy.user_id || 'legacy-user',
@@ -134,9 +137,13 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
 
       if (data) {
         if (data.success && data.user) {
-          setUser(data.user);
+          const normalizedUser = {
+            ...data.user,
+            role: normalizeEnterpriseRole(data.user?.role || data.user?.perfil),
+          };
+          setUser(normalizedUser);
           setToken(data.token);
-          localStorage.setItem('eduguard_user', JSON.stringify(data.user));
+          localStorage.setItem('eduguard_user', JSON.stringify(normalizedUser));
           localStorage.setItem('eduguard_token', data.token);
           return { success: true };
         }
@@ -161,10 +168,14 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
     // Demo fallback - only when edge function is unreachable
     const demoEntry = DEMO_USERS[cleanEmail];
     if (demoEntry && demoEntry.password === password) {
-      const demoToken = btoa(JSON.stringify({ userId: demoEntry.user.id, type: demoEntry.user.type, role: demoEntry.user.role, exp: Date.now() + 86400000 }));
-      setUser(demoEntry.user);
+      const normalizedUser = {
+        ...demoEntry.user,
+        role: normalizeEnterpriseRole(demoEntry.user?.role),
+      };
+      const demoToken = btoa(JSON.stringify({ userId: normalizedUser.id, type: normalizedUser.type, role: normalizedUser.role, exp: Date.now() + 86400000 }));
+      setUser(normalizedUser);
       setToken(demoToken);
-      localStorage.setItem('eduguard_user', JSON.stringify(demoEntry.user));
+      localStorage.setItem('eduguard_user', JSON.stringify(normalizedUser));
       localStorage.setItem('eduguard_token', demoToken);
       return { success: true };
     }

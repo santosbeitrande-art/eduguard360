@@ -13,6 +13,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: any) {
+    // Decode per-product memberships from the JWT if present
+    const memberships: Array<{ productId: string; organizationId: string; role: string }> =
+      Array.isArray(payload.memberships) ? payload.memberships : [];
+
     return {
       sub: payload.sub,
       phone: payload.phone,
@@ -25,6 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       escola_id: payload.escola_id || payload.schoolId || payload.school_id || null,
       tenantId: payload.tenantId || payload.tenant_id || null,
       tenant_id: payload.tenant_id || payload.tenantId || null,
+      memberships,  // per-product role array from JWT claims
     };
   }
 }

@@ -1,5 +1,25 @@
-const DEFAULT_BUSINESS_API_BASE = 'https://business.eduguard360.co.mz';
-const DIRECT_BUSINESS_API_BASE = 'https://eduguard360-business-api.onrender.com';
+const DEFAULT_BUSINESS_API_BASE = 'https://api.eduguard360.co.mz';
+const UPSTREAM_TIMEOUT_MS = 1500;
+const ROLE_ALIASES = {
+  diretor: 'director',
+  director: 'director',
+  'direção': 'director',
+  secretaria: 'secretaria',
+  secret: 'secretaria',
+  financeiro: 'financeiro',
+  finance: 'financeiro',
+  seguranca: 'seguranca',
+  seguranca: 'seguranca',
+  security: 'seguranca',
+  professor: 'professor',
+  teacher: 'professor',
+  administrador: 'administrator',
+  administrator: 'administrator',
+  admin: 'admin',
+  super_admin: 'super_admin',
+  'super-admin': 'super_admin',
+  superadmin: 'super_admin',
+};
 
 export function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,8 +30,13 @@ export function cors(res) {
   );
 }
 
+export function normalizeRole(roleInput) {
+  const normalized = String(roleInput || '').trim().toLowerCase();
+  return ROLE_ALIASES[normalized] || normalized || 'director';
+}
+
 export function resolveScope(req) {
-  const role = String(req.headers['x-enterprise-role'] || req.body?.role || req.query?.role || 'director').trim() || 'director';
+  const role = normalizeRole(req.headers['x-enterprise-role'] || req.body?.role || req.query?.role || 'director');
   const schoolId = String(
     req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || req.query?.schoolId || req.query?.tenantId || 'school-demo',
   ).trim() || 'school-demo';
@@ -20,14 +45,7 @@ export function resolveScope(req) {
 }
 
 export function buildPermissionsByRole(roleInput) {
-  const rawRole = String(roleInput || '').trim().toLowerCase();
-  const role = rawRole === 'diretor'
-    ? 'director'
-    : rawRole === 'seguranca'
-      ? 'security'
-      : rawRole === 'administrador'
-        ? 'administrator'
-        : rawRole;
+  const role = normalizeRole(roleInput);
 
   const full = ['create', 'read', 'update', 'delete', 'approve', 'export'];
   const readOnly = ['read'];
@@ -191,61 +209,59 @@ export function buildPermissionsByRole(roleInput) {
 }
 
 export async function proxyBusinessApi(req, path) {
-  const configuredBase = String(process.env.BUSINESS_API_BASE || DEFAULT_BUSINESS_API_BASE).replace(/\/$/, '');
-  const candidates = configuredBase === DIRECT_BUSINESS_API_BASE
-    ? [configuredBase]
-    : [configuredBase, DIRECT_BUSINESS_API_BASE];
-  const timeoutMs = Number(process.env.BUSINESS_API_TIMEOUT_MS || 3500);
+  const base = String(process.env.BUSINESS_API_BASE || DEFAULT_BUSINESS_API_BASE).replace(/\/$/, '');
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const timeoutMs = Number(process.env.BUSINESS_API_TIMEOUT_MS || UPSTREAM_TIMEOUT_MS);
 
-  const urlPath = path.startsWith('/') ? path : `/${path}`;
+  try {
+    const headers = {
+      'content-type': req.headers['content-type'] || 'application/json',
+      authorization: req.headers.authorization || '',
+      'x-enterprise-role': req.headers['x-enterprise-role'] || '',
+      'x-school-id': req.headers['x-school-id'] || '',
+      'x-tenant-id': req.headers['x-tenant-id'] || '',
+      'x-user-id': req.headers['x-user-id'] || '',
+      'x-user-name': req.headers['x-user-name'] || '',
+    };
 
-  for (const base of candidates) {
-    const url = `${base}${urlPath}`;
+    const method = String(req.method || 'GET').toUpperCase();
+    const bodyAllowed = !['GET', 'HEAD'].includes(method);
+    const body = bodyAllowed ? JSON.stringify(req.body || {}) : undefined;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
     try {
-      const headers = {
-        'content-type': req.headers['content-type'] || 'application/json',
-        authorization: req.headers.authorization || '',
-        'x-enterprise-role': req.headers['x-enterprise-role'] || '',
-        'x-school-id': req.headers['x-school-id'] || '',
-        'x-tenant-id': req.headers['x-tenant-id'] || '',
-        'x-user-id': req.headers['x-user-id'] || '',
-        'x-user-name': req.headers['x-user-name'] || '',
-      };
-
-      const method = String(req.method || 'GET').toUpperCase();
-      const bodyAllowed = !['GET', 'HEAD'].includes(method);
-      const body = bodyAllowed ? JSON.stringify(req.body || {}) : undefined;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      let response;
-      try {
-        response = await fetch(url, { method, headers, body, signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      const text = await response.text();
-      let data = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = text;
-      }
-
-      return {
-        ok: response.ok,
-        status: response.status,
-        data,
-      };
-    } catch {
-      // Try next candidate base URL.
+      response = await fetch(url, { method, headers, body, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
     }
-  }
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
 
-  return {
-    ok: false,
-    status: 502,
-    data: { error: 'upstream-unavailable' },
-  };
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return {
+        ok: false,
+        status: 504,
+        data: { error: 'upstream-timeout' },
+      };
+    }
+
+    return {
+      ok: false,
+      status: 502,
+      data: null,
+    };
+  }
 }

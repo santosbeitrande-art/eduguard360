@@ -486,7 +486,7 @@ const EnterprisePortalPage = () => {
   useEffect(() => {
     const currentUserRaw = localStorage.getItem('currentUser') || localStorage.getItem('eduguard_user');
     if (!currentUserRaw) {
-      navigate('/login');
+      navigate('/sistema/login');
       return;
     }
 
@@ -505,7 +505,7 @@ const EnterprisePortalPage = () => {
       if (role === 'financeiro') setDashboardLens('financeiro');
       if (role === 'secretaria') setDashboardLens('secretaria');
     } catch {
-      navigate('/login');
+      navigate('/sistema/login');
       return;
     }
 
@@ -1178,7 +1178,7 @@ const EnterprisePortalPage = () => {
             </div>
             <div className="mt-4 grid gap-2 md:grid-cols-2">
               <button onClick={() => navigate('/admin')} className="rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/15">Auditoria de utilizadores</button>
-              <button onClick={() => navigate('/sistema')} className="rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/15">Políticas de acesso</button>
+              <button onClick={() => navigate('/sistema?returnTo=%2Fsistema%2Fescola')} className="rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/15">Políticas de acesso</button>
             </div>
           </div>
         </section>

@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 export const PortalsPromoSection: React.FC = () => {
   const navigate = useNavigate();
   const { language } = useLanguage();
+  const securityLoginRoute = '/sistema?returnTo=%2Fsistema%2Fseguranca';
 
   const portals: Array<{
     icon: React.ReactNode;
@@ -22,7 +23,7 @@ export const PortalsPromoSection: React.FC = () => {
         ? 'Sistema integrado de segurança e monitoramento da comunidade escolar'
         : 'Integrated school community safety and monitoring platform',
       color: 'from-blue-600 to-blue-700',
-      route: '/sistema',
+      route: securityLoginRoute,
     },
     {
       icon: <BookOpen className="w-8 h-8" />,
@@ -66,7 +67,7 @@ export const PortalsPromoSection: React.FC = () => {
         ? 'Portal executivo para gestão académica, escolar e administrativa'
         : 'Executive portal for academic, school and administrative management',
       color: 'from-emerald-600 to-green-600',
-      route: '/enterprise',
+      route: '/sistema/enterprise',
     },
     {
       icon: <BarChart3 className="w-8 h-8" />,

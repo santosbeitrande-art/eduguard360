@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { SystemAuthProvider, useSystemAuth } from '@/context/SystemAuthContext';
+import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
 
 const ShieldIcon = () => (
   <svg className="w-12 h-12 text-[#2ecc71]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -21,9 +22,10 @@ const LoginContent: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
+      const normalizedRole = normalizeEnterpriseRole(user.role || user.perfil);
       if (user.type === 'parent') navigate('/sistema/pais');
-      else if (user.role === 'security') navigate('/sistema/scanner');
-      else if (user.role === 'super_admin') navigate('/sistema/admin');
+      else if (normalizedRole === 'seguranca') navigate('/sistema/seguranca');
+      else if (normalizedRole === 'super_admin' || normalizedRole === 'enterprise' || normalizedRole === 'admin') navigate('/sistema/admin');
       else navigate('/sistema/escola');
     }
   }, [isAuthenticated, user, navigate]);
