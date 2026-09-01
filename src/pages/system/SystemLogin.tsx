@@ -170,6 +170,12 @@ const isPermissionDeniedError = (error: any): boolean => {
   return code === '42501' || message.includes('row-level security') || message.includes('permission denied');
 };
 
+const isFunctionMissingError = (error: any): boolean => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'PGRST202' || code === '42883' || message.includes('function') && message.includes('does not exist');
+};
+
 const readLocalApprovedUsers = (): any[] => {
   try {
     const raw = localStorage.getItem(LOCAL_APPROVED_USERS_KEY);
@@ -433,6 +439,23 @@ const buildFallbackSchoolsFromUsers = async (): Promise<Array<{ id: string; nome
 };
 
 const fetchDomainUserForAccountStatus = async (email: string) => {
+  const rpcResult = await withTimeout(
+    supabase.rpc('get_account_status_by_email', { p_email: email }),
+    12000,
+    'Account status RPC timeout'
+  );
+
+  if (!rpcResult.error) {
+    const row = Array.isArray(rpcResult.data)
+      ? (rpcResult.data[0] || null)
+      : (rpcResult.data || null);
+    return { data: row, error: null };
+  }
+
+  if (!isFunctionMissingError(rpcResult.error)) {
+    return { data: null, error: rpcResult.error };
+  }
+
   const attempts = [
     'id,email,perfil,status,is_active,auth_id',
     'id,email,perfil,auth_id',
