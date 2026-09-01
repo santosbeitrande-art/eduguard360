@@ -10,14 +10,46 @@ interface Student {
   code: string;
   name: string;
   className: string;
+  movementType?: 'entrada' | 'saida';
+  movementAt?: string;
 }
 
+const normalizeText = (value: unknown): string => {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+};
+
 const normalizeProfile = (value: unknown): string => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'security' || normalized === 'scanner') return 'seguranca';
+  const normalized = normalizeText(value);
+
+  if (
+    normalized === 'seguranca'
+    || normalized === 'security'
+    || normalized === 'scanner'
+    || normalized === 'security_officer'
+    || normalized === 'seguranca operacional'
+    || normalized === 'seguranca operacional / qr code'
+    || normalized === 'seguranca operacional qr code'
+  ) {
+    return 'seguranca';
+  }
+
   if (normalized === 'superadmin') return 'super_admin';
   return normalized;
 };
+
+const getProfileLabel = (profile: string): string => {
+  if (profile === 'seguranca') return 'Segurança Operacional / QR Code';
+  if (profile === 'director') return 'Direção';
+  if (profile === 'administrator') return 'Administração Escolar';
+  if (profile === 'super_admin' || profile === 'admin') return 'Administração Geral';
+  return profile || 'Perfil não identificado';
+};
+
+const SCANNER_ALLOWED_PROFILES = new Set(['seguranca', 'director', 'administrator', 'super_admin', 'admin']);
 
 const QRScannerPro = () => {
   const navigate = useNavigate();
@@ -30,6 +62,7 @@ const QRScannerPro = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [cameraReady, setCameraReady] = useState(false);
   const [scannerStatus, setScannerStatus] = useState('A iniciar scanner...');
+  const [activeProfileLabel, setActiveProfileLabel] = useState('Perfil não identificado');
 
   useEffect(() => {
     const raw = localStorage.getItem('currentUser') || localStorage.getItem('eduguard_user');
@@ -41,8 +74,9 @@ const QRScannerPro = () => {
     try {
       const parsed = JSON.parse(raw);
       const profile = normalizeProfile(parsed?.perfil || parsed?.role);
-      const allowed = ['seguranca', 'director', 'administrator', 'super_admin', 'admin'];
-      if (!allowed.includes(profile)) {
+      setActiveProfileLabel(getProfileLabel(profile));
+
+      if (!SCANNER_ALLOWED_PROFILES.has(profile)) {
         navigate('/sistema/login?returnTo=%2Fsistema%2Fscanner');
       }
     } catch {
@@ -152,6 +186,8 @@ const QRScannerPro = () => {
                 code: student.code,
                 name: student.name || student.code,
                 className: student.className || 'Turma não informada',
+                movementType: entryType === 'saida' ? 'saida' : 'entrada',
+                movementAt: new Date().toISOString(),
               };
 
               const existingIndex = prev.findIndex((item) => item.code === nextStudent.code);
@@ -253,6 +289,10 @@ const QRScannerPro = () => {
             Scanner EduGuard
           </h1>
           <p className="text-gray-400 mt-1 text-sm">Posicione o cartão do aluno na câmara</p>
+          <div className="mt-3 rounded-lg border border-[#2ecc71]/30 bg-[#2ecc71]/10 px-3 py-2 text-left">
+            <p className="text-[11px] text-[#9be7be]">Perfil com acesso à câmera QR: Segurança Operacional / QR Code</p>
+            <p className="text-xs text-white">Perfil atual: {activeProfileLabel}</p>
+          </div>
         </div>
 
         <div className="p-6">
@@ -302,6 +342,14 @@ const QRScannerPro = () => {
                     <div>
                       <p className="font-medium text-white leading-tight">{s.name}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{s.className}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full border ${s.movementType === 'saida' ? 'text-orange-300 border-orange-400/40 bg-orange-500/15' : 'text-emerald-300 border-emerald-400/40 bg-emerald-500/15'}`}>
+                          {s.movementType === 'saida' ? 'Saída' : 'Entrada'}
+                        </span>
+                        <span className="text-[11px] text-gray-500">
+                          {s.movementAt ? new Date(s.movementAt).toLocaleTimeString() : ''}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))
