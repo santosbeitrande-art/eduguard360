@@ -21,6 +21,27 @@ const SCHOOL_DASHBOARD_ALLOWED_PROFILES = [
   'seguranca',
 ];
 
+const normalizeProfile = (value: unknown): string => {
+  const normalized = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+  const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
+
+  if (normalized === 'superadmin') return 'super_admin';
+  if (
+    normalized === 'security'
+    || normalized === 'scanner'
+    || normalized === 'security_officer'
+    || normalized === 'seguranca'
+    || normalizedNoSymbols.includes('seguranca operacional')
+    || normalizedNoSymbols.includes('security officer')
+  ) return 'seguranca';
+
+  return normalized;
+};
+
 type EntryRecord = {
   id: string;
   tipo: string;
@@ -91,7 +112,7 @@ const SchoolDashboard = () => {
       }
 
       // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
-      const profile = String(currentUser?.perfil || '').trim().toLowerCase();
+      const profile = normalizeProfile(currentUser?.perfil || currentUser?.role);
       if (!currentUser || !SCHOOL_DASHBOARD_ALLOWED_PROFILES.includes(profile)) {
         setData([]);
         navigate('/sistema/login?returnTo=%2Fsistema%2Fescola');

@@ -221,7 +221,12 @@ const readGeneratedCredentialsLog = (): any[] => {
 };
 
 const normalizeLegacyProfile = (perfil: unknown): string => {
-  const normalized = String(perfil || '').trim().toLowerCase();
+  const normalized = String(perfil || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+  const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
   if (normalized === 'super_admin' || normalized === 'admin' || normalized === 'superadmin') return 'super_admin';
   if (normalized === 'school_admin' || normalized === 'director' || normalized === 'diretor') return 'director';
   if (normalized === 'administrator') return 'administrator';
@@ -230,7 +235,14 @@ const normalizeLegacyProfile = (perfil: unknown): string => {
   if (normalized === 'teacher' || normalized === 'professor' || normalized === 'docente') return 'professor';
   if (normalized === 'financeiro' || normalized === 'finance') return 'financeiro';
   if (normalized === 'rh' || normalized === 'hr') return 'rh';
-  if (normalized === 'scanner' || normalized === 'security' || normalized === 'seguranca') return 'seguranca';
+  if (
+    normalized === 'scanner'
+    || normalized === 'security'
+    || normalized === 'security_officer'
+    || normalized === 'seguranca'
+    || normalizedNoSymbols.includes('seguranca operacional')
+    || normalizedNoSymbols.includes('security officer')
+  ) return 'seguranca';
   if (normalized === 'parent' || normalized === 'pai' || normalized === 'encarregado' || normalized === 'guardian') return 'parent';
   if (normalized === 'student' || normalized === 'aluno') return 'student';
   return normalized;
