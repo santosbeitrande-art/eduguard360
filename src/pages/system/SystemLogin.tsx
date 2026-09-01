@@ -155,6 +155,13 @@ const isMissingColumnError = (error: any, columnName: string): boolean => {
   return code === 'PGRST204' && message.includes(String(columnName || '').toLowerCase());
 };
 
+const isNoRowsError = (error: any): boolean => {
+  const code = String(error?.code || '');
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'PGRST116' || status === 406 || message.includes('0 rows');
+};
+
 const readLocalApprovedUsers = (): any[] => {
   try {
     const raw = localStorage.getItem(LOCAL_APPROVED_USERS_KEY);
@@ -416,6 +423,10 @@ const fetchDomainUserForAccountStatus = async (email: string) => {
 
     if (!result.error) {
       return { data: result.data, error: null };
+    }
+
+    if (isNoRowsError(result.error)) {
+      return { data: null, error: null };
     }
 
     const missingKnownColumn =
