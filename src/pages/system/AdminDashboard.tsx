@@ -309,7 +309,9 @@ const AdminGlobalDashboard = () => {
     
     try {
       const user = JSON.parse(currentUser);
-      if (user.perfil !== 'admin') {
+      const normalizedProfile = String(user?.perfil || user?.role || '').trim().toLowerCase();
+      const isAdminProfile = ['admin', 'super_admin', 'superadmin'].includes(normalizedProfile);
+      if (!isAdminProfile) {
         navigate('/sistema');
         return;
       }
