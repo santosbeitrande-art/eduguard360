@@ -31,8 +31,16 @@
   ],
   "rewrites": [
     {
-      "source": "/api/v1/enterprise/(.*)",
-      "destination": "/api/v1/enterprise/$1"
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/favicon.ico"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/robots.txt"
     },
     {
       "source": "/api/v1/building360/(.*)",
