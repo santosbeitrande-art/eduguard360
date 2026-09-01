@@ -152,7 +152,9 @@ const isAlreadyRegisteredError = (message: string): boolean => {
 const isMissingColumnError = (error: any, columnName: string): boolean => {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
-  return code === 'PGRST204' && message.includes(String(columnName || '').toLowerCase());
+  const missingByPostgrest = code === 'PGRST204' && message.includes(String(columnName || '').toLowerCase());
+  const missingByPostgres = code === '42703' && message.includes(String(columnName || '').toLowerCase());
+  return missingByPostgrest || missingByPostgres;
 };
 
 const isNoRowsError = (error: any): boolean => {
