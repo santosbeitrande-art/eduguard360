@@ -236,6 +236,10 @@ const normalizeLegacyProfile = (perfil: unknown): string => {
   return normalized;
 };
 
+const toStoredLegacyProfile = (normalizedProfile: string): string => {
+  return normalizedProfile === 'super_admin' ? 'admin' : normalizedProfile;
+};
+
 const mapEdgeUserToLegacyProfile = (edgeUser: any): string => {
   const role = String(edgeUser?.role || '').trim().toLowerCase();
   const type = String(edgeUser?.type || '').trim().toLowerCase();
@@ -589,7 +593,7 @@ const SystemLoginContent = () => {
       auth_id: edgeUser.id,
       nome: edgeUser.name,
       email: edgeUser.email,
-      perfil: legacyPerfil,
+      perfil: toStoredLegacyProfile(legacyPerfil),
       escola_id: edgeUser.school_id || null,
       password_changed: edgeUser.password_changed ?? true,
     }));
@@ -644,7 +648,7 @@ const SystemLoginContent = () => {
 
     localStorage.setItem('currentUser', JSON.stringify({
       ...normalizedUser,
-      perfil,
+      perfil: toStoredLegacyProfile(perfil),
       email: String(normalizedUser?.email || '').trim().toLowerCase(),
     }));
     redirectByProfile(perfil);
