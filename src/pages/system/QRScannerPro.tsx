@@ -24,6 +24,7 @@ const normalizeText = (value: unknown): string => {
 
 const normalizeProfile = (value: unknown): string => {
   const normalized = normalizeText(value);
+  const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
 
   if (
     normalized === 'seguranca'
@@ -33,6 +34,9 @@ const normalizeProfile = (value: unknown): string => {
     || normalized === 'seguranca operacional'
     || normalized === 'seguranca operacional / qr code'
     || normalized === 'seguranca operacional qr code'
+    || normalizedNoSymbols.includes('seguranca')
+    || normalizedNoSymbols.includes('security')
+    || (normalizedNoSymbols.includes('qr') && normalizedNoSymbols.includes('operacional'))
   ) {
     return 'seguranca';
   }
