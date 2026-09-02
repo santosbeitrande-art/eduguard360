@@ -14,9 +14,12 @@ import Building360BlueprintV1Page from "@/pages/building/Building360BlueprintV1P
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import DirecaoDashboard from "@/pages/system/DirecaoDashboard";
+import AdministracaoDashboard from "@/pages/system/AdministracaoDashboard";
 import SecretariaDashboard from "@/pages/system/SecretariaDashboard";
+import CoordenacaoDashboard from "@/pages/system/CoordenacaoDashboard";
 import ProfessorDashboard from "@/pages/system/ProfessorDashboard";
 import FinanceiroDashboard from "@/pages/system/FinanceiroDashboard";
+import RHDashboard from "@/pages/system/RHDashboard";
 import AdminExecutiveDashboard from "@/pages/system/AdminExecutiveDashboard";
 import QRScannerPro from "@/pages/system/QRScannerPro";
 
@@ -104,11 +107,14 @@ function App() {
         <Route path="/analytics" element={<AnalyticsPortalPage />} />
         <Route path="/building360" element={<Building360PortalPage />} />
         <Route path="/building360/blueprint" element={<Building360BlueprintV1Page />} />
-        <Route path="/sistema/escola" element={<SchoolDashboard />} />
+        <Route path="/sistema/escola" element={<Navigate to="/sistema/administracao" replace />} />
         <Route path="/sistema/direcao" element={<DirecaoDashboard />} />
+        <Route path="/sistema/administracao" element={<AdministracaoDashboard />} />
         <Route path="/sistema/secretaria" element={<SecretariaDashboard />} />
+        <Route path="/sistema/coordenacao" element={<CoordenacaoDashboard />} />
         <Route path="/sistema/professor" element={<ProfessorDashboard />} />
         <Route path="/sistema/financeiro" element={<FinanceiroDashboard />} />
+        <Route path="/sistema/rh" element={<RHDashboard />} />
         <Route path="/sistema/seguranca" element={<QRScannerPro />} />
         <Route path="/sistema/scanner" element={<QRScannerPro />} />
         <Route path="/sistema/aluno" element={<Navigate to="/cursos" replace />} />

@@ -4,6 +4,7 @@ import { withTimeout } from "@/lib/networkPerformance";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
+import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
 const LOCAL_STUDENTS_KEY = 'eduguard_local_students';
@@ -11,13 +12,7 @@ const LOCAL_ENTRIES_KEY = 'eduguard_local_entries';
 const SCHOOL_DASHBOARD_ALLOWED_PROFILES = [
   'admin',
   'super_admin',
-  'director',
   'administrator',
-  'secretaria',
-  'coordenador',
-  'professor',
-  'financeiro',
-  'rh',
 ];
 
 const normalizeProfile = (value: unknown): string => {
@@ -39,6 +34,22 @@ const normalizeProfile = (value: unknown): string => {
   ) return 'seguranca';
 
   return normalized;
+};
+
+const getDefaultRouteByProfile = (perfil: string): string => {
+  const normalized = normalizeProfile(perfil);
+  if (normalized === 'super_admin' || normalized === 'admin') return '/sistema/enterprise';
+  if (normalized === 'director') return '/sistema/direcao';
+  if (normalized === 'administrator') return '/sistema/administracao';
+  if (normalized === 'secretaria') return '/sistema/secretaria';
+  if (normalized === 'coordenador') return '/sistema/coordenacao';
+  if (normalized === 'professor' || normalized === 'teacher') return '/sistema/professor';
+  if (normalized === 'financeiro' || normalized === 'finance') return '/sistema/financeiro';
+  if (normalized === 'rh' || normalized === 'hr') return '/sistema/rh';
+  if (normalized === 'seguranca') return '/sistema/seguranca';
+  if (normalized === 'parent' || normalized === 'guardian') return '/sistema/encarregado';
+  if (normalized === 'student' || normalized === 'aluno') return '/sistema/aluno';
+  return '/sistema/login';
 };
 
 type EntryRecord = {
@@ -76,6 +87,7 @@ const SchoolDashboardContent = ({
   allowedProfiles,
 }: SchoolDashboardProps) => {
   const navigate = useNavigate();
+  const { user, token } = useSystemAuth();
   const [data, setData] = useState<EntryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -123,37 +135,76 @@ const SchoolDashboardContent = ({
   const fetchData = async () => {
     setLoading(true);
     try {
-      let currentUser: any = null;
-      try {
-        currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
-      } catch {
-        currentUser = null;
+      const legacyUserRaw = localStorage.getItem('currentUser');
+      let legacyUser: any = null;
+      if (legacyUserRaw) {
+        try {
+          legacyUser = JSON.parse(legacyUserRaw);
+        } catch {
+          legacyUser = null;
+        }
       }
 
-      // Bloquear acesso se não houver utilizador ou se não for Administração Geral/Direção
-      const profile = normalizeProfile(currentUser?.perfil || currentUser?.role);
-      if (!currentUser || !allowedProfiles.includes(profile)) {
+      const currentUser = user || legacyUser;
+      const fallbackProfile = normalizeProfile(currentUser?.role || currentUser?.perfil);
+      let authoritativeProfile = fallbackProfile;
+
+      if (token && currentUser) {
+        try {
+          const headers: HeadersInit = {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'x-enterprise-role': String(currentUser?.role || currentUser?.perfil || ''),
+            'x-user-id': String(currentUser?.id || currentUser?.user_id || ''),
+            'x-school-id': String(currentUser?.school_id || currentUser?.escola_id || currentUser?.tenant_id || ''),
+            'x-tenant-id': String(currentUser?.tenant_id || currentUser?.school_id || currentUser?.escola_id || ''),
+          };
+
+          const identityResponse = await withTimeout(
+            fetch('/api/v1/core?action=identity', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ userId: currentUser?.id || currentUser?.user_id || null }),
+            }),
+            10000,
+            'Identity resolve timeout'
+          );
+
+          if (identityResponse.ok) {
+            const identityPayload = await identityResponse.json();
+            const serverRole = identityPayload?.identity?.role;
+            if (serverRole) {
+              authoritativeProfile = normalizeProfile(serverRole);
+            }
+          }
+        } catch {
+          // Keep fallback profile when identity endpoint is temporarily unavailable.
+        }
+      }
+
+      if (!currentUser || !allowedProfiles.includes(authoritativeProfile)) {
         setData([]);
-        navigate(profile === 'seguranca' ? '/sistema/seguranca' : blockedRedirectTo);
+        navigate(getDefaultRouteByProfile(authoritativeProfile));
         return;
       }
 
       let alunosQuery = supabase.from('alunos').select('id, nome, classe, escola_id');
 
       // Se não for Administração Geral (global), restringe à sua própria escola
-      if (profile !== 'admin' && profile !== 'super_admin') {
-        if (!currentUser.escola_id) {
+      if (authoritativeProfile !== 'admin' && authoritativeProfile !== 'super_admin') {
+        const schoolId = currentUser?.school_id || currentUser?.escola_id || currentUser?.tenant_id || null;
+        if (!schoolId) {
           console.error("Utilizador não tem escola associada.");
           loadFromLocalFallback();
           return;
         }
 
-        if (!isUuid(currentUser.escola_id)) {
+        if (!isUuid(schoolId)) {
           loadFromLocalFallback();
           return;
         }
 
-        alunosQuery = alunosQuery.eq('escola_id', currentUser.escola_id);
+        alunosQuery = alunosQuery.eq('escola_id', schoolId);
       }
 
       const { data: alunosData, error: alunosError } = await withTimeout(alunosQuery, 12000, 'School students timeout');
@@ -305,8 +356,12 @@ const SchoolDashboardContent = ({
   };
 
   useEffect(() => {
+    if (!user && !localStorage.getItem('currentUser')) {
+      navigate(blockedRedirectTo);
+      return;
+    }
     fetchData();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     const refreshSchoolData = () => {
@@ -524,11 +579,11 @@ const SchoolDashboardContent = ({
   );
 };
 
-export const SchoolDashboardPage: React.FC<SchoolDashboardProps> = (props) => (
+export const SchoolDashboardPage = (props: SchoolDashboardProps) => (
   <SystemAuthProvider><SchoolDashboardContent {...props} /></SystemAuthProvider>
 );
 
-const SchoolDashboard: React.FC = () => (
+const SchoolDashboard = () => (
   <SchoolDashboardPage
     title="Painel da Escola"
     description="Histórico completo de entradas e saídas com filtros por dia, mês, ano, turma/classe e aluno."

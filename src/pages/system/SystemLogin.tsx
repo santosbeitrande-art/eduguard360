@@ -227,19 +227,22 @@ const normalizeLegacyProfile = (perfil: unknown): string => {
     .trim()
     .toLowerCase();
   const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
-  if (normalized === 'super_admin' || normalized === 'admin' || normalized === 'superadmin') return 'super_admin';
-  if (normalized === 'school_admin' || normalized === 'director' || normalized === 'diretor') return 'director';
-  if (normalized === 'administrator') return 'administrator';
+
+  if (normalized === 'super_admin' || normalized === 'admin' || normalized === 'superadmin' || normalized === 'administrador' || normalized === 'administrador geral' || normalized === 'admin geral') return 'super_admin';
+  if (normalized === 'school_admin' || normalized === 'director' || normalized === 'diretor' || normalized === 'direcao' || normalized === 'direcao escolar' || normalized === 'direcao escolar') return 'director';
+  if (normalized === 'administrator' || normalized === 'administrador escolar') return 'administrator';
   if (normalized === 'secretaria' || normalized === 'secretariat') return 'secretaria';
-  if (normalized === 'coordenador' || normalized === 'coordinator') return 'coordenador';
+  if (normalized === 'coordenador' || normalized === 'coordinator' || normalized === 'coordenacao' || normalized === 'coordenacao academica') return 'coordenador';
   if (normalized === 'teacher' || normalized === 'professor' || normalized === 'docente') return 'professor';
-  if (normalized === 'financeiro' || normalized === 'finance') return 'financeiro';
-  if (normalized === 'rh' || normalized === 'hr') return 'rh';
+  if (normalized === 'financeiro' || normalized === 'finance' || normalized === 'financas') return 'financeiro';
+  if (normalized === 'rh' || normalized === 'hr' || normalized === 'recursos humanos') return 'rh';
   if (
     normalized === 'scanner'
     || normalized === 'security'
     || normalized === 'security_officer'
     || normalized === 'seguranca'
+    || normalized === 'seguranca operacional'
+    || normalized === 'seguranca qr code'
     || normalizedNoSymbols.includes('seguranca operacional')
     || normalizedNoSymbols.includes('security officer')
   ) return 'seguranca';
@@ -317,10 +320,13 @@ const getDefaultRouteByProfile = (perfil: string): string => {
   if (normalized === 'student') return '/sistema/aluno';
   if (normalized === 'seguranca') return '/sistema/seguranca';
   if (normalized === 'director') return '/sistema/direcao';
+  if (normalized === 'administrator') return '/sistema/administracao';
   if (normalized === 'secretaria') return '/sistema/secretaria';
+  if (normalized === 'coordenador') return '/sistema/coordenacao';
   if (normalized === 'professor') return '/sistema/professor';
   if (normalized === 'financeiro') return '/sistema/financeiro';
-  return '/sistema/escola';
+  if (normalized === 'rh') return '/sistema/rh';
+  return '/sistema/login';
 };
 
 const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
@@ -343,26 +349,34 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
   }
 
   if (normalized === 'director') {
-    return route.startsWith('/sistema/direcao') || route.startsWith('/sistema/escola');
+    return route.startsWith('/sistema/direcao');
+  }
+
+  if (normalized === 'administrator') {
+    return route.startsWith('/sistema/administracao') || route.startsWith('/sistema/escola');
   }
 
   if (normalized === 'secretaria') {
-    return route.startsWith('/sistema/secretaria') || route.startsWith('/sistema/escola');
+    return route.startsWith('/sistema/secretaria');
+  }
+
+  if (normalized === 'coordenador') {
+    return route.startsWith('/sistema/coordenacao');
   }
 
   if (normalized === 'professor') {
-    return route.startsWith('/sistema/professor') || route.startsWith('/sistema/escola');
+    return route.startsWith('/sistema/professor');
   }
 
   if (normalized === 'financeiro') {
-    return route.startsWith('/sistema/financeiro') || route.startsWith('/sistema/escola');
+    return route.startsWith('/sistema/financeiro');
   }
 
-  if (['administrator', 'coordenador', 'rh'].includes(normalized)) {
-    return route.startsWith('/sistema/escola');
+  if (normalized === 'rh') {
+    return route.startsWith('/sistema/rh');
   }
 
-  return route.startsWith('/sistema/escola');
+  return false;
 };
 
 const normalizeKnownAdminUser = (user: any): any => {
@@ -371,8 +385,8 @@ const normalizeKnownAdminUser = (user: any): any => {
   if (normalizedEmail !== KNOWN_ADMIN_EMAIL) return user;
   return {
     ...user,
-    perfil: SECURITY_PORTAL_ROLE,
-    role: SECURITY_PORTAL_ROLE,
+    perfil: 'super_admin',
+    role: 'super_admin',
     status: 'active',
     is_active: true,
   };
