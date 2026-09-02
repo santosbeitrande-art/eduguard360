@@ -16,6 +16,11 @@ const coreEntities = [
 ];
 
 const operationsEntities = [
+  'buildingpass_credentials',
+  'community_announcements',
+  'community_threads',
+  'requests',
+  'complaints',
   'assets',
   'maintenance_plans',
   'work_orders',
@@ -39,6 +44,8 @@ const financeEntities = [
   'budgets',
   'budget_lines',
   'ledger_entries',
+  'reserve_bookings',
+  'move_authorizations',
 ];
 
 const endpoints = [
@@ -46,23 +53,32 @@ const endpoints = [
   ['GET', '/api/v1/building360/sites', 'Lista de sites e complexos'],
   ['GET', '/api/v1/building360/buildings', 'Lista de edificios por site'],
   ['GET', '/api/v1/building360/units', 'Unidades por filtros (tipo, estado, edificio)'],
+  ['GET', '/api/v1/building360/core/people', 'Base de pessoas do condominio/comunidade'],
+  ['GET', '/api/v1/building360/core/role-assignments', 'Credenciais e atribuicoes BuildingPass'],
   ['GET', '/api/v1/building360/assets', 'Activos e proxima manutencao'],
   ['POST', '/api/v1/building360/work-orders', 'Criar ordem de trabalho'],
   ['PATCH', '/api/v1/building360/work-orders/:id', 'Actualizar estado de manutencao'],
-  ['POST', '/api/v1/building360/visitors', 'Registar visitante e gerar QR'],
-  ['GET', '/api/v1/building360/access/logs', 'Logs de acesso BuildingPass'],
+  ['POST', '/api/v1/building360/core/role-assignments', 'Emitir credencial/visita com regras de acesso'],
   ['POST', '/api/v1/building360/billing/run', 'Executar ciclo de cobranca'],
-  ['GET', '/api/v1/building360/invoices', 'Facturas por contrato/unidade'],
-  ['POST', '/api/v1/building360/payments', 'Registar pagamento e emitir recibo'],
+  ['GET', '/api/v1/building360/finance/invoices', 'Facturas por contrato/unidade'],
+  ['POST', '/api/v1/building360/finance/payments/register', 'Registar pagamento e emitir recibo'],
 ];
 
 const permissionRows = [
-  ['Platform Admin', 'Global', 'Tudo', 'Tudo'],
-  ['Admin Portal', 'Tenant', 'Core, Finance, Ops, Security', 'CRUD completo + aprovacoes'],
-  ['Security Portal', 'Tenant', 'BuildingPass, Visitors, Incidents', 'Leitura + registo ocorrencias'],
-  ['Technician Portal', 'Tenant/Assigned', 'Assets, Work Orders', 'Leitura + update de ordens atribuidas'],
-  ['Vendor Portal', 'Tenant/Assigned', 'Work Orders, Contracts', 'Leitura + resposta a pedidos/cotacoes'],
-  ['User Portal', 'Self + linked unit', 'Unit, invoices, notices, access', 'Leitura + pedidos + visitantes'],
+  ['Platform Admin', 'Global', 'Todos os modulos Building360', 'Controlo total multi-tenant'],
+  ['Organization Admin', 'Tenant', 'Core, Property, Finance, Operations, Security', 'CRUD completo + aprovacoes'],
+  ['Property Manager', 'Tenant', 'Property Management, People', 'CRUD operacional de portfolio'],
+  ['Finance Manager', 'Tenant', 'Finance360', 'Cobranca, pagamentos, reconciliacao, exportacao'],
+  ['Maintenance Manager', 'Tenant', 'Asset360, Maintain360', 'Activos, planos e ordens de trabalho'],
+  ['Security Manager', 'Tenant', 'BuildingPass, Security & Incident', 'Politicas, incidentes, auditoria'],
+  ['Security Officer', 'Tenant/Assigned', 'BuildingPass, Incident', 'Operacao de acesso e ocorrencias'],
+  ['Facility Manager', 'Tenant', 'Property, Asset, Operations', 'Gestao operacional transversal'],
+  ['Community Manager', 'Tenant', 'People & Community', 'Comunicacao, reclamacoes, assembleias'],
+  ['Document Manager', 'Tenant', 'Document360', 'Governanca documental e validade'],
+  ['Parking Manager', 'Tenant', 'Parking360', 'Vagas, reservas, entradas e saidas'],
+  ['Technician', 'Tenant/Assigned', 'Maintain360', 'Execucao de ordens atribuidas'],
+  ['Resident / Occupant', 'Self + linked unit', 'Unit, access, notices, invoices', 'Consulta e pedidos autorizados'],
+  ['Auditor', 'Tenant/Scoped', 'Security, Finance, Logs', 'Leitura e exportacao para auditoria'],
 ];
 
 const Building360BlueprintV1Page: React.FC = () => {
@@ -86,7 +102,23 @@ const Building360BlueprintV1Page: React.FC = () => {
             Versao detalhada para inicio de implementacao: modelo de dados PostgreSQL, mapa de APIs,
             permissões por perfil e estrutura modular para um monolito modular multi-tenant.
           </p>
+          <p className="mt-3 text-sm text-cyan-200">
+            Produto independente: Building360 partilha identidade/RBAC do ecossistema, mas opera com dominios proprios e isolamento estrito por tenant.
+          </p>
+          <p className="mt-2 text-sm text-emerald-200">
+            Regra obrigatoria de arquitetura: identidade unica Building360 com RBAC por perfil; sem logins separados por modulo.
+          </p>
         </header>
+
+        <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+          <h2 className="text-xl font-bold text-white">Ecossistema Integrado</h2>
+          <p className="mt-3 text-sm text-slate-300">
+            CORE + BuildingPass + Community360 + Chat360 + Request360 + Complaint360 + Finance360 + Asset360 + Maintain360 + Parking360 + Reserve360 + Move360 + Document360 + Security360 + Insight360 + Building Intelligence.
+          </p>
+          <p className="mt-2 text-sm text-slate-400">
+            Cada evento operacional deve ligar-se ao contexto de unidade, edificio e tenant para gerar rastreabilidade ponta-a-ponta.
+          </p>
+        </section>
 
         <section className="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
           <article className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">

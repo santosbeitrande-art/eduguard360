@@ -14,7 +14,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
   const { t, language } = useLanguage();
   const [isOpen, setIsOpen] = React.useState(false);
   const [showPortalsMenu, setShowPortalsMenu] = React.useState(false);
-  const securityLoginRoute = '/sistema?returnTo=%2Fsistema%2Fseguranca';
+  const securityLoginRoute = '/portais';
 
   const isPortalRoute = location.pathname.includes('/portais') || 
                         location.pathname.includes('/edumarket') || 
@@ -32,7 +32,7 @@ export const EducuardNavigation: React.FC<NavProps> = ({ variant = 'light' }) =>
     { label: '📚 EduMarket', href: '/edumarket' },
     { label: language === 'pt' ? '📖 Literatura Aberta' : '📖 Open Literature', href: '/literatura' },
     { label: '🔐 EduGuard Verify AI', href: '/public/login', external: true },
-    { label: '🏢 Enterprise', href: '/sistema/enterprise' },
+    { label: '🏢 Enterprise', href: '/portais' },
     { label: '📊 Analytics', href: '/analytics' },
   ];
 

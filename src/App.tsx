@@ -11,6 +11,7 @@ import EnterpriseWorkspacePage from "@/pages/system/EnterpriseWorkspacePage";
 import AnalyticsPortalPage from "@/pages/system/AnalyticsPortalPage";
 import Building360PortalPage from "@/pages/building/Building360PortalPage";
 import Building360BlueprintV1Page from "@/pages/building/Building360BlueprintV1Page";
+import Building360WorkspacePage from "@/pages/building/Building360WorkspacePage";
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import DirecaoDashboard from "@/pages/system/DirecaoDashboard";
@@ -107,16 +108,25 @@ function App() {
         <Route path="/analytics" element={<AnalyticsPortalPage />} />
         <Route path="/building360" element={<Building360PortalPage />} />
         <Route path="/building360/blueprint" element={<Building360BlueprintV1Page />} />
+        <Route path="/building360/workspace/:profile/:module" element={<Building360WorkspacePage />} />
+        <Route path="/sistema/building360/:profile/:module" element={<Building360WorkspacePage />} />
         <Route path="/sistema/escola" element={<Navigate to="/sistema/administracao" replace />} />
         <Route path="/sistema/direcao" element={<DirecaoDashboard />} />
+        <Route path="/sistema/direcao/:module" element={<DirecaoDashboard />} />
         <Route path="/sistema/administracao" element={<AdministracaoDashboard />} />
+        <Route path="/sistema/administracao/:module" element={<AdministracaoDashboard />} />
         <Route path="/sistema/secretaria" element={<SecretariaDashboard />} />
+        <Route path="/sistema/secretaria/:module" element={<SecretariaDashboard />} />
         <Route path="/sistema/coordenacao" element={<CoordenacaoDashboard />} />
+        <Route path="/sistema/coordenacao/:module" element={<CoordenacaoDashboard />} />
         <Route path="/sistema/professor" element={<ProfessorDashboard />} />
+        <Route path="/sistema/professor/:module" element={<ProfessorDashboard />} />
         <Route path="/sistema/financeiro" element={<FinanceiroDashboard />} />
+        <Route path="/sistema/financeiro/:module" element={<FinanceiroDashboard />} />
         <Route path="/sistema/rh" element={<RHDashboard />} />
+        <Route path="/sistema/rh/:module" element={<RHDashboard />} />
         <Route path="/sistema/seguranca" element={<QRScannerPro />} />
-        <Route path="/sistema/scanner" element={<QRScannerPro />} />
+        <Route path="/sistema/scanner" element={<Navigate to="/sistema/seguranca" replace />} />
         <Route path="/sistema/aluno" element={<Navigate to="/cursos" replace />} />
 
         {/* Login alternativo */}
@@ -136,7 +146,7 @@ function App() {
         />
 
         {/* Scanner QR */}
-        <Route path="/scanner" element={<QRScannerPro />} />
+        <Route path="/scanner" element={<Navigate to="/sistema/seguranca" replace />} />
 
         {/* Dashboard padrão */}
         <Route

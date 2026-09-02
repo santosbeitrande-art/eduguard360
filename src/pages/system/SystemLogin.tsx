@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
+import { normalizeEnterpriseRole, resolvePortalRouteByRole } from "@/lib/enterpriseGovernance";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -295,12 +296,104 @@ const getAccessProfileLabelFromLegacyProfile = (perfil: string): string => {
   return 'perfil correto';
 };
 
+const accessProfileInsights: Record<AccessProfile, { portal: string; route: string; focus: string; areas: string[] }> = {
+  super_admin: {
+    portal: 'Administração Global',
+    route: '/sistema/admin',
+    focus: 'Governação geral, aprovação e auditoria institucional.',
+    areas: ['Escolas', 'Utilizadores', 'Workflows', 'Analytics'],
+  },
+  director: {
+    portal: 'Direção Escolar',
+    route: '/sistema/direcao',
+    focus: 'Decisão académica, operação da escola e aprovação final.',
+    areas: ['Direção', 'Planeamento', 'Relatórios', 'Aprovações'],
+  },
+  administrator: {
+    portal: 'Administração Escolar',
+    route: '/sistema/administracao',
+    focus: 'Gestão diária de utilizadores, alunos e matrículas.',
+    areas: ['Utilizadores', 'Alunos', 'Matrículas', 'Documentos'],
+  },
+  secretaria: {
+    portal: 'Secretaria Académica',
+    route: '/sistema/secretaria',
+    focus: 'Registo e acompanhamento académico-administrativo.',
+    areas: ['Matrículas', 'Turmas', 'Declarações', 'Calendário'],
+  },
+  coordenador: {
+    portal: 'Coordenação Académica',
+    route: '/sistema/coordenacao',
+    focus: 'Organização curricular e monitoria pedagógica.',
+    areas: ['Disciplinas', 'Horários', 'Currículos', 'Professores'],
+  },
+  professor: {
+    portal: 'Portal Docente',
+    route: '/sistema/professor',
+    focus: 'Gestão de turma, frequência, notas e ocorrências.',
+    areas: ['Turmas', 'Frequência', 'Avaliações', 'Ocorrências'],
+  },
+  financeiro: {
+    portal: 'Gestão Financeira',
+    route: '/sistema/financeiro',
+    focus: 'Cobranças, reconciliação e controlo de receitas.',
+    areas: ['Propinas', 'Faturas', 'Pagamentos', 'Reconciliação'],
+  },
+  rh: {
+    portal: 'Recursos Humanos',
+    route: '/sistema/rh',
+    focus: 'Gestão de colaboradores, contratos e desempenho.',
+    areas: ['Funcionários', 'Contratos', 'Férias', 'Avaliações'],
+  },
+  seguranca: {
+    portal: 'School Security',
+    route: '/sistema/seguranca',
+    focus: 'Controlo de acessos com QR e ocorrências de segurança.',
+    areas: ['Scanner QR', 'Entradas/Saídas', 'Ocorrências', 'Conformidade'],
+  },
+  parent: {
+    portal: 'Área de Encarregado',
+    route: '/sistema/encarregado',
+    focus: 'Acompanhamento de educandos, notificações e histórico.',
+    areas: ['Estado do aluno', 'Notificações', 'Pedidos', 'Histórico'],
+  },
+  student: {
+    portal: 'Área do Aluno',
+    route: '/sistema/aluno',
+    focus: 'Acesso a conteúdos, cursos e progresso.',
+    areas: ['Cursos', 'Materiais', 'Progresso', 'Atividades'],
+  },
+};
+
 const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
   if (accessProfile === 'teacher') return 'professor';
   if (accessProfile === 'scanner') return 'seguranca';
   if (accessProfile === 'pai') return 'parent';
   if (accessProfile === 'admin') return 'super_admin';
   return accessProfile;
+};
+
+const mapRegistrationRoleToLegacyProfile = (registrationRole: string): string => {
+  if (registrationRole === 'super_admin' || registrationRole === 'admin') return 'super_admin';
+  if (registrationRole === 'director' || registrationRole === 'school_admin') return 'director';
+  if (registrationRole === 'administrator') return 'administrator';
+  if (registrationRole === 'secretaria') return 'secretaria';
+  if (registrationRole === 'coordenador') return 'coordenador';
+  if (registrationRole === 'professor') return 'professor';
+  if (registrationRole === 'financeiro') return 'financeiro';
+  if (registrationRole === 'rh') return 'rh';
+  if (registrationRole === 'seguranca' || registrationRole === 'security') return 'seguranca';
+  if (registrationRole === 'parent') return 'pai';
+  if (registrationRole === 'teacher') return 'professor';
+  if (registrationRole === 'student') return 'student';
+  if (registrationRole === 'scanner') return 'seguranca';
+  return 'director';
+};
+
+const resolveInsightRoute = (profile: AccessProfile): string => {
+  if (profile === 'student') return '/cursos';
+  const route = resolvePortalRouteByRole(profile);
+  return route === '/sistema/login' ? accessProfileInsights[profile].route : route;
 };
 
 const getRequestedReturnRoute = (): string | null => {
@@ -314,26 +407,19 @@ const getRequestedReturnRoute = (): string | null => {
 };
 
 const getDefaultRouteByProfile = (perfil: string): string => {
-  const normalized = normalizeLegacyProfile(perfil);
-  if (normalized === 'super_admin') return '/sistema/enterprise';
-  if (normalized === 'parent') return '/sistema/encarregado';
-  if (normalized === 'student') return '/sistema/aluno';
-  if (normalized === 'seguranca') return '/sistema/seguranca';
-  if (normalized === 'director') return '/sistema/direcao';
-  if (normalized === 'administrator') return '/sistema/administracao';
-  if (normalized === 'secretaria') return '/sistema/secretaria';
-  if (normalized === 'coordenador') return '/sistema/coordenacao';
-  if (normalized === 'professor') return '/sistema/professor';
-  if (normalized === 'financeiro') return '/sistema/financeiro';
-  if (normalized === 'rh') return '/sistema/rh';
-  return '/sistema/login';
+  const normalized = normalizeEnterpriseRole(perfil);
+  return resolvePortalRouteByRole(normalized);
 };
 
 const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
-  const normalized = normalizeLegacyProfile(perfil);
+  const normalized = normalizeEnterpriseRole(perfil);
+  const defaultRoute = resolvePortalRouteByRole(normalized);
 
-  if (normalized === 'super_admin') {
-    return route.startsWith('/sistema/enterprise') || route.startsWith('/enterprise');
+  if (defaultRoute === '/sistema/login') return false;
+  if (route === defaultRoute) return true;
+
+  if (normalized === 'super_admin' || normalized === 'admin') {
+    return route.startsWith('/sistema/admin') || route.startsWith('/sistema/enterprise') || route.startsWith('/enterprise');
   }
 
   if (normalized === 'parent') {
@@ -345,7 +431,7 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
   }
 
   if (normalized === 'seguranca') {
-    return route.startsWith('/sistema/seguranca') || route.startsWith('/sistema/scanner');
+    return route.startsWith('/sistema/seguranca');
   }
 
   if (normalized === 'director') {
@@ -577,6 +663,19 @@ const SystemLoginContent = () => {
   const [accountStatusPanel, setAccountStatusPanel] = useState<AccountStatusPanel | null>(null);
   const [checkingAccountStatus, setCheckingAccountStatus] = useState(false);
   const navigate = useNavigate();
+  const activeInsight = accessProfileInsights[accessProfile];
+
+  useEffect(() => {
+    setAccountStatusPanel((prev) => {
+      if (!prev) return prev;
+      const nextItems = prev.items.map((item) =>
+        item.label === 'Perfil esperado'
+          ? { ...item, value: getAccessProfileLabel(accessProfile) }
+          : item
+      );
+      return { ...prev, items: nextItems };
+    });
+  }, [accessProfile]);
 
   const loadSchools = async () => {
     setLoadingSchools(true);
@@ -636,10 +735,13 @@ const SystemLoginContent = () => {
     navigate(route);
   };
 
-  const persistLegacyUserFromEdgeAuth = (edgeUser: any) => {
+  const persistLegacyUserFromEdgeAuth = (edgeUser: any, profileOverride?: string, schoolIdOverride?: string | null) => {
     if (!edgeUser) return;
 
-    const legacyPerfil = mapEdgeUserToLegacyProfile(edgeUser);
+    const fallbackPerfil = mapEdgeUserToLegacyProfile(edgeUser);
+    const normalizedOverride = profileOverride ? normalizeLegacyProfile(profileOverride) : '';
+    const legacyPerfil = normalizedOverride || fallbackPerfil;
+    const resolvedSchoolId = schoolIdOverride ?? edgeUser.school_id ?? edgeUser.escola_id ?? null;
 
     localStorage.setItem('currentUser', JSON.stringify({
       id: edgeUser.id,
@@ -647,9 +749,26 @@ const SystemLoginContent = () => {
       nome: edgeUser.name,
       email: edgeUser.email,
       perfil: toStoredLegacyProfile(legacyPerfil),
-      escola_id: edgeUser.school_id || null,
+      escola_id: resolvedSchoolId,
       password_changed: edgeUser.password_changed ?? true,
     }));
+
+    const currentEdgeUserRaw = localStorage.getItem('eduguard_user');
+    if (currentEdgeUserRaw) {
+      try {
+        const parsedEdgeUser = JSON.parse(currentEdgeUserRaw);
+        const normalizedRole = normalizeEnterpriseRole(legacyPerfil);
+        localStorage.setItem('eduguard_user', JSON.stringify({
+          ...parsedEdgeUser,
+          role: normalizedRole,
+          perfil: toStoredLegacyProfile(legacyPerfil),
+          school_id: resolvedSchoolId,
+          escola_id: resolvedSchoolId,
+        }));
+      } catch {
+        // Keep original edge payload when it cannot be parsed.
+      }
+    }
   };
 
   const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
@@ -799,8 +918,23 @@ const SystemLoginContent = () => {
 
           try {
             const edgeUser = JSON.parse(edgeUserRaw);
-            persistLegacyUserFromEdgeAuth(edgeUser);
-            const perfil = mapEdgeUserToLegacyProfile(edgeUser);
+
+            const { data: domainUser } = await withTimeout(
+              supabase
+                .from('utilizadores')
+                .select('id,email,perfil,role,escola_id,school_id')
+                .eq('email', normalizedEmail)
+                .maybeSingle(),
+              12000,
+              'Domain profile lookup timeout'
+            );
+
+            const edgePerfil = mapEdgeUserToLegacyProfile(edgeUser);
+            const domainPerfil = normalizeLegacyProfile(domainUser?.perfil || domainUser?.role || '');
+            const perfil = domainPerfil && domainPerfil !== 'unknown' ? domainPerfil : edgePerfil;
+            const resolvedSchoolId = domainUser?.escola_id || domainUser?.school_id || edgeUser?.school_id || edgeUser?.escola_id || null;
+
+            persistLegacyUserFromEdgeAuth(edgeUser, perfil, resolvedSchoolId);
             redirectByProfile(perfil);
             return;
           } catch (parseError) {
@@ -1147,6 +1281,24 @@ const SystemLoginContent = () => {
       return;
     }
 
+    const localExistingUser = [
+      ...readLocalApprovedUsers(),
+      ...readPendingRegistrations(),
+      ...readGeneratedCredentialsLog(),
+    ].find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
+
+    if (localExistingUser) {
+      const existingProfile = normalizeLegacyProfile(localExistingUser?.perfil || localExistingUser?.role || '');
+      const currentProfile = mapRegistrationRoleToLegacyProfile(selectedRole);
+      if (existingProfile && existingProfile !== currentProfile) {
+        setErrorMessage(`Este email ja esta registado como ${getLegacyProfileLabel(existingProfile)}. Nao e permitido criar novo cadastro com outro perfil usando o mesmo email.`);
+      } else {
+        setErrorMessage('Este email ja esta registado. Inicie sessao ou recupere a senha.');
+      }
+      setLoading(false);
+      return;
+    }
+
     const requiresSchoolSelection = selectedRole === 'director' || schools.length > 0;
     if (requiresSchoolSelection && !selectedSchoolId) {
       setErrorMessage(t('sistema.selecionar_escola'));
@@ -1165,6 +1317,28 @@ const SystemLoginContent = () => {
     }
 
     try {
+      const { data: existingDomainUser, error: existingDomainUserError } = await withTimeout(
+        supabase
+          .from('utilizadores')
+          .select('id,perfil,role')
+          .eq('email', normalizedEmail)
+          .maybeSingle(),
+        12000,
+        'Registration duplicate check timeout'
+      );
+
+      if (!existingDomainUserError && existingDomainUser?.id) {
+        const existingProfile = normalizeLegacyProfile(existingDomainUser?.perfil || existingDomainUser?.role || '');
+        const currentProfile = mapRegistrationRoleToLegacyProfile(selectedRole);
+        if (existingProfile && existingProfile !== currentProfile) {
+          setErrorMessage(`Este email ja esta registado como ${getLegacyProfileLabel(existingProfile)}. Nao e permitido criar novo cadastro com outro perfil usando o mesmo email.`);
+        } else {
+          setErrorMessage('Este email ja esta registado. Inicie sessao ou recupere a senha.');
+        }
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await withTimeout(supabase.auth.signUp({
         email: normalizedEmail,
         password: normalizedPassword,
@@ -1172,24 +1346,25 @@ const SystemLoginContent = () => {
       }), 12000, 'Self-register timeout');
 
       if (error) {
-        setErrorMessage(error.message || t('mensagens.erro_generico'));
+        if (isAlreadyRegisteredError(String(error.message || ''))) {
+          setErrorMessage('Este email ja esta registado. Inicie sessao ou use a recuperacao de senha.');
+        } else {
+          setErrorMessage(error.message || t('mensagens.erro_generico'));
+        }
         setLoading(false);
         return;
       }
-
-      const isDirectorAutoApproved = selectedRole === 'director' && paymentDone;
-      const isOperationalAutoApproved = selectedRole === 'scanner' || selectedRole === 'parent';
 
       const pendingUser = {
         id: data?.user?.id || `pending-${Date.now()}`,
         auth_id: data?.user?.id || null,
         nome: normalizedName,
         email: normalizedEmail,
-        perfil: selectedRole === 'parent' ? 'pai' : selectedRole === 'teacher' ? 'professor' : selectedRole === 'scanner' ? 'scanner' : 'director',
+        perfil: mapRegistrationRoleToLegacyProfile(selectedRole),
         escola_id: selectedSchoolId || null,
         senha: normalizedPassword,
-        is_active: isDirectorAutoApproved || isOperationalAutoApproved,
-        status: (isDirectorAutoApproved || isOperationalAutoApproved) ? 'active' : 'pending',
+        is_active: false,
+        status: 'pending',
         password_changed: false,
         source: 'supabase'
       };
@@ -1206,30 +1381,15 @@ const SystemLoginContent = () => {
         is_active: pendingUser.is_active
       }), 12000, 'Registration profile timeout');
 
-      const isLocalFallbackApproval = Boolean(insertError && isPermissionDeniedError(insertError) && selectedRole !== 'director');
-
-      if (isDirectorAutoApproved || isOperationalAutoApproved || isLocalFallbackApproval) {
-        const approvedUser = {
-          ...pendingUser,
-          status: 'active',
-          is_active: true,
-        };
-        const existingApproved = readLocalApprovedUsers();
-        const nextApproved = [
-          ...existingApproved.filter((item) => String(item?.email || '').trim().toLowerCase() !== normalizedEmail),
-          { ...approvedUser, source: insertError ? 'local' : 'supabase' },
-        ];
-        localStorage.setItem(LOCAL_APPROVED_USERS_KEY, JSON.stringify(nextApproved));
-      } else {
-        const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
-        existingPending.push({ ...pendingUser, source: insertError ? 'local' : 'supabase' });
-        localStorage.setItem('eduguard_pending_registrations', JSON.stringify(existingPending));
-      }
+      const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
+      const nextPending = [
+        ...existingPending.filter((item: any) => String(item?.email || '').trim().toLowerCase() !== normalizedEmail),
+        { ...pendingUser, source: insertError ? 'local' : 'supabase' },
+      ];
+      localStorage.setItem('eduguard_pending_registrations', JSON.stringify(nextPending));
 
       setRegisterMode(false);
-      setInfoMessage((isDirectorAutoApproved || isOperationalAutoApproved || isLocalFallbackApproval)
-        ? 'Registo concluido com sucesso. Ja pode iniciar sessao no School Security.'
-        : t('sistema.registo_pendente'));
+      setInfoMessage(t('sistema.registo_pendente'));
       setPassword('');
       setFullName('');
       setSelectedRole('director');
@@ -1343,6 +1503,12 @@ const SystemLoginContent = () => {
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+              <div className="mt-2 rounded-xl border border-[#2e5a6e] bg-[#102c3f] px-3 py-2 text-xs text-[#d1e4ef]">
+                <p><strong>Portal:</strong> {activeInsight.portal}</p>
+                <p><strong>Rota esperada:</strong> {resolveInsightRoute(accessProfile)}</p>
+                <p className="mt-1 text-[#9bbbc9]">{activeInsight.focus}</p>
+                <p className="mt-1"><strong>Áreas:</strong> {activeInsight.areas.join(' · ')}</p>
+              </div>
             </div>
           </details>
         </div>
@@ -1388,6 +1554,7 @@ const SystemLoginContent = () => {
                 <option value="director">{t('sistema.role_director')}</option>
                 <option value="parent">{t('sistema.role_parent')}</option>
                 <option value="teacher">{t('sistema.role_teacher')}</option>
+                <option value="student">{t('sistema.role_student')}</option>
                 <option value="scanner">Segurança QR Code</option>
               </select>
               <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>

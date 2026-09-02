@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { RequireEnterprisePermission } from './decorators/enterprise-permission.decorator';
 import { EnterpriseRbacGuard } from './guards/enterprise-rbac.guard';
+import { getAccessMatrix, getRolePermissions, normalizeEnterpriseRole } from './rbac.matrix';
 
 @Controller('enterprise-test')
 @UseGuards(JwtAuthGuard, EnterpriseRbacGuard)
@@ -20,6 +21,24 @@ class EnterpriseTestController {
   @Get('payments-create-probe')
   @RequireEnterprisePermission('payments', 'create')
   paymentsCreateProbe() {
+    return { ok: true };
+  }
+
+  @Get('payments-read-probe')
+  @RequireEnterprisePermission('payments', 'read')
+  paymentsReadProbe() {
+    return { ok: true };
+  }
+
+  @Get('security-read-probe')
+  @RequireEnterprisePermission('security', 'read')
+  securityReadProbe() {
+    return { ok: true };
+  }
+
+  @Get('students-read-probe')
+  @RequireEnterprisePermission('students', 'read')
+  studentsReadProbe() {
     return { ok: true };
   }
 }
@@ -110,5 +129,84 @@ describe('Enterprise HTTP Guards (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .set('x-enterprise-role', 'super_admin')
       .expect(403);
+  });
+
+  it('denies seguranca on payments create while allowing finance manager role', async () => {
+    const securityToken = jwtService.sign({
+      sub: 'user-security',
+      role: 'seguranca',
+      schoolId: 'school-1',
+      tenantId: 'tenant-1',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/enterprise-test/payments-create-probe')
+      .set('Authorization', `Bearer ${securityToken}`)
+      .expect(403);
+
+    const financeToken = jwtService.sign({
+      sub: 'user-finance',
+      role: 'financeiro',
+      schoolId: 'school-1',
+      tenantId: 'tenant-1',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/enterprise-test/payments-create-probe')
+      .set('Authorization', `Bearer ${financeToken}`)
+      .expect(200);
+  });
+
+  it('denies professor on security endpoints', async () => {
+    const teacherToken = jwtService.sign({
+      sub: 'user-teacher',
+      role: 'professor',
+      schoolId: 'school-1',
+      tenantId: 'tenant-1',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/enterprise-test/security-read-probe')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .expect(403);
+  });
+
+  it('enforces permission matrix for all declared roles', async () => {
+    const declaredRoles = getAccessMatrix().hierarchy;
+    const probes = [
+      {
+        path: '/api/v1/enterprise-test/security-read-probe',
+        canAccess: (role: string) => getRolePermissions(normalizeEnterpriseRole(role as any)).security.includes('read'),
+      },
+      {
+        path: '/api/v1/enterprise-test/payments-read-probe',
+        canAccess: (role: string) => getRolePermissions(normalizeEnterpriseRole(role as any)).payments.includes('read'),
+      },
+      {
+        path: '/api/v1/enterprise-test/payments-create-probe',
+        canAccess: (role: string) => getRolePermissions(normalizeEnterpriseRole(role as any)).payments.includes('create'),
+      },
+      {
+        path: '/api/v1/enterprise-test/students-read-probe',
+        canAccess: (role: string) => getRolePermissions(normalizeEnterpriseRole(role as any)).students.includes('read'),
+      },
+    ];
+
+    for (const role of declaredRoles) {
+      const token = jwtService.sign({
+        sub: `role-${role}`,
+        role,
+        schoolId: 'school-1',
+        tenantId: 'tenant-1',
+      });
+
+      for (const probe of probes) {
+        const expectedStatus = probe.canAccess(role) ? 200 : 403;
+        await request(app.getHttpServer())
+          .get(probe.path)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(expectedStatus);
+      }
+    }
   });
 });

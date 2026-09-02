@@ -51,6 +51,24 @@ alter table public.utilizadores
     )
   );
 
+-- Guarantee one account per email across all profiles (case-insensitive).
+do $$
+begin
+  if exists (
+    select 1
+    from public.utilizadores
+    where email is not null and btrim(email) <> ''
+    group by lower(btrim(email))
+    having count(*) > 1
+  ) then
+    raise exception 'Nao foi possivel criar indice unico de email: existem emails duplicados em public.utilizadores.';
+  end if;
+end $$;
+
+create unique index if not exists uq_utilizadores_email_normalized
+  on public.utilizadores (lower(btrim(email)))
+  where email is not null and btrim(email) <> '';
+
 -- -----------------------------------------------------------------------------
 -- 1) Ensure RLS is enabled and enforced
 -- -----------------------------------------------------------------------------

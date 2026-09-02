@@ -1293,10 +1293,10 @@ const AdminGlobalDashboard = () => {
     }
   };
 
-  const handlePendingRegistrationAction = async (registration: any, action: 'approve' | 'reject') => {
+  const handlePendingRegistrationAction = async (registration: any, action: 'approve' | 'reject' | 'standby') => {
     setApprovalAction(registration.id);
     try {
-      let processedSuccessfully = action === 'reject';
+      let processedSuccessfully = action === 'reject' || action === 'standby';
       let approvedPassword: string | null = null;
       let approvedProfile: string | null = null;
       let approvedEmail: string | null = null;
@@ -1516,11 +1516,41 @@ const AdminGlobalDashboard = () => {
           setRecentCredentials(nextLog);
         }
       } else {
-        setNotification({ type: 'success', message: `Registo rejeitado para ${registration.nome}.` });
+        const normalizedEmail = String(registration.email || '').trim().toLowerCase();
+        const nextStatus = action === 'reject' ? 'inactive' : 'standby';
+
+        if (normalizedEmail) {
+          const { error: statusError } = await supabase
+            .from('utilizadores')
+            .update({ status: nextStatus, is_active: false })
+            .eq('email', normalizedEmail);
+
+          if (statusError && !isPermissionError(statusError)) {
+            throw statusError;
+          }
+        }
+
+        setNotification({
+          type: 'success',
+          message: action === 'reject'
+            ? `Registo rejeitado para ${registration.nome}.`
+            : `Registo de ${registration.nome} colocado em stand by para decisão posterior.`,
+        });
       }
 
       if (processedSuccessfully) {
-        const updated = pendingRegistrations.filter((item) => item.id !== registration.id);
+        const updated = action === 'standby'
+          ? pendingRegistrations.map((item) =>
+              item.id === registration.id
+                ? {
+                    ...item,
+                    status: 'standby',
+                    is_active: false,
+                    updated_at: new Date().toISOString(),
+                  }
+                : item
+            )
+          : pendingRegistrations.filter((item) => item.id !== registration.id);
         localStorage.setItem('eduguard_pending_registrations', JSON.stringify(updated));
         setPendingRegistrations(updated);
       }
@@ -2156,10 +2186,11 @@ const AdminGlobalDashboard = () => {
                     <div>
                       <p className="font-semibold text-white">{entry.nome}</p>
                       <p className="text-sm text-gray-400">{entry.email}</p>
-                      <p className="text-xs text-gray-500">{getPendingRoleLabel(entry.perfil)} · {entry.escola_id ? 'Escola associada' : 'Sem escola'}</p>
+                      <p className="text-xs text-gray-500">{getPendingRoleLabel(entry.perfil)} · {entry.escola_id ? 'Escola associada' : 'Sem escola'} · Estado: {getStudentRequestStatusLabel(String(entry.status || 'pending'))}</p>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => handlePendingRegistrationAction(entry, 'approve')} disabled={approvalAction === entry.id} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{approvalAction === entry.id ? 'A processar...' : 'Aprovar'}</button>
+                      <button onClick={() => handlePendingRegistrationAction(entry, 'standby')} disabled={approvalAction === entry.id} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-black hover:bg-amber-400 disabled:opacity-50">Stand by</button>
                       <button onClick={() => handlePendingRegistrationAction(entry, 'reject')} disabled={approvalAction === entry.id} className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">Rejeitar</button>
                     </div>
                   </div>

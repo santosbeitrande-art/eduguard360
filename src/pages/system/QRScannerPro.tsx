@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import { CheckCircle2, ScanLine, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { normalizeEnterpriseRole } from '@/lib/enterpriseGovernance';
 
 interface Student {
   code: string;
@@ -14,37 +15,6 @@ interface Student {
   movementAt?: string;
 }
 
-const normalizeText = (value: unknown): string => {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-};
-
-const normalizeProfile = (value: unknown): string => {
-  const normalized = normalizeText(value);
-  const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
-
-  if (
-    normalized === 'seguranca'
-    || normalized === 'security'
-    || normalized === 'scanner'
-    || normalized === 'security_officer'
-    || normalized === 'seguranca operacional'
-    || normalized === 'seguranca operacional / qr code'
-    || normalized === 'seguranca operacional qr code'
-    || normalizedNoSymbols.includes('seguranca')
-    || normalizedNoSymbols.includes('security')
-    || (normalizedNoSymbols.includes('qr') && normalizedNoSymbols.includes('operacional'))
-  ) {
-    return 'seguranca';
-  }
-
-  if (normalized === 'superadmin') return 'super_admin';
-  return normalized;
-};
-
 const getProfileLabel = (profile: string): string => {
   if (profile === 'seguranca') return 'Segurança Operacional / QR Code';
   if (profile === 'director') return 'Direção';
@@ -53,7 +23,7 @@ const getProfileLabel = (profile: string): string => {
   return profile || 'Perfil não identificado';
 };
 
-const SCANNER_ALLOWED_PROFILES = new Set(['seguranca', 'director', 'administrator', 'super_admin', 'admin']);
+const SCANNER_ALLOWED_PROFILES = new Set(['seguranca']);
 
 const QRScannerPro = () => {
   const navigate = useNavigate();
@@ -77,7 +47,7 @@ const QRScannerPro = () => {
 
     try {
       const parsed = JSON.parse(raw);
-      const profile = normalizeProfile(parsed?.perfil || parsed?.role);
+      const profile = normalizeEnterpriseRole(parsed?.perfil || parsed?.role);
       setActiveProfileLabel(getProfileLabel(profile));
 
       if (!SCANNER_ALLOWED_PROFILES.has(profile)) {

@@ -13,7 +13,9 @@ export default function handler(req, res) {
     return;
   }
 
-  const params = new URLSearchParams(req.query || {}).toString();
+  const safeQuery = { ...(req.query || {}) };
+  delete safeQuery.tenantId;
+  const params = new URLSearchParams(safeQuery).toString();
   const path = params
     ? `/api/v1/building360/public/sites?${params}`
     : '/api/v1/building360/public/sites';

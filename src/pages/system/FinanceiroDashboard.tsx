@@ -1,12 +1,9 @@
-import { SchoolDashboardPage } from './SchoolDashboard';
+import RoleWorkspacePage from './RoleWorkspacePage';
 
 const FinanceiroDashboard = () => (
-  <SchoolDashboardPage
-    title="Painel Financeiro"
-    description="Cobrança, pagamentos, faturas e acompanhamento financeiro da escola."
-    logoutReturnTo="/sistema?returnTo=%2Fsistema%2Ffinanceiro"
-    blockedRedirectTo="/sistema/login?returnTo=%2Fsistema%2Ffinanceiro"
-    allowedProfiles={['admin', 'super_admin', 'director', 'administrator', 'financeiro']}
+  <RoleWorkspacePage
+    profile="financeiro"
+    baseRoute="/sistema/financeiro"
   />
 );
 

@@ -18,28 +18,78 @@ export type EnterpriseRole =
 
 const aliases: Record<string, EnterpriseRole> = {
   enterprise: 'enterprise',
-  admin: 'super_admin',
+  admin: 'admin',
+  'admin geral': 'super_admin',
   superadmin: 'super_admin',
+  super_admin: 'super_admin',
+  administrador: 'super_admin',
+  administracao: 'super_admin',
+  'administrador geral': 'super_admin',
   platform_admin: 'admin',
   school_admin: 'director',
   diretor: 'director',
+  direcao: 'director',
+  direcao_escolar: 'director',
+  'direção': 'director',
+  'direcao escolar': 'director',
   coordinator: 'coordenador',
+  coordenador: 'coordenador',
+  coordenacao: 'coordenador',
+  'coordenação': 'coordenador',
+  'coordenacao academica': 'coordenador',
   teacher: 'professor',
+  professor: 'professor',
+  docente: 'professor',
+  secretaria: 'secretaria',
+  secretariat: 'secretaria',
+  secretariado: 'secretaria',
+  hr: 'rh',
+  finance: 'financeiro',
+  financeiro: 'financeiro',
+  financas: 'financeiro',
+  rh: 'rh',
+  'recursos humanos': 'rh',
+  'human resources': 'rh',
   scanner: 'seguranca',
   security: 'seguranca',
+  security_officer: 'seguranca',
+  seguranca: 'seguranca',
+  segurança: 'seguranca',
+  'seguranca operacional': 'seguranca',
+  'segurança operacional': 'seguranca',
+  'seguranca operacional / qr code': 'seguranca',
+  'seguranca operacional qr code': 'seguranca',
+  'security officer': 'seguranca',
+  'seguranca qr code': 'seguranca',
   pai: 'parent',
   encarregado: 'parent',
+  guardian: 'parent',
+  parent: 'parent',
   aluno: 'student',
+  student: 'student',
+  administrador_escolar: 'administrator',
+  'administrador escolar': 'administrator',
+  administrator: 'administrator',
 };
 
 export const normalizeEnterpriseRole = (value: unknown): EnterpriseRole => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized) return 'unknown';
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'unknown';
+
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\//g, ' ')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (normalized === 'admin') return 'admin';
+  if (normalized === 'super_admin' || normalized === 'superadmin') return 'super_admin';
 
   const known = [
     'enterprise',
-    'admin',
-    'super_admin',
     'director',
     'administrator',
     'secretaria',
@@ -53,7 +103,18 @@ export const normalizeEnterpriseRole = (value: unknown): EnterpriseRole => {
   ];
 
   if (known.includes(normalized)) return normalized as EnterpriseRole;
-  return aliases[normalized] || 'unknown';
+
+  const directAlias = aliases[normalized];
+  if (directAlias) return directAlias;
+
+  const aliasWithUnderscore = aliases[normalized.replace(/\s+/g, '_')];
+  if (aliasWithUnderscore) return aliasWithUnderscore;
+
+  const compact = normalized.replace(/\s+/g, '');
+  const compactAlias = Object.entries(aliases).find(([key]) => key.replace(/\s+/g, '') === compact);
+  if (compactAlias) return compactAlias[1];
+
+  return 'unknown';
 };
 
 export const resolvePortalByRole = (role: EnterpriseRole): EnterprisePortal => {
@@ -64,16 +125,18 @@ export const resolvePortalByRole = (role: EnterpriseRole): EnterprisePortal => {
 
 export const resolvePortalRouteByRole = (roleValue: unknown): string => {
   const role = normalizeEnterpriseRole(roleValue);
-  if (role === 'enterprise' || role === 'super_admin') return '/sistema/enterprise';
-  if (role === 'admin') return '/sistema/admin';
+  if (role === 'enterprise') return '/sistema/enterprise';
+  if (role === 'super_admin' || role === 'admin') return '/sistema/admin';
   if (role === 'parent') return '/sistema/encarregado';
   if (role === 'student') return '/sistema/aluno';
   if (role === 'seguranca') return '/sistema/seguranca';
   if (role === 'director') return '/sistema/direcao';
+  if (role === 'administrator') return '/sistema/administracao';
   if (role === 'secretaria') return '/sistema/secretaria';
+  if (role === 'coordenador') return '/sistema/coordenacao';
   if (role === 'professor') return '/sistema/professor';
   if (role === 'financeiro') return '/sistema/financeiro';
-  if (role === 'administrator' || role === 'coordenador' || role === 'rh') return '/sistema/escola';
+  if (role === 'rh') return '/sistema/rh';
   return '/sistema/login';
 };
 

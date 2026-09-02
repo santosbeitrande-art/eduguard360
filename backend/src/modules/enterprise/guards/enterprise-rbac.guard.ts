@@ -67,7 +67,8 @@ export class EnterpriseRbacGuard implements CanActivate {
     const tokenUserName = this.normalizeValue(user.name || user.nome);
     const tokenUserId = this.normalizeValue(user.sub || user.id);
 
-    const useTokenClaimsOnly = hasJwtSubject && Boolean(tokenRole || tokenSchoolId || tokenTenantId);
+    // Once JwtAuthGuard authenticates a subject, trust only token claims for role/scope.
+    const useTokenClaimsOnly = hasJwtSubject;
 
     const role = normalizeEnterpriseRole(
       useTokenClaimsOnly
@@ -95,7 +96,7 @@ export class EnterpriseRbacGuard implements CanActivate {
 
     const tenantId = this.normalizeValue(
       useTokenClaimsOnly
-        ? tokenTenantId
+        ? tokenTenantId || tokenSchoolId
         : user.tenantId ||
             user.tenant_id ||
             headers['x-tenant-id'] ||

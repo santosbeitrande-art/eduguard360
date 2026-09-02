@@ -1,4 +1,4 @@
-import { cors, proxyBusinessApi } from '../../../_lib/businessApiProxy.js';
+import { cors, proxyBusinessApi, requireEnterpriseScope, resolveScope } from '../../../_lib/businessApiProxy.js';
 
 export default function handler(req, res) {
   cors(res);
@@ -16,6 +16,13 @@ export default function handler(req, res) {
   proxyBusinessApi(req, '/api/v1/enterprise/analytics/rankings').then((upstream) => {
     if (upstream.ok && upstream.data && typeof upstream.data === 'object') {
       res.status(200).json(upstream.data);
+      return;
+    }
+
+    const scope = resolveScope(req);
+    const guard = requireEnterpriseScope(scope, { domain: 'analytics', action: 'read' });
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
       return;
     }
 

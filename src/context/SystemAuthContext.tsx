@@ -62,26 +62,8 @@ export const SystemAuthProvider: React.FC<{ children: ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const parseLegacyUser = (legacy: any): User => {
-    const normalizedPerfil = String(legacy?.perfil || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-    const normalizedPerfilNoSymbols = normalizedPerfil.replace(/[^a-z0-9]+/g, ' ').trim();
-
-    const type = legacy.perfil === 'pai' ? 'parent' : 'system_user';
-    const legacyRole = normalizedPerfil === 'admin' ? 'super_admin'
-      : normalizedPerfil === 'director' ? 'director'
-      : normalizedPerfil === 'scanner'
-        || normalizedPerfil === 'seguranca'
-        || normalizedPerfil === 'security'
-        || normalizedPerfil === 'security_officer'
-        || normalizedPerfilNoSymbols.includes('seguranca operacional')
-        || normalizedPerfilNoSymbols.includes('security officer')
-        ? 'seguranca'
-      : legacy.role;
-
-    const role = normalizeEnterpriseRole(legacyRole);
+    const role = normalizeEnterpriseRole(legacy?.role || legacy?.perfil);
+    const type = role === 'parent' ? 'parent' : 'system_user';
 
     return {
       id: legacy.id || legacy.auth_id || legacy.user_id || 'legacy-user',

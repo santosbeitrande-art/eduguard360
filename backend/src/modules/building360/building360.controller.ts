@@ -50,8 +50,7 @@ export class Building360Controller {
     @Query('organizationId') organizationId?: string,
     @Query('portfolioId') portfolioId?: string,
   ) {
-    return this.building360Service.getSites({
-      ...scopeFromRequest(req),
+    return this.building360Service.getSitesScoped(scopeFromRequest(req), {
       tenantId,
       organizationId,
       portfolioId,
@@ -67,8 +66,7 @@ export class Building360Controller {
     @Query('organizationId') organizationId?: string,
     @Query('portfolioId') portfolioId?: string,
   ) {
-    return this.building360Service.getBuildings({
-      ...scopeFromRequest(req),
+    return this.building360Service.getBuildingsScoped(scopeFromRequest(req), {
       tenantId,
       organizationId,
       portfolioId,
@@ -86,8 +84,7 @@ export class Building360Controller {
     @Query('status') status?: string,
     @Query('tenantId') tenantId?: string,
   ) {
-    return this.building360Service.getUnits({
-      ...scopeFromRequest(req),
+    return this.building360Service.getUnitsScoped(scopeFromRequest(req), {
       tenantId,
       siteId,
       buildingId,
@@ -105,8 +102,7 @@ export class Building360Controller {
     @Query('status') status?: string,
     @Query('tenantId') tenantId?: string,
   ) {
-    return this.building360Service.getAssets({
-      ...scopeFromRequest(req),
+    return this.building360Service.getAssetsScoped(scopeFromRequest(req), {
       tenantId,
       siteId,
       buildingId,
@@ -121,8 +117,7 @@ export class Building360Controller {
     @Query('status') status?: string,
     @Query('tenantId') tenantId?: string,
   ) {
-    return this.building360Service.getWorkOrders({
-      ...scopeFromRequest(req),
+    return this.building360Service.getWorkOrdersScoped(scopeFromRequest(req), {
       tenantId,
       status,
     });

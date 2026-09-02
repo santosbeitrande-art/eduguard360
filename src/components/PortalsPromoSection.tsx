@@ -6,7 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 export const PortalsPromoSection: React.FC = () => {
   const navigate = useNavigate();
   const { language } = useLanguage();
-  const securityLoginRoute = '/sistema?returnTo=%2Fsistema%2Fseguranca';
+  const securityLoginRoute = '/portais';
 
   const portals: Array<{
     icon: React.ReactNode;

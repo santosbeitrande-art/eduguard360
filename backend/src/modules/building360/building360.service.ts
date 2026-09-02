@@ -93,6 +93,10 @@ export class Building360Service {
       throw new ForbiddenException('Tenant scope is required.');
     }
 
+    if (tenantFromPayload && tenantFromPayload !== tenantFromScope) {
+      throw new ForbiddenException('Cannot override tenant scope for this role.');
+    }
+
     return {
       role: input.role || null,
       userId: input.userId || null,
@@ -212,8 +216,31 @@ export class Building360Service {
     return this.siteRepository.find({ where, order: { createdAt: 'DESC' } });
   }
 
+  async getSitesScoped(
+    scopeInput: Partial<Building360Scope>,
+    filters: { tenantId?: string; schoolId?: string; organizationId?: string; portfolioId?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId, isActive: true };
+    if (filters.organizationId) where.organizationId = filters.organizationId;
+    if (filters.portfolioId) where.portfolioId = filters.portfolioId;
+    return this.siteRepository.find({ where, order: { createdAt: 'DESC' } });
+  }
+
   async getBuildings(filters: { siteId?: string; tenantId?: string; schoolId?: string; organizationId?: string; portfolioId?: string }) {
     const scope = this.resolveScope(filters, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId, isActive: true };
+    if (filters.siteId) where.siteId = filters.siteId;
+    if (filters.organizationId) where.organizationId = filters.organizationId;
+    if (filters.portfolioId) where.portfolioId = filters.portfolioId;
+    return this.buildingRepository.find({ where, order: { createdAt: 'DESC' } });
+  }
+
+  async getBuildingsScoped(
+    scopeInput: Partial<Building360Scope>,
+    filters: { siteId?: string; tenantId?: string; schoolId?: string; organizationId?: string; portfolioId?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
     const where: any = { tenantId: scope.tenantId, isActive: true };
     if (filters.siteId) where.siteId = filters.siteId;
     if (filters.organizationId) where.organizationId = filters.organizationId;
@@ -231,6 +258,19 @@ export class Building360Service {
     return this.unitRepository.find({ where, order: { createdAt: 'DESC' } });
   }
 
+  async getUnitsScoped(
+    scopeInput: Partial<Building360Scope>,
+    filters: { siteId?: string; buildingId?: string; type?: string; status?: string; tenantId?: string; schoolId?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId, isActive: true };
+    if (filters.siteId) where.siteId = filters.siteId;
+    if (filters.buildingId) where.buildingId = filters.buildingId;
+    if (filters.type) where.type = filters.type;
+    if (filters.status) where.status = filters.status;
+    return this.unitRepository.find({ where, order: { createdAt: 'DESC' } });
+  }
+
   async getAssets(filters: { siteId?: string; buildingId?: string; status?: string; tenantId?: string; schoolId?: string }) {
     const scope = this.resolveScope(filters, filters.tenantId);
     const where: any = { tenantId: scope.tenantId, isActive: true };
@@ -240,8 +280,30 @@ export class Building360Service {
     return this.assetRepository.find({ where, order: { createdAt: 'DESC' } });
   }
 
+  async getAssetsScoped(
+    scopeInput: Partial<Building360Scope>,
+    filters: { siteId?: string; buildingId?: string; status?: string; tenantId?: string; schoolId?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId, isActive: true };
+    if (filters.siteId) where.siteId = filters.siteId;
+    if (filters.buildingId) where.buildingId = filters.buildingId;
+    if (filters.status) where.status = filters.status;
+    return this.assetRepository.find({ where, order: { createdAt: 'DESC' } });
+  }
+
   async getWorkOrders(filters: { status?: string; tenantId?: string; schoolId?: string }) {
     const scope = this.resolveScope(filters, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId, isActive: true };
+    if (filters.status) where.status = filters.status;
+    return this.workOrderRepository.find({ where, order: { createdAt: 'DESC' } });
+  }
+
+  async getWorkOrdersScoped(
+    scopeInput: Partial<Building360Scope>,
+    filters: { status?: string; tenantId?: string; schoolId?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
     const where: any = { tenantId: scope.tenantId, isActive: true };
     if (filters.status) where.status = filters.status;
     return this.workOrderRepository.find({ where, order: { createdAt: 'DESC' } });

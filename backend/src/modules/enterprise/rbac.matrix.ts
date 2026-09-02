@@ -452,7 +452,7 @@ const rolePermissions: Record<EnterpriseRole, RolePermissions> = {
     documents: ['read'],
     qr: ['read'],
     analytics: ['read'],
-    security: ['read'],
+    security: [],
     workflow: ['read'],
   },
   financeiro: {

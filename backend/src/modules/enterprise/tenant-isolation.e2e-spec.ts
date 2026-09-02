@@ -31,11 +31,12 @@ describe('Tenant/School Isolation E2E Guards', () => {
   it('accepts scoped request and attaches enterprise principal', () => {
     const guard = new EnterpriseRbacGuard(new Reflector());
     const request = {
-      headers: {
-        'x-enterprise-role': 'director',
-        'x-school-id': 'school-1',
+      headers: {},
+      user: {
+        sub: 'user-1',
+        role: 'director',
+        schoolId: 'school-1',
       },
-      user: { sub: 'user-1' },
       body: {},
       query: {},
     };
@@ -54,10 +55,11 @@ describe('Tenant/School Isolation E2E Guards', () => {
   it('accepts super_admin without explicit scope', () => {
     const guard = new EnterpriseRbacGuard(new Reflector());
     const request = {
-      headers: {
-        'x-enterprise-role': 'super_admin',
+      headers: {},
+      user: {
+        sub: 'root',
+        role: 'super_admin',
       },
-      user: { sub: 'root' },
       body: {},
       query: {},
     };
@@ -108,6 +110,41 @@ describe('Tenant/School Isolation E2E Services', () => {
     return created.then((item) => {
       expect(item.tenantId).toBe('tenant-002');
     });
+  });
+
+  it('rejects tenant override attempt for non-global Building360 roles', async () => {
+    const service = new Building360Service(
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+      makeRepo() as any,
+    );
+
+    await expect(
+      service.listContracts(
+        {
+          role: 'director',
+          tenantId: 'tenant-1',
+          schoolId: 'school-1',
+        },
+        {
+          tenantId: 'tenant-2',
+        },
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('keeps scope filter when querying reservations for a role', async () => {

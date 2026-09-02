@@ -1,12 +1,9 @@
-import { SchoolDashboardPage } from './SchoolDashboard';
+import RoleWorkspacePage from './RoleWorkspacePage';
 
 const SecretariaDashboard = () => (
-  <SchoolDashboardPage
-    title="Painel da Secretaria"
-    description="Registo, matrícula, documentação e acompanhamento administrativo da secretaria académica."
-    logoutReturnTo="/sistema?returnTo=%2Fsistema%2Fsecretaria"
-    blockedRedirectTo="/sistema/login?returnTo=%2Fsistema%2Fsecretaria"
-    allowedProfiles={['admin', 'super_admin', 'secretaria']}
+  <RoleWorkspacePage
+    profile="secretaria"
+    baseRoute="/sistema/secretaria"
   />
 );
 

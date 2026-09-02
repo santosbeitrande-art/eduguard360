@@ -122,9 +122,9 @@ const PORTALS: PortalDef[] = [
     description: 'Controlo de acessos, presença e segurança da comunidade escolar com QR codes e alertas em tempo real.',
     icon: <Shield className="w-8 h-8" />,
     color: 'from-blue-600 to-blue-700',
-    route: '/sistema',
-    allowedRoles: ['super_admin', 'admin', 'seguranca'],
-    restrictedRoles: ['parent', 'guardian', 'student'],
+    route: '/sistema/seguranca',
+    allowedRoles: ['seguranca'],
+    restrictedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh', 'parent', 'guardian', 'student'],
   },
   {
     id: 'building360',
@@ -177,7 +177,7 @@ const PORTALS: PortalDef[] = [
     icon: <Users className="w-8 h-8" />,
     color: 'from-green-600 to-emerald-600',
     route: '/enterprise',
-    allowedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh'],
+    allowedRoles: ['super_admin', 'admin'],
   },
   {
     id: 'analytics',
@@ -299,8 +299,8 @@ const EducuardPortalHub: React.FC = () => {
     // Use authoritative membership from Core
     const mem = coreData?.memberships?.[portal.id] ?? coreData?.portals?.[portal.id] ?? null;
     if (mem) {
-      if (!mem.canOpen) return 'none';
-      return mem.access as AccessLevel;
+      if (!mem.canOpen || mem.access !== 'full') return 'none';
+      return 'full';
     }
     // Local fallback
     if (!activeRole) return 'guest';
@@ -317,24 +317,8 @@ const EducuardPortalHub: React.FC = () => {
   };
 
   const getDirectRoute = (portal: PortalDef): string => {
-    const mem = coreData?.memberships?.['security'];
-    const secRole = mem?.role ?? activeRole;
-
     if (portal.id === 'security') {
-      // Determine the correct security dashboard destination
-      const secDest = secRole === 'parent' || secRole === 'guardian'
-        ? '/sistema/pais'
-        : secRole === 'student'
-          ? '/cursos'
-          : '/sistema/seguranca';
-
-      if (user) {
-        // Already logged in — go directly
-        return secDest;
-      } else {
-        // Not logged in — send to login with returnTo so we don't lose the destination
-        return `/sistema?returnTo=${encodeURIComponent(secDest)}`;
-      }
+      return '/sistema/seguranca';
     }
 
     // For all other portals, the standard route applies
@@ -343,6 +327,12 @@ const EducuardPortalHub: React.FC = () => {
   };
 
   const handleOpen = (portal: PortalDef) => {
+    if (!user) {
+      const destination = getDirectRoute(portal);
+      navigate(`/sistema/login?returnTo=${encodeURIComponent(destination)}`);
+      return;
+    }
+
     const access = getAccess(portal);
     if (access === 'none') {
       logAudit(portal.id, 'portal_denied');
@@ -476,13 +466,13 @@ const EducuardPortalHub: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {PORTALS.map((portal) => {
             const access = getAccess(portal);
-            const blocked = access === 'none';
-            if (blocked) return null;
+            const blocked = isAuthenticated ? access !== 'full' : false;
+            if (isAuthenticated && blocked) return null;
             const portalRoleLabel = getPortalRole(portal.id);
             const accessLabel =
               access === 'full' ? `✓ ${portalRoleLabel || roleLabel || activeRole}` :
               access === 'restricted' ? `Acesso limitado · ${portalRoleLabel || roleLabel}` :
-              'Requer autenticação';
+              access === 'guest' ? 'Entrar para aceder' : 'Sem acesso';
 
             return (
               <div

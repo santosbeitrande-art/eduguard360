@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
+import { normalizeEnterpriseRole, resolvePortalRouteByRole } from '@/lib/enterpriseGovernance';
 
 const GLOBAL_SYNC_KEY = 'eduguard_global_sync_event';
 const LOCAL_STUDENTS_KEY = 'eduguard_local_students';
@@ -14,43 +15,6 @@ const SCHOOL_DASHBOARD_ALLOWED_PROFILES = [
   'super_admin',
   'administrator',
 ];
-
-const normalizeProfile = (value: unknown): string => {
-  const normalized = String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-  const normalizedNoSymbols = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
-
-  if (normalized === 'superadmin') return 'super_admin';
-  if (
-    normalized === 'security'
-    || normalized === 'scanner'
-    || normalized === 'security_officer'
-    || normalized === 'seguranca'
-    || normalizedNoSymbols.includes('seguranca operacional')
-    || normalizedNoSymbols.includes('security officer')
-  ) return 'seguranca';
-
-  return normalized;
-};
-
-const getDefaultRouteByProfile = (perfil: string): string => {
-  const normalized = normalizeProfile(perfil);
-  if (normalized === 'super_admin' || normalized === 'admin') return '/sistema/enterprise';
-  if (normalized === 'director') return '/sistema/direcao';
-  if (normalized === 'administrator') return '/sistema/administracao';
-  if (normalized === 'secretaria') return '/sistema/secretaria';
-  if (normalized === 'coordenador') return '/sistema/coordenacao';
-  if (normalized === 'professor' || normalized === 'teacher') return '/sistema/professor';
-  if (normalized === 'financeiro' || normalized === 'finance') return '/sistema/financeiro';
-  if (normalized === 'rh' || normalized === 'hr') return '/sistema/rh';
-  if (normalized === 'seguranca') return '/sistema/seguranca';
-  if (normalized === 'parent' || normalized === 'guardian') return '/sistema/encarregado';
-  if (normalized === 'student' || normalized === 'aluno') return '/sistema/aluno';
-  return '/sistema/login';
-};
 
 type EntryRecord = {
   id: string;
@@ -146,7 +110,7 @@ const SchoolDashboardContent = ({
       }
 
       const currentUser = user || legacyUser;
-      const fallbackProfile = normalizeProfile(currentUser?.role || currentUser?.perfil);
+      const fallbackProfile = normalizeEnterpriseRole(currentUser?.role || currentUser?.perfil);
       let authoritativeProfile = fallbackProfile;
 
       if (token && currentUser) {
@@ -174,7 +138,7 @@ const SchoolDashboardContent = ({
             const identityPayload = await identityResponse.json();
             const serverRole = identityPayload?.identity?.role;
             if (serverRole) {
-              authoritativeProfile = normalizeProfile(serverRole);
+              authoritativeProfile = normalizeEnterpriseRole(serverRole);
             }
           }
         } catch {
@@ -184,7 +148,7 @@ const SchoolDashboardContent = ({
 
       if (!currentUser || !allowedProfiles.includes(authoritativeProfile)) {
         setData([]);
-        navigate(getDefaultRouteByProfile(authoritativeProfile));
+        navigate(resolvePortalRouteByRole(authoritativeProfile));
         return;
       }
 

@@ -9,9 +9,17 @@
  * POST /api/v1/core?action=memberships-list   — list memberships for a user
  * POST /api/v1/core?action=memberships-add    — add membership
  * POST /api/v1/core?action=memberships-remove — revoke membership
+ * POST /api/v1/core?action=workspace-catalog  — profile workspace metadata and module catalog
+ * POST /api/v1/core?action=workspace-authorize — backend route authorization check by role
  */
 
-import { cors, resolveScope, buildPermissionsByRole, normalizeRole } from '../_lib/businessApiProxy.js';
+import { cors, resolveScope, requireEnterpriseScope, buildPermissionsByRole, normalizeRole } from '../_lib/businessApiProxy.js';
+import { getRoleWorkspaceCatalog, getSupportedWorkspaceProfiles } from '../_lib/workspaceCatalog.js';
+import {
+  getBuilding360WorkspaceCatalog,
+  getBuilding360SupportedProfiles,
+  normalizeBuilding360Profile,
+} from '../_lib/building360WorkspaceCatalog.js';
 import { createClient } from '@supabase/supabase-js';
 
 /* ── Supabase client (serverless — use service role for server-side reads) ── */
@@ -27,12 +35,12 @@ function getSupabase() {
 
 /* ── Portal access matrix ─────────────────────────────────────────── */
 const PORTAL_ACCESS = {
-  security:    { full: ['super_admin','admin','seguranca'], restricted: ['director','administrator','secretaria','coordenador','professor','financeiro','rh','parent','guardian','student'] },
+  security:    { full: ['seguranca'], restricted: ['super_admin','admin','director','administrator','secretaria','coordenador','professor','financeiro','rh','parent','guardian','student'] },
   building360: { full: ['super_admin','admin','director','administrator'], restricted: ['secretaria','financeiro'] },
   edumarket:   { full: ['super_admin','admin','professor','teacher','administrator'], restricted: ['student','parent'] },
   'verify-ai': { full: ['super_admin','admin','administrator'], restricted: [] },
   literature:  { full: ['super_admin','admin','director','professor','secretaria','financeiro','administrator','student','parent'], restricted: [] },
-  enterprise:  { full: ['super_admin','admin','director','secretaria','financeiro','professor','coordenador','rh','administrator'], restricted: ['seguranca'] },
+  enterprise:  { full: ['super_admin','admin'], restricted: ['director','administrator','secretaria','coordenador','professor','financeiro','rh','seguranca','parent','guardian','student'] },
   analytics:   { full: ['super_admin','admin','director','administrator'], restricted: ['financeiro','secretaria'] },
 };
 
@@ -65,7 +73,7 @@ function portalEntry(role, matrix, orgId) {
   const inRestricted = matrix.restricted.includes(r);
   return {
     access: inFull ? 'full' : inRestricted ? 'restricted' : 'none',
-    canOpen: inFull || inRestricted,
+    canOpen: inFull,
     role: (inFull || inRestricted) ? r : null,
     roleLabel: (inFull || inRestricted) ? (ROLE_LABELS[r] || r) : null,
     organizationId: orgId || null,
@@ -292,6 +300,166 @@ function handleNotify(req, scope) {
   };
 }
 
+/* ── Action: workspace-catalog ───────────────────────────────────── */
+function handleWorkspaceCatalog(req, scope, jwtClaims) {
+  const body = req.body || {};
+  const requesterRole = jwtClaims?.perfil ? normalizeRole(jwtClaims.perfil) : jwtClaims?.role ? normalizeRole(jwtClaims.role) : scope.role;
+  const requestedProfileRaw = String(body.profile || req.query?.profile || requesterRole || '').trim();
+  const requestedProfile = normalizeRole(requestedProfileRaw);
+
+  const catalog = getRoleWorkspaceCatalog(requestedProfile);
+  if (!catalog) {
+    return {
+      _error: 400,
+      message: `Perfil sem catalogo de workspace: ${requestedProfileRaw || 'desconhecido'}`,
+      supportedProfiles: getSupportedWorkspaceProfiles(),
+    };
+  }
+
+  if (requesterRole !== requestedProfile && requesterRole !== 'super_admin' && requesterRole !== 'admin') {
+    return {
+      _error: 403,
+      message: 'Nao autorizado para consultar catalogo de outro perfil.',
+    };
+  }
+
+  return {
+    profile: catalog.profile,
+    label: catalog.label,
+    route: catalog.route,
+    portal: catalog.portal,
+    title: catalog.title,
+    description: catalog.description,
+    modules: catalog.modules,
+    permissions: catalog.permissions,
+    allowedRoutePrefixes: catalog.allowedRoutePrefixes,
+    resolvedAt: new Date().toISOString(),
+    source: 'core-workspace-catalog',
+  };
+}
+
+/* ── Action: workspace-authorize ─────────────────────────────────── */
+function handleWorkspaceAuthorize(req, scope, jwtClaims) {
+  const body = req.body || {};
+  const role = jwtClaims?.perfil ? normalizeRole(jwtClaims.perfil) : jwtClaims?.role ? normalizeRole(jwtClaims.role) : scope.role;
+  const requestedRoute = String(body.route || req.query?.route || '').trim();
+
+  if (!requestedRoute || !requestedRoute.startsWith('/')) {
+    return { _error: 400, message: 'Required: route (absolute path)' };
+  }
+
+  if (role === 'super_admin' || role === 'admin') {
+    const allowed = requestedRoute.startsWith('/sistema/admin') || requestedRoute.startsWith('/sistema/enterprise') || requestedRoute.startsWith('/enterprise');
+    return {
+      role,
+      requestedRoute,
+      allowed,
+      reason: allowed ? 'admin-route-allowed' : 'admin-route-denied',
+      source: 'core-workspace-authorize',
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const catalog = getRoleWorkspaceCatalog(role);
+  if (!catalog) {
+    return {
+      role,
+      requestedRoute,
+      allowed: false,
+      reason: 'profile-without-workspace-catalog',
+      source: 'core-workspace-authorize',
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const allowed = (catalog.allowedRoutePrefixes || []).some((prefix) => requestedRoute.startsWith(prefix));
+  return {
+    role,
+    requestedRoute,
+    allowed,
+    allowedRoutePrefixes: catalog.allowedRoutePrefixes,
+    canonicalRoute: catalog.route,
+    portal: catalog.portal,
+    reason: allowed ? 'workspace-route-allowed' : 'workspace-route-denied',
+    source: 'core-workspace-authorize',
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
+/* ── Action: building360-workspace-catalog ──────────────────────── */
+function handleBuilding360WorkspaceCatalog(req, scope, jwtClaims) {
+  const body = req.body || {};
+  const requesterRole = jwtClaims?.perfil ? normalizeRole(jwtClaims.perfil) : jwtClaims?.role ? normalizeRole(jwtClaims.role) : scope.role;
+  const requestedProfileRaw = String(body.profile || req.query?.profile || requesterRole || '').trim();
+  const requestedProfile = normalizeBuilding360Profile(requestedProfileRaw);
+
+  const catalog = getBuilding360WorkspaceCatalog(requestedProfile);
+  if (!catalog) {
+    return {
+      _error: 400,
+      message: `Perfil Building360 sem catalogo: ${requestedProfileRaw || 'desconhecido'}`,
+      supportedProfiles: getBuilding360SupportedProfiles(),
+    };
+  }
+
+  const normalizedRequester = normalizeBuilding360Profile(requesterRole);
+  if (normalizedRequester !== requestedProfile && normalizedRequester !== 'platform_admin') {
+    return {
+      _error: 403,
+      message: 'Nao autorizado para consultar catalogo Building360 de outro perfil.',
+    };
+  }
+
+  return {
+    profile: catalog.profile,
+    label: catalog.label,
+    route: catalog.route,
+    portal: catalog.portal,
+    modules: catalog.modules,
+    permissions: catalog.permissions,
+    allowedRoutePrefixes: catalog.allowedRoutePrefixes,
+    resolvedAt: new Date().toISOString(),
+    source: 'core-building360-workspace-catalog',
+  };
+}
+
+/* ── Action: building360-workspace-authorize ────────────────────── */
+function handleBuilding360WorkspaceAuthorize(req, scope, jwtClaims) {
+  const body = req.body || {};
+  const requesterRole = jwtClaims?.perfil ? normalizeRole(jwtClaims.perfil) : jwtClaims?.role ? normalizeRole(jwtClaims.role) : scope.role;
+  const role = normalizeBuilding360Profile(requesterRole);
+  const requestedRoute = String(body.route || req.query?.route || '').trim();
+
+  if (!requestedRoute || !requestedRoute.startsWith('/')) {
+    return { _error: 400, message: 'Required: route (absolute path)' };
+  }
+
+  const catalog = getBuilding360WorkspaceCatalog(role);
+  if (!catalog) {
+    return {
+      role,
+      requestedRoute,
+      allowed: false,
+      reason: 'building360-profile-without-catalog',
+      source: 'core-building360-workspace-authorize',
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const allowed = (catalog.allowedRoutePrefixes || []).some((prefix) => requestedRoute.startsWith(prefix));
+  return {
+    role,
+    requestedRoute,
+    allowed,
+    allowedRoutePrefixes: catalog.allowedRoutePrefixes,
+    canonicalRoute: catalog.route,
+    portal: catalog.portal,
+    reason: allowed ? 'building360-route-allowed' : 'building360-route-denied',
+    source: 'core-building360-workspace-authorize',
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
 /* ── Action: memberships-list ────────────────────────────────────── */
 function handleMembershipsList(req, scope, jwtClaims) {
   const body = req.body || {};
@@ -423,12 +591,26 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
   const action = String(req.query?.action || req.body?.action || 'identity').trim();
+  const workspaceCatalogActions = new Set([
+    'workspace-catalog',
+    'workspace-authorize',
+    'building360-workspace-catalog',
+    'building360-workspace-authorize',
+  ]);
 
   let jwtClaims = null;
   const auth = req.headers.authorization || '';
   if (auth.startsWith('Bearer ')) jwtClaims = decodeJwtPayload(auth.slice(7));
 
   const scope = resolveScope(req);
+  if (!workspaceCatalogActions.has(action)) {
+    const guard = requireEnterpriseScope(scope);
+    if (!guard.ok) {
+      res.status(guard.status).json(guard.body);
+      return;
+    }
+  }
+
   let result;
   let status = 200;
 
@@ -464,8 +646,40 @@ export default async function handler(req, res) {
       result = await handleMembershipsRemove(req, scope);
       if (result._error) { status = result._error; delete result._error; }
       break;
+    case 'workspace-catalog':
+      result = handleWorkspaceCatalog(req, scope, jwtClaims);
+      if (result._error) { status = result._error; delete result._error; }
+      break;
+    case 'workspace-authorize':
+      result = handleWorkspaceAuthorize(req, scope, jwtClaims);
+      if (result._error) { status = result._error; delete result._error; }
+      break;
+    case 'building360-workspace-catalog':
+      result = handleBuilding360WorkspaceCatalog(req, scope, jwtClaims);
+      if (result._error) { status = result._error; delete result._error; }
+      break;
+    case 'building360-workspace-authorize':
+      result = handleBuilding360WorkspaceAuthorize(req, scope, jwtClaims);
+      if (result._error) { status = result._error; delete result._error; }
+      break;
     default:
-      result = { error: 'unknown-action', supported: ['identity', 'context', 'audit', 'tenant', 'notify', 'memberships-list', 'memberships-add', 'memberships-remove'] };
+      result = {
+        error: 'unknown-action',
+        supported: [
+          'identity',
+          'context',
+          'audit',
+          'tenant',
+          'notify',
+          'memberships-list',
+          'memberships-add',
+          'memberships-remove',
+          'workspace-catalog',
+          'workspace-authorize',
+          'building360-workspace-catalog',
+          'building360-workspace-authorize',
+        ],
+      };
       status = 400;
   }
 

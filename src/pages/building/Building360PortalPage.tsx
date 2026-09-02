@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { withTimeout } from '@/lib/networkPerformance';
 import {
@@ -16,6 +16,12 @@ import {
   Fingerprint,
   CalendarClock,
   Sparkles,
+  MessageSquare,
+  Bell,
+  ClipboardList,
+  AlertTriangle,
+  CalendarCheck2,
+  Truck,
 } from 'lucide-react';
 
 type Building360Overview = {
@@ -69,6 +75,15 @@ type ModuleItem = {
   gradient: string;
 };
 
+type TimePeriod = 'today' | 'this_week' | 'this_month' | 'this_quarter';
+
+const PERIOD_LABELS: Record<TimePeriod, string> = {
+  today: 'Hoje',
+  this_week: 'Esta semana',
+  this_month: 'Este mes',
+  this_quarter: 'Este trimestre',
+};
+
 const modules: ModuleItem[] = [
   {
     key: 'property',
@@ -78,6 +93,41 @@ const modules: ModuleItem[] = [
     gradient: 'from-sky-600 to-cyan-500',
   },
   {
+    key: 'buildingpass',
+    title: 'BuildingPass',
+    subtitle: 'Identidade digital, credenciais e validacao de visitantes',
+    icon: <Fingerprint className="w-6 h-6" />,
+    gradient: 'from-indigo-600 to-violet-600',
+  },
+  {
+    key: 'community',
+    title: 'Community360',
+    subtitle: 'Avisos, comunicados e notificacoes segmentadas',
+    icon: <Bell className="w-6 h-6" />,
+    gradient: 'from-cyan-600 to-sky-500',
+  },
+  {
+    key: 'chat',
+    title: 'Chat360',
+    subtitle: 'Conversas operacionais com conversao para tickets',
+    icon: <MessageSquare className="w-6 h-6" />,
+    gradient: 'from-blue-600 to-indigo-500',
+  },
+  {
+    key: 'request',
+    title: 'Request360',
+    subtitle: 'Solicitacoes, triagem, atribuicao e SLA',
+    icon: <ClipboardList className="w-6 h-6" />,
+    gradient: 'from-emerald-600 to-teal-500',
+  },
+  {
+    key: 'complaint',
+    title: 'Complaint360',
+    subtitle: 'Reclamacoes com evidencias e trilha de auditoria',
+    icon: <AlertTriangle className="w-6 h-6" />,
+    gradient: 'from-rose-600 to-red-500',
+  },
+  {
     key: 'finance',
     title: 'Finance360',
     subtitle: 'Receitas, despesas, cobrancas, pagamentos e orcamento',
@@ -85,18 +135,25 @@ const modules: ModuleItem[] = [
     gradient: 'from-emerald-600 to-lime-500',
   },
   {
-    key: 'maintenance',
-    title: 'Asset360 & Maintain360',
-    subtitle: 'Activos, ordens de trabalho e manutencao preventiva',
+    key: 'asset',
+    title: 'Asset360',
+    subtitle: 'Inventario tecnico e ciclo de vida de activos',
     icon: <Wrench className="w-6 h-6" />,
     gradient: 'from-amber-500 to-orange-600',
   },
   {
+    key: 'maintenance',
+    title: 'Maintain360',
+    subtitle: 'Ordens de trabalho, manutencao preventiva e corretiva',
+    icon: <Wrench className="w-6 h-6" />,
+    gradient: 'from-amber-600 to-yellow-500',
+  },
+  {
     key: 'access',
-    title: 'BuildingPass',
-    subtitle: 'Identidade digital, visitantes, acessos e politicas',
-    icon: <Fingerprint className="w-6 h-6" />,
-    gradient: 'from-indigo-600 to-violet-600',
+    title: 'Access Control',
+    subtitle: 'Politicas de acesso por zona e horario',
+    icon: <ShieldCheck className="w-6 h-6" />,
+    gradient: 'from-indigo-700 to-sky-600',
   },
   {
     key: 'people',
@@ -104,6 +161,20 @@ const modules: ModuleItem[] = [
     subtitle: 'Pessoas, organizacoes, comunicacao e governance',
     icon: <Users className="w-6 h-6" />,
     gradient: 'from-fuchsia-600 to-rose-600',
+  },
+  {
+    key: 'reserve',
+    title: 'Reserve360',
+    subtitle: 'Reservas de espacos comuns e validacao de regras',
+    icon: <CalendarCheck2 className="w-6 h-6" />,
+    gradient: 'from-lime-600 to-emerald-500',
+  },
+  {
+    key: 'move',
+    title: 'Move360',
+    subtitle: 'Mudancas com aprovacao e coordenacao de seguranca',
+    icon: <Truck className="w-6 h-6" />,
+    gradient: 'from-orange-600 to-amber-500',
   },
   {
     key: 'documents',
@@ -135,7 +206,7 @@ const modules: ModuleItem[] = [
   },
   {
     key: 'security',
-    title: 'Security & Incident',
+    title: 'Security360',
     subtitle: 'Ocorrencias, emergency mode e auditoria critica',
     icon: <ShieldCheck className="w-6 h-6" />,
     gradient: 'from-blue-700 to-sky-600',
@@ -162,6 +233,24 @@ const resolveAuthToken = (): string => {
 
 const hasAuthToken = (): boolean => resolveAuthToken().length > 0;
 
+const BUILDING360_ROLE_ALIASES: Record<string, string> = {
+  super_admin: 'platform_admin',
+  admin: 'platform_admin',
+  administrator: 'organization_admin',
+  director: 'organization_admin',
+  diretor: 'organization_admin',
+  financeiro: 'finance_manager',
+  maintenance: 'maintenance_manager',
+  seguranca: 'security_officer',
+  security: 'security_officer',
+  scanner: 'security_officer',
+};
+
+const resolveBuilding360Profile = (value: unknown): string => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return BUILDING360_ROLE_ALIASES[normalized] || normalized || 'organization_admin';
+};
+
 const buildHeaders = (currentUser: any): HeadersInit => ({
   ...(hasAuthToken()
     ? { Authorization: `Bearer ${resolveAuthToken()}` }
@@ -173,8 +262,13 @@ const buildHeaders = (currentUser: any): HeadersInit => ({
   'x-tenant-id': String(currentUser?.tenant_id || currentUser?.escola_id || currentUser?.school_id || ''),
 });
 
-const endpointFor = (useSecureEndpoint: boolean, securePath: string, publicPath: string): string => {
-  return useSecureEndpoint ? securePath : publicPath;
+const getApiBaseCandidates = (): string[] => {
+  return [''];
+};
+
+const composeEndpoint = (base: string, path: string): string => {
+  if (!base) return path;
+  return `${base}${path}`;
 };
 
 const Building360PortalPage: React.FC = () => {
@@ -191,6 +285,44 @@ const Building360PortalPage: React.FC = () => {
   const [selectedBuildingId, setSelectedBuildingId] = useState('');
   const [selectedUnitType, setSelectedUnitType] = useState('');
   const [selectedUnitStatus, setSelectedUnitStatus] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('this_month');
+  const operationsRef = useRef<HTMLElement | null>(null);
+
+  const fetchWithFallback = async (
+    securePath: string,
+    publicPath: string,
+    currentUser: any,
+    timeoutLabel: string
+  ): Promise<Response> => {
+    const prioritizedPaths = [securePath, publicPath];
+    const headers = buildHeaders(currentUser);
+    const bases = getApiBaseCandidates();
+    let lastError: unknown = null;
+
+    for (const path of prioritizedPaths) {
+      for (const base of bases) {
+        const endpoint = composeEndpoint(base, path);
+        try {
+          const response = await withTimeout(fetch(endpoint, { headers }), 10000, timeoutLabel);
+          if (!response.ok) {
+            lastError = new Error(`HTTP ${response.status} ${endpoint}`);
+            continue;
+          }
+          return response;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+    }
+
+    throw lastError || new Error('No Building360 endpoint available');
+  };
+
+  const openModuleWorkspace = (moduleKey: string) => {
+    const currentUser = resolveCurrentUserSnapshot();
+    const profile = resolveBuilding360Profile(currentUser?.perfil || currentUser?.role || 'organization_admin');
+    navigate(`/building360/workspace/${profile}/${moduleKey}`);
+  };
 
   useEffect(() => {
     const loadOverview = async () => {
@@ -199,18 +331,12 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const useSecureEndpoint = hasAuthToken();
-        const headers = buildHeaders(currentUser);
-        const endpoint = endpointFor(useSecureEndpoint, '/api/v1/building360/overview', '/api/v1/building360/public/overview');
-        const response = await withTimeout(
-          fetch(endpoint, { headers }),
-          10000,
+        const response = await fetchWithFallback(
+          '/api/v1/building360/overview',
+          '/api/v1/building360/public/overview',
+          currentUser,
           'Building360 overview timeout'
         );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
 
         const data = await response.json();
         setOverview(data);
@@ -232,18 +358,12 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const useSecureEndpoint = hasAuthToken();
-        const headers = buildHeaders(currentUser);
-        const endpoint = endpointFor(useSecureEndpoint, '/api/v1/building360/sites', '/api/v1/building360/public/sites');
-        const response = await withTimeout(
-          fetch(endpoint, { headers }),
-          10000,
+        const response = await fetchWithFallback(
+          '/api/v1/building360/sites',
+          '/api/v1/building360/public/sites',
+          currentUser,
           'Building360 sites timeout'
         );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
 
         const data = (await response.json()) as Building360Site[];
         setSites(Array.isArray(data) ? data : []);
@@ -269,22 +389,12 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const useSecureEndpoint = hasAuthToken();
-        const headers = buildHeaders(currentUser);
-        const basePath = endpointFor(
-          useSecureEndpoint,
-          '/api/v1/building360/buildings',
-          '/api/v1/building360/public/buildings',
-        );
-        const response = await withTimeout(
-          fetch(`${basePath}?siteId=${encodeURIComponent(selectedSiteId)}`, { headers }),
-          10000,
+        const response = await fetchWithFallback(
+          `/api/v1/building360/buildings?siteId=${encodeURIComponent(selectedSiteId)}`,
+          `/api/v1/building360/public/buildings?siteId=${encodeURIComponent(selectedSiteId)}`,
+          currentUser,
           'Building360 buildings timeout'
         );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
 
         const data = (await response.json()) as Building360Building[];
         const list = Array.isArray(data) ? data : [];
@@ -312,24 +422,18 @@ const Building360PortalPage: React.FC = () => {
 
       try {
         const currentUser = resolveCurrentUserSnapshot();
-        const useSecureEndpoint = hasAuthToken();
-        const headers = buildHeaders(currentUser);
-        const basePath = endpointFor(useSecureEndpoint, '/api/v1/building360/units', '/api/v1/building360/public/units');
         const params = new URLSearchParams();
         params.set('siteId', selectedSiteId);
         if (selectedBuildingId) params.set('buildingId', selectedBuildingId);
         if (selectedUnitType) params.set('type', selectedUnitType);
         if (selectedUnitStatus) params.set('status', selectedUnitStatus);
 
-        const response = await withTimeout(
-          fetch(`${basePath}?${params.toString()}`, { headers }),
-          10000,
+        const response = await fetchWithFallback(
+          `/api/v1/building360/units?${params.toString()}`,
+          `/api/v1/building360/public/units?${params.toString()}`,
+          currentUser,
           'Building360 units timeout'
         );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
 
         const data = (await response.json()) as Building360Unit[];
         setUnits(Array.isArray(data) ? data : []);
@@ -378,10 +482,18 @@ const Building360PortalPage: React.FC = () => {
 
   const moduleLiveData: Record<string, string> = {
     property: `${portfolio?.sites ?? 0} sites · ${portfolio?.buildings ?? 0} edificios`,
+    buildingpass: `${operations?.assets ?? 0} credenciais e dispositivos monitorados`,
+    community: `${portfolio?.units ?? 0} unidades elegiveis para comunicados`,
+    chat: `${workOrdersOpen} conversas operacionais activas`,
+    request: `${workOrdersOpen} solicitacoes em tratamento`,
+    complaint: `${warningAssets + criticalAssets} reclamacoes e alertas auditaveis`,
     finance: `${workOrdersDone} ordens encerradas para fecho financeiro`,
+    asset: `${operations?.assets ?? 0} activos inventariados`,
     maintenance: `${workOrdersOpen} ordens activas`,
-    access: `${operations?.assets ?? 0} activos monitorados`,
+    access: `${portfolio?.buildings ?? 0} edificios com politicas de acesso`,
     people: `${portfolio?.units ?? 0} unidades com actividade`,
+    reserve: `${portfolio?.units ?? 0} espacos sob regras de reserva`,
+    move: `${workOrdersOpen} processos de mudanca em coordenacao`,
     documents: `${workOrdersDone} registos de operacao concluidos`,
     parking: `${warningAssets} activos em alerta`,
     insight: `${operations?.assets ?? 0} sinais no painel analitico`,
@@ -391,6 +503,12 @@ const Building360PortalPage: React.FC = () => {
 
   const selectedSite = sites.find((item) => item.id === selectedSiteId);
   const selectedBuilding = buildings.find((item) => item.id === selectedBuildingId);
+  const currentUser = resolveCurrentUserSnapshot();
+  const activeTenantLabel = String(currentUser?.tenant_id || currentUser?.escola_id || overview?.tenantId || 'tenant-demo-1');
+  const totalUnits = units.length;
+  const occupiedUnits = units.filter((item) => item.status === 'occupied').length;
+  const vacantUnits = units.filter((item) => item.status === 'vacant').length;
+  const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -432,10 +550,10 @@ const Building360PortalPage: React.FC = () => {
                 <ArrowRight className="w-5 h-5" />
               </button>
               <button
-                onClick={() => navigate('/enterprise')}
+                onClick={() => operationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-900 transition-colors"
               >
-                Abrir Enterprise
+                Abrir Operacao Building360
               </button>
               <Link
                 to="/building360/blueprint"
@@ -444,6 +562,10 @@ const Building360PortalPage: React.FC = () => {
                 Blueprint V1
                 <ArrowRight className="w-5 h-5" />
               </Link>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-cyan-700/40 bg-cyan-900/10 p-4 text-sm text-cyan-100">
+              Building360 e um produto independente no ecossistema: partilha identidade e seguranca, mas nao depende do workspace escolar para operar.
             </div>
           </div>
 
@@ -468,9 +590,94 @@ const Building360PortalPage: React.FC = () => {
           </div>
         </section>
 
+        <section ref={operationsRef} className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-extrabold text-white">Contexto Operacional</h2>
+              <p className="mt-1 text-sm text-slate-300">
+                Organizacao, site, edificio e periodo definem o escopo operacional do painel Building360.
+              </p>
+            </div>
+            <div className="text-xs text-slate-400">Tenant activo: {activeTenantLabel}</div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <label className="text-xs text-slate-300">
+              Organizacao
+              <select
+                value={activeTenantLabel}
+                disabled
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value={activeTenantLabel}>{activeTenantLabel}</option>
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Site
+              <select
+                value={selectedSiteId}
+                onChange={(event) => setSelectedSiteId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os sites</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>{site.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Edificio
+              <select
+                value={selectedBuildingId}
+                onChange={(event) => setSelectedBuildingId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                <option value="">Todos os edificios</option>
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.id}>{building.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-300">
+              Periodo
+              <select
+                value={selectedPeriod}
+                onChange={(event) => setSelectedPeriod(event.target.value as TimePeriod)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              >
+                {Object.entries(PERIOD_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+              <p className="text-slate-400">Taxa de ocupacao</p>
+              <p className="mt-1 text-lg font-bold text-emerald-300">{occupancyRate}%</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+              <p className="text-slate-400">Unidades ocupadas</p>
+              <p className="mt-1 text-lg font-bold text-white">{occupiedUnits}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+              <p className="text-slate-400">Unidades vagas</p>
+              <p className="mt-1 text-lg font-bold text-white">{vacantUnits}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+              <p className="text-slate-400">Periodo</p>
+              <p className="mt-1 text-lg font-bold text-sky-300">{PERIOD_LABELS[selectedPeriod]}</p>
+            </div>
+          </div>
+        </section>
+
         <section className="mt-16 sm:mt-20">
           <div className="flex items-end justify-between gap-4 mb-6">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">10 Modulos Principais</h2>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">{modules.length} Modulos Principais</h2>
             <p className="text-sm text-slate-400">Um core, multiplos modos de negocio</p>
           </div>
 
@@ -478,7 +685,8 @@ const Building360PortalPage: React.FC = () => {
             {modules.map((module) => (
               <article
                 key={module.title}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 hover:bg-slate-900 transition-colors p-5"
+                className="rounded-2xl border border-slate-800 bg-slate-900/70 hover:bg-slate-900 transition-colors p-5 cursor-pointer"
+                onClick={() => openModuleWorkspace(module.key)}
               >
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${module.gradient} flex items-center justify-center text-white mb-4`}>
                   {module.icon}
@@ -489,6 +697,7 @@ const Building360PortalPage: React.FC = () => {
                   <Sparkles className="w-3.5 h-3.5" />
                   {loadingMetrics ? 'A sincronizar dados...' : moduleLiveData[module.key]}
                 </p>
+                <p className="mt-3 text-xs text-emerald-300">Abrir workspace do modulo</p>
               </article>
             ))}
           </div>
