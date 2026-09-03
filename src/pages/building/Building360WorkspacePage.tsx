@@ -74,6 +74,17 @@ type FlowRecord = {
   };
 };
 
+const ACTION_LABELS: Record<PermissionAction, string> = {
+  create: 'Criar',
+  read: 'Consultar',
+  update: 'Editar',
+  delete: 'Eliminar',
+  approve: 'Aprovar',
+  export: 'Exportar',
+};
+
+const ALL_ACTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete', 'approve', 'export'];
+
 const FLOW_STORAGE_KEY = 'building360.flow.records.v1';
 
 const ROLE_ALIASES: Record<string, string> = {
@@ -393,12 +404,24 @@ const Building360WorkspacePage = () => {
     [catalog?.modules, requestedModule]
   );
 
+  const moduleActions = selectedModule?.actions || [];
+  const domainActions = selectedModule ? catalog?.permissions?.[selectedModule.domain] || [] : [];
+  const effectiveActions = useMemo(
+    () => Array.from(new Set([...moduleActions, ...domainActions])) as PermissionAction[],
+    [moduleActions, domainActions]
+  );
+
   const effectiveProfile = catalog?.profile || requestedProfile;
   const isResidentShell = effectiveProfile === 'resident' || effectiveProfile === 'occupant';
   const isPlatformShell = effectiveProfile === 'platform_admin';
   const isAdminShell = !isResidentShell && !isPlatformShell;
 
   const moduleApi = selectedModule ? MODULE_API[selectedModule.key] : undefined;
+  const canCreate = effectiveActions.includes('create');
+  const canRead = effectiveActions.includes('read');
+  const canUpdate = effectiveActions.includes('update') && Boolean(moduleApi?.editPath);
+  const canApprove = effectiveActions.includes('approve');
+  const canExport = effectiveActions.includes('export');
 
   const requestJson = async (input: string, init?: RequestInit) => {
     const response = await fetch(input, init);
@@ -612,6 +635,90 @@ const Building360WorkspacePage = () => {
     await loadModuleRows(currentUser, selectedModule.key);
   };
 
+  const handleReloadRows = async () => {
+    const currentUser = resolveCurrentUserSnapshot();
+    if (!currentUser || !selectedModule) {
+      return;
+    }
+
+    try {
+      await loadModuleRows(currentUser, selectedModule.key);
+      setStatusMessage(`Dados do modulo ${selectedModule.title} sincronizados.`);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(String(error instanceof Error ? error.message : error));
+    }
+  };
+
+  const handleQuickCreate = () => {
+    if (!canCreate) {
+      setErrorMessage('Perfil sem permissao para criar neste modulo.');
+      return;
+    }
+
+    const stamp = Date.now();
+    const draft = {
+      id: `draft-${requestedModule}-${stamp}`,
+      title: `Novo registo ${selectedModule?.title || requestedModule}`,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+    };
+
+    setSelectedRow(draft);
+    setEditorValue(JSON.stringify(draft, null, 2));
+    setStatusMessage('Rascunho preparado. Revise e use Guardar Alteracoes para persistir.');
+    setErrorMessage('');
+  };
+
+  const handleQuickApprove = async () => {
+    if (!canApprove) {
+      setErrorMessage('Perfil sem permissao de aprovacao neste modulo.');
+      return;
+    }
+
+    if (!selectedRow) {
+      setErrorMessage('Selecione um registo para aprovar.');
+      return;
+    }
+
+    const approved = {
+      ...(selectedRow || {}),
+      status: 'approved',
+      approvedAt: new Date().toISOString(),
+      approvedBy: effectiveProfile,
+    };
+
+    setSelectedRow(approved);
+    setEditorValue(JSON.stringify(approved, null, 2));
+    setStatusMessage('Aprovacao aplicada no editor. Grave para persistir no backend.');
+    setErrorMessage('');
+  };
+
+  const handleQuickExport = () => {
+    if (!canExport) {
+      setErrorMessage('Perfil sem permissao de exportacao neste modulo.');
+      return;
+    }
+
+    const payload = {
+      module: selectedModule?.key || requestedModule,
+      profile: effectiveProfile,
+      generatedAt: new Date().toISOString(),
+      rows,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `building360-${effectiveProfile}-${selectedModule?.key || requestedModule}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    setStatusMessage('Exportacao concluida.');
+    setErrorMessage('');
+  };
+
   const updateFlowRecords = (updater: (records: FlowRecord[]) => FlowRecord[]) => {
     const next = updater(loadFlowRecords());
     persistFlowRecords(next);
@@ -794,6 +901,12 @@ const Building360WorkspacePage = () => {
           </div>
         )}
 
+        {statusMessage && (
+          <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
+            {statusMessage}
+          </div>
+        )}
+
         {!!catalog?.modules?.length && (
           <section className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {catalog.modules.map((module) => {
@@ -806,12 +919,75 @@ const Building360WorkspacePage = () => {
                 >
                   <p className="text-sm font-bold text-white">{module.title}</p>
                   <p className="text-xs text-slate-300 mt-1">{module.subtitle}</p>
+                  <p className="mt-2 text-[11px] text-slate-400">Intensidade operacional: {module.actions.length}/6</p>
                   <p className="text-xs text-sky-300 mt-2">Acoes: {(module.actions || []).join(', ') || 'sem acoes'}</p>
                 </Link>
               );
             })}
           </section>
         )}
+
+        <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Capacidades Reais do Perfil</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Perfil {effectiveProfile} | Modulo {selectedModule?.title || requestedModule} | Dominio {selectedModule?.domain || '-'}
+              </p>
+            </div>
+            <button
+              onClick={handleReloadRows}
+              className="px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs"
+            >
+              Actualizar Dados
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+            {ALL_ACTIONS.map((action) => {
+              const enabled = effectiveActions.includes(action);
+              return (
+                <div
+                  key={action}
+                  className={`rounded-lg border px-3 py-2 text-xs ${enabled ? 'border-emerald-700/40 bg-emerald-950/20 text-emerald-200' : 'border-slate-700 bg-slate-950 text-slate-400'}`}
+                >
+                  <p className="font-semibold">{ACTION_LABELS[action]}</p>
+                  <p>{enabled ? 'Habilitado' : 'Bloqueado'}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={handleQuickCreate}
+              disabled={!canCreate}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold ${canCreate ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+            >
+              Novo Registo
+            </button>
+            <button
+              onClick={handleQuickApprove}
+              disabled={!canApprove}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold ${canApprove ? 'bg-violet-500 text-white hover:bg-violet-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+            >
+              Aprovar Selecionado
+            </button>
+            <button
+              onClick={handleQuickExport}
+              disabled={!canExport}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold ${canExport ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+            >
+              Exportar JSON
+            </button>
+            <div className="px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300">
+              Linhas carregadas: <span className="font-semibold text-white">{rows.length}</span>
+            </div>
+            <div className="px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300">
+              Leitura: <span className={`font-semibold ${canRead ? 'text-emerald-300' : 'text-rose-300'}`}>{canRead ? 'ativa' : 'bloqueada'}</span>
+            </div>
+          </div>
+        </section>
 
         {isPlatformShell && (
           <section className="mt-6 rounded-2xl border border-amber-700/40 bg-amber-900/10 p-4">
@@ -901,9 +1077,10 @@ const Building360WorkspacePage = () => {
                           <td className="p-2">
                             <button
                               onClick={() => handleSelectRow(row)}
-                              className="px-2 py-1 rounded-md border border-slate-700 hover:bg-slate-800"
+                              disabled={!canRead}
+                              className={`px-2 py-1 rounded-md border ${canRead ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-800 text-slate-500 cursor-not-allowed'}`}
                             >
-                              Editar
+                              {canUpdate ? 'Editar' : 'Ver'}
                             </button>
                           </td>
                         </tr>
@@ -920,10 +1097,6 @@ const Building360WorkspacePage = () => {
               <h2 className="text-lg font-bold">Editor Tecnico do Modulo</h2>
               <p className="text-xs text-slate-400 mt-1">Suporta PATCH/POST via proxy server-side local.</p>
 
-              {statusMessage && (
-                <p className="mt-3 rounded-lg border border-emerald-700/40 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">{statusMessage}</p>
-              )}
-
               <textarea
                 value={editorValue}
                 onChange={(event) => setEditorValue(event.target.value)}
@@ -934,7 +1107,8 @@ const Building360WorkspacePage = () => {
               <div className="mt-4 flex items-center gap-3">
                 <button
                   onClick={handleSave}
-                  className="px-4 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold hover:bg-sky-400"
+                  disabled={!canUpdate && !canCreate}
+                  className={`px-4 py-2 rounded-lg font-bold ${(canUpdate || canCreate) ? 'bg-sky-500 text-slate-950 hover:bg-sky-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
                 >
                   Guardar Alteracoes
                 </button>
