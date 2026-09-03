@@ -25,8 +25,14 @@ const buildSafePath = (req) => {
       .map(([key, value]) => [key, String(value)])
   ).toString();
 
-  const basePath = `/api/v1/building360/${normalized.join('/')}`;
-  return params ? `${basePath}?${params}` : basePath;
+  const resourcePath = normalized.join('/');
+  const querySuffix = params ? `?${params}` : '';
+
+  // Prefer the current upstream shape (/building360/*) and keep legacy fallback.
+  return {
+    primary: `/building360/${resourcePath}${querySuffix}`,
+    fallback: `/api/v1/building360/${resourcePath}${querySuffix}`,
+  };
 };
 
 export default function handler(req, res) {
@@ -43,20 +49,25 @@ export default function handler(req, res) {
     return;
   }
 
-  const path = buildSafePath(req);
-  if (!path) {
+  const target = buildSafePath(req);
+  if (!target) {
     res.status(400).json({ error: 'invalid-building360-path' });
     return;
   }
 
-  proxyBusinessApi(req, path).then((upstream) => {
-    res.status(upstream.status || 502).json(
-      upstream.ok
-        ? upstream.data
-        : {
-            error: 'business-api-unavailable',
-            upstreamStatus: upstream.status || 502,
-          }
-    );
-  });
+  proxyBusinessApi(req, target.primary)
+    .then((upstream) => {
+      if (upstream.ok || upstream.status !== 404 || !target.fallback) return upstream;
+      return proxyBusinessApi(req, target.fallback);
+    })
+    .then((upstream) => {
+      res.status(upstream.status || 502).json(
+        upstream.ok
+          ? upstream.data
+          : {
+              error: 'business-api-unavailable',
+              upstreamStatus: upstream.status || 502,
+            }
+      );
+    });
 }
