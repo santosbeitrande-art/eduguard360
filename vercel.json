@@ -44,7 +44,7 @@
     },
     {
       "source": "/api/v1/building360/(.*)",
-      "destination": "/api/v1/building360/$1"
+      "destination": "/api/v1/core?action=building360-proxy&path=$1"
     },
     {
       "source": "/api/(.*)",

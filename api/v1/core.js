@@ -20,6 +20,7 @@ import {
   getBuilding360SupportedProfiles,
   normalizeBuilding360Profile,
 } from '../_lib/building360WorkspaceCatalog.js';
+import { handleBuilding360Route } from '../_lib/building360ProxyRoute.js';
 import { createClient } from '@supabase/supabase-js';
 
 /* ── Supabase client (serverless — use service role for server-side reads) ── */
@@ -460,6 +461,23 @@ function handleBuilding360WorkspaceAuthorize(req, scope, jwtClaims) {
   };
 }
 
+/* ── Action: building360-proxy ──────────────────────────────────── */
+async function handleBuilding360Proxy(req, res) {
+  const rawPath = String(req.query?.path || req.body?.path || '').trim();
+  const normalized = rawPath.replace(/^\/+/, '');
+  if (!normalized) {
+    res.status(400).json({ error: 'missing-building360-path' });
+    return;
+  }
+
+  if (normalized.includes('..')) {
+    res.status(400).json({ error: 'invalid-building360-path' });
+    return;
+  }
+
+  await handleBuilding360Route(req, res, `/${normalized}`);
+}
+
 /* ── Action: memberships-list ────────────────────────────────────── */
 function handleMembershipsList(req, scope, jwtClaims) {
   const body = req.body || {};
@@ -596,6 +614,7 @@ export default async function handler(req, res) {
     'workspace-authorize',
     'building360-workspace-catalog',
     'building360-workspace-authorize',
+    'building360-proxy',
   ]);
 
   let jwtClaims = null;
@@ -662,6 +681,9 @@ export default async function handler(req, res) {
       result = handleBuilding360WorkspaceAuthorize(req, scope, jwtClaims);
       if (result._error) { status = result._error; delete result._error; }
       break;
+    case 'building360-proxy':
+      await handleBuilding360Proxy(req, res);
+      return;
     default:
       result = {
         error: 'unknown-action',
@@ -678,6 +700,7 @@ export default async function handler(req, res) {
           'workspace-authorize',
           'building360-workspace-catalog',
           'building360-workspace-authorize',
+          'building360-proxy',
         ],
       };
       status = 400;
