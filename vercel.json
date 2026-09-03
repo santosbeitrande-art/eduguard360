@@ -43,6 +43,14 @@
       "destination": "/robots.txt"
     },
     {
+      "source": "/api/literature/search",
+      "destination": "/api/literature-search"
+    },
+    {
+      "source": "/api/literature-search",
+      "destination": "/api/literature-search"
+    },
+    {
       "source": "/api/v1/building360/(.*)",
       "destination": "/api/v1/core?action=building360-proxy&path=$1"
     },
