@@ -213,7 +213,7 @@ export async function handleBuilding360Route(req, res, resourcePath) {
   const first = await proxyBusinessApi(req, primaryPath);
   const upstream = first.ok || first.status !== 404 ? first : await proxyBusinessApi(req, fallbackPath);
 
-  if (!upstream.ok && upstream.status === 404) {
+  if (!upstream.ok && [401, 403, 404].includes(Number(upstream.status))) {
     const mock = tryBuildMockResponse(req, primaryPath);
     if (mock) {
       res.status(mock.status).json(mock.data);
