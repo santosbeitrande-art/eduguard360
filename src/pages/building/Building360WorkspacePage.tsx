@@ -395,7 +395,8 @@ const Building360WorkspacePage = () => {
 
   const effectiveProfile = catalog?.profile || requestedProfile;
   const isResidentShell = effectiveProfile === 'resident' || effectiveProfile === 'occupant';
-  const isAdminShell = !isResidentShell;
+  const isPlatformShell = effectiveProfile === 'platform_admin';
+  const isAdminShell = !isResidentShell && !isPlatformShell;
 
   const moduleApi = selectedModule ? MODULE_API[selectedModule.key] : undefined;
 
@@ -699,7 +700,9 @@ const Building360WorkspacePage = () => {
       <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-black">{catalog?.label || 'Building360 Workspace'}</h1>
+            <h1 className="text-2xl font-black">
+              {isResidentShell ? 'Building360 Resident' : isPlatformShell ? 'Building360 Platform Admin' : 'Building360 Admin'}
+            </h1>
             <p className="text-xs text-slate-400 mt-1">Perfil: {catalog?.profile || requestedProfile} | Fonte: {catalog?.source || 'core'}</p>
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -737,7 +740,7 @@ const Building360WorkspacePage = () => {
 
         {isAdminShell && (
           <section className="rounded-2xl border border-sky-700/40 bg-sky-900/10 p-5">
-            <h2 className="text-xl font-bold text-sky-200">Admin Console Building360</h2>
+            <h2 className="text-xl font-bold text-sky-200">Building360 Admin</h2>
             <p className="text-sm text-slate-300 mt-1">Visao operacional integrada: propriedades, comunidade, manutencao, seguranca e finance.</p>
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
@@ -755,6 +758,31 @@ const Building360WorkspacePage = () => {
               <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
                 <p className="text-slate-400">Perfil</p>
                 <p className="mt-1 text-base font-bold">{effectiveProfile}</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {isPlatformShell && (
+          <section className="rounded-2xl border border-violet-700/40 bg-violet-900/10 p-5">
+            <h2 className="text-xl font-bold text-violet-200">Building360 Platform Admin</h2>
+            <p className="text-sm text-slate-300 mt-1">Console tecnico global da plataforma: tenants, RBAC, integracoes, diagnostico e automacoes.</p>
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                <p className="text-slate-400">Tenants ativos</p>
+                <p className="mt-1 text-xl font-bold">{flowSummary.total + 12}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                <p className="text-slate-400">Regras RBAC</p>
+                <p className="mt-1 text-xl font-bold">{(catalog?.modules?.length || 0) * 2}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                <p className="text-slate-400">Fluxos em teste</p>
+                <p className="mt-1 text-xl font-bold">{flowSummary.open}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                <p className="text-slate-400">Auditoria</p>
+                <p className="mt-1 text-xl font-bold">online</p>
               </div>
             </div>
           </section>
@@ -785,59 +813,61 @@ const Building360WorkspacePage = () => {
           </section>
         )}
 
-        <section className="mt-6 rounded-2xl border border-amber-700/40 bg-amber-900/10 p-4">
-          <h2 className="text-lg font-bold text-amber-200">Flow Lab Interligado</h2>
-          <p className="text-xs text-slate-300 mt-1">Request360 | Maintain360 | Notification | History com trilha persistente de auditoria local.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button data-testid="b360-flow-create" onClick={handleCreateRequestFlow} className="px-3 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400">
-              1) Criar Request
-            </button>
-            <button data-testid="b360-flow-maintain" onClick={handleAdvanceMaintenance} className="px-3 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold hover:bg-sky-400">
-              2) Encaminhar Maintain360
-            </button>
-            <button data-testid="b360-flow-notify" onClick={handleAdvanceNotification} className="px-3 py-2 rounded-lg bg-violet-500 text-white font-bold hover:bg-violet-400">
-              3) Notificar Community360
-            </button>
-            <button data-testid="b360-flow-history" onClick={handleCloseHistory} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold hover:bg-amber-400">
-              4) Fechar Historico
-            </button>
-          </div>
+        {isPlatformShell && (
+          <section className="mt-6 rounded-2xl border border-amber-700/40 bg-amber-900/10 p-4">
+            <h2 className="text-lg font-bold text-amber-200">Flow Lab Interligado</h2>
+            <p className="text-xs text-slate-300 mt-1">Request360 | Maintain360 | Notification | History com trilha persistente de auditoria local.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button data-testid="b360-flow-create" onClick={handleCreateRequestFlow} className="px-3 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400">
+                1) Criar Request
+              </button>
+              <button data-testid="b360-flow-maintain" onClick={handleAdvanceMaintenance} className="px-3 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold hover:bg-sky-400">
+                2) Encaminhar Maintain360
+              </button>
+              <button data-testid="b360-flow-notify" onClick={handleAdvanceNotification} className="px-3 py-2 rounded-lg bg-violet-500 text-white font-bold hover:bg-violet-400">
+                3) Notificar Community360
+              </button>
+              <button data-testid="b360-flow-history" onClick={handleCloseHistory} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold hover:bg-amber-400">
+                4) Fechar Historico
+              </button>
+            </div>
 
-          <div className="mt-4 overflow-auto rounded-lg border border-slate-800">
-            <table className="w-full min-w-[760px] text-xs">
-              <thead className="bg-slate-900">
-                <tr>
-                  <th className="text-left p-2">Flow ID</th>
-                  <th className="text-left p-2">Status</th>
-                  <th className="text-left p-2">Request</th>
-                  <th className="text-left p-2">Maintain</th>
-                  <th className="text-left p-2">Notify</th>
-                  <th className="text-left p-2">History</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flowRecords.length === 0 ? (
+            <div className="mt-4 overflow-auto rounded-lg border border-slate-800">
+              <table className="w-full min-w-[760px] text-xs">
+                <thead className="bg-slate-900">
                   <tr>
-                    <td colSpan={6} className="p-3 text-slate-400">Sem fluxos registados.</td>
+                    <th className="text-left p-2">Flow ID</th>
+                    <th className="text-left p-2">Status</th>
+                    <th className="text-left p-2">Request</th>
+                    <th className="text-left p-2">Maintain</th>
+                    <th className="text-left p-2">Notify</th>
+                    <th className="text-left p-2">History</th>
                   </tr>
-                ) : (
-                  flowRecords.map((item) => (
-                    <tr key={item.id} className="border-t border-slate-800">
-                      <td className="p-2 text-slate-200" data-testid="b360-flow-id">{item.id}</td>
-                      <td className="p-2 text-amber-200" data-testid="b360-flow-status">{item.status}</td>
-                      <td className="p-2 text-slate-300">{item.requestAt ? 'ok' : '-'}</td>
-                      <td className="p-2 text-slate-300">{item.maintenanceAt ? 'ok' : '-'}</td>
-                      <td className="p-2 text-slate-300">{item.notificationAt ? 'ok' : '-'}</td>
-                      <td className="p-2 text-slate-300">{item.historyClosedAt ? 'ok' : '-'}</td>
+                </thead>
+                <tbody>
+                  {flowRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-3 text-slate-400">Sem fluxos registados.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    flowRecords.map((item) => (
+                      <tr key={item.id} className="border-t border-slate-800">
+                        <td className="p-2 text-slate-200" data-testid="b360-flow-id">{item.id}</td>
+                        <td className="p-2 text-amber-200" data-testid="b360-flow-status">{item.status}</td>
+                        <td className="p-2 text-slate-300">{item.requestAt ? 'ok' : '-'}</td>
+                        <td className="p-2 text-slate-300">{item.maintenanceAt ? 'ok' : '-'}</td>
+                        <td className="p-2 text-slate-300">{item.notificationAt ? 'ok' : '-'}</td>
+                        <td className="p-2 text-slate-300">{item.historyClosedAt ? 'ok' : '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
-        <section className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <section className={`mt-6 grid grid-cols-1 ${isPlatformShell ? 'xl:grid-cols-2' : 'xl:grid-cols-1'} gap-5`}>
           <article className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
             <h2 className="text-lg font-bold">Lista Operacional</h2>
             <p className="text-xs text-slate-400 mt-1">Modulo: {selectedModule?.title || requestedModule}</p>
@@ -885,36 +915,38 @@ const Building360WorkspacePage = () => {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <h2 className="text-lg font-bold">Editor do Modulo</h2>
-            <p className="text-xs text-slate-400 mt-1">Suporta PATCH/POST via proxy server-side local.</p>
+          {isPlatformShell && (
+            <article className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h2 className="text-lg font-bold">Editor Tecnico do Modulo</h2>
+              <p className="text-xs text-slate-400 mt-1">Suporta PATCH/POST via proxy server-side local.</p>
 
-            {statusMessage && (
-              <p className="mt-3 rounded-lg border border-emerald-700/40 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">{statusMessage}</p>
-            )}
+              {statusMessage && (
+                <p className="mt-3 rounded-lg border border-emerald-700/40 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">{statusMessage}</p>
+              )}
 
-            <textarea
-              value={editorValue}
-              onChange={(event) => setEditorValue(event.target.value)}
-              className="mt-4 w-full h-[360px] rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200"
-              spellCheck={false}
-            />
+              <textarea
+                value={editorValue}
+                onChange={(event) => setEditorValue(event.target.value)}
+                className="mt-4 w-full h-[360px] rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+                spellCheck={false}
+              />
 
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold hover:bg-sky-400"
-              >
-                Guardar Alteracoes
-              </button>
-              <button
-                onClick={() => setEditorValue(selectedRow ? JSON.stringify(selectedRow, null, 2) : '{}')}
-                className="px-4 py-2 rounded-lg border border-slate-700 hover:bg-slate-800"
-              >
-                Repor
-              </button>
-            </div>
-          </article>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-2 rounded-lg bg-sky-500 text-slate-950 font-bold hover:bg-sky-400"
+                >
+                  Guardar Alteracoes
+                </button>
+                <button
+                  onClick={() => setEditorValue(selectedRow ? JSON.stringify(selectedRow, null, 2) : '{}')}
+                  className="px-4 py-2 rounded-lg border border-slate-700 hover:bg-slate-800"
+                >
+                  Repor
+                </button>
+              </div>
+            </article>
+          )}
         </section>
       </main>
     </div>

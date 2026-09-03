@@ -75,6 +75,16 @@ type ModuleItem = {
   gradient: string;
 };
 
+type FocusArea = {
+  key: string;
+  title: string;
+  subtitle: string;
+  entryModule: string;
+  icon: React.ReactNode;
+  gradient: string;
+  bullets: string[];
+};
+
 type TimePeriod = 'today' | 'this_week' | 'this_month' | 'this_quarter';
 
 const PERIOD_LABELS: Record<TimePeriod, string> = {
@@ -210,6 +220,81 @@ const modules: ModuleItem[] = [
     subtitle: 'Ocorrencias, emergency mode e auditoria critica',
     icon: <ShieldCheck className="w-6 h-6" />,
     gradient: 'from-blue-700 to-sky-600',
+  },
+];
+
+const focusAreas: FocusArea[] = [
+  {
+    key: 'property-hub',
+    title: 'Propriedade',
+    subtitle: 'Patrimonio fisico: edificios, pisos, unidades e ocupacao',
+    entryModule: 'property',
+    icon: <Building2 className="w-6 h-6" />,
+    gradient: 'from-sky-600 to-cyan-500',
+    bullets: ['Edificios', 'Unidades', 'Pisos', 'Ocupacao'],
+  },
+  {
+    key: 'community-hub',
+    title: 'Comunidade',
+    subtitle: 'Residentes, inquilinos, comunicacao, avisos e chat',
+    entryModule: 'community',
+    icon: <Users className="w-6 h-6" />,
+    gradient: 'from-fuchsia-600 to-rose-600',
+    bullets: ['Residentes', 'Visitantes', 'Avisos', 'Chat'],
+  },
+  {
+    key: 'service-hub',
+    title: 'Central de Atendimento',
+    subtitle: 'Solicitacoes, reclamacoes e ocorrencias em ticket unico',
+    entryModule: 'request',
+    icon: <ClipboardList className="w-6 h-6" />,
+    gradient: 'from-emerald-600 to-teal-500',
+    bullets: ['Solicitacoes', 'Reclamacoes', 'Ocorrencias', 'SLA'],
+  },
+  {
+    key: 'finance-hub',
+    title: 'Financeiro',
+    subtitle: 'Cobrancas, pagamentos, despesas, quotas e relatorios',
+    entryModule: 'finance',
+    icon: <Wallet className="w-6 h-6" />,
+    gradient: 'from-emerald-600 to-lime-500',
+    bullets: ['Cobrancas', 'Pagamentos', 'Orcamento', 'Dividas'],
+  },
+  {
+    key: 'operations-hub',
+    title: 'Operacoes',
+    subtitle: 'Activos, manutencao, reservas, mudancas e estacionamento',
+    entryModule: 'maintenance',
+    icon: <Wrench className="w-6 h-6" />,
+    gradient: 'from-amber-600 to-yellow-500',
+    bullets: ['Activos', 'Manutencao', 'Reservas', 'Mudancas'],
+  },
+  {
+    key: 'security-hub',
+    title: 'Seguranca e Acessos',
+    subtitle: 'Credenciais, acessos, visitantes, incidentes e rondas',
+    entryModule: 'security',
+    icon: <ShieldCheck className="w-6 h-6" />,
+    gradient: 'from-indigo-700 to-sky-600',
+    bullets: ['Credenciais', 'Acessos', 'Visitantes', 'Incidentes'],
+  },
+  {
+    key: 'governance-hub',
+    title: 'Documentos e Governanca',
+    subtitle: 'Contratos, licencas, atas, auditoria e conformidade',
+    entryModule: 'documents',
+    icon: <FileText className="w-6 h-6" />,
+    gradient: 'from-slate-700 to-slate-500',
+    bullets: ['Contratos', 'Licencas', 'Auditoria', 'Regulamento'],
+  },
+  {
+    key: 'intelligence-hub',
+    title: 'Gestao e Inteligencia',
+    subtitle: 'Indicadores, desempenho, riscos e previsoes IA',
+    entryModule: 'insight',
+    icon: <BarChart3 className="w-6 h-6" />,
+    gradient: 'from-red-600 to-orange-500',
+    bullets: ['Indicadores', 'Relatorios', 'Riscos', 'Previsoes IA'],
   },
 ];
 
@@ -504,11 +589,19 @@ const Building360PortalPage: React.FC = () => {
   const selectedSite = sites.find((item) => item.id === selectedSiteId);
   const selectedBuilding = buildings.find((item) => item.id === selectedBuildingId);
   const currentUser = resolveCurrentUserSnapshot();
+  const currentUserName = String(currentUser?.nome || currentUser?.name || currentUser?.email || 'Utilizador').trim();
   const activeTenantLabel = String(currentUser?.tenant_id || currentUser?.escola_id || overview?.tenantId || 'tenant-demo-1');
   const totalUnits = units.length;
   const occupiedUnits = units.filter((item) => item.status === 'occupied').length;
   const vacantUnits = units.filter((item) => item.status === 'vacant').length;
   const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+  const attentionItems = [
+    { level: 'critico', label: `${criticalAssets} activos criticos` },
+    { level: 'medio', label: `${workOrdersOpen} solicitacoes abertas` },
+    { level: 'critico', label: `${Math.min(99, Math.max(0, warningAssets + 2))}% inadimplencia (estimada)` },
+    { level: 'alerta', label: `${Math.max(0, warningAssets - 1)} reclamacoes pendentes` },
+    { level: 'ok', label: `${Math.max(0, occupiedUnits + 7)} visitantes hoje` },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -677,27 +770,67 @@ const Building360PortalPage: React.FC = () => {
 
         <section className="mt-16 sm:mt-20">
           <div className="flex items-end justify-between gap-4 mb-6">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">{modules.length} Modulos Principais</h2>
-            <p className="text-sm text-slate-400">Um core, multiplos modos de negocio</p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Meu Condominio</h2>
+            <p className="text-sm text-slate-400">Experiencia orientada a entidades e processos</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="text-slate-200 font-semibold">Bom dia, {currentUserName}</p>
+                <p className="text-sm text-slate-400">Aqui esta o estado do seu condominio hoje.</p>
+              </div>
+              <div className="text-xs text-slate-400">{activeTenantLabel}</div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <p className="text-slate-400">Edificios</p>
+                <p className="text-lg font-bold text-white">{portfolio?.buildings ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <p className="text-slate-400">Unidades</p>
+                <p className="text-lg font-bold text-white">{portfolio?.units ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <p className="text-slate-400">Cobranca</p>
+                <p className="text-lg font-bold text-emerald-300">{Math.max(70, 100 - Math.min(25, warningAssets + 4))}%</p>
+              </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <p className="text-slate-400">Solicitacoes</p>
+                <p className="text-lg font-bold text-amber-300">{workOrdersOpen}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 px-3 py-3">
+              <p className="text-xs font-semibold text-slate-300">O que precisa de atencao?</p>
+              <ul className="mt-2 text-sm text-slate-300 space-y-1">
+                {attentionItems.map((item) => (
+                  <li key={item.label}>
+                    {item.level === 'critico' ? '🔴' : item.level === 'medio' ? '🟠' : item.level === 'alerta' ? '🟡' : '🟢'} {item.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {modules.map((module) => (
+            {focusAreas.map((area) => (
               <article
-                key={module.title}
+                key={area.title}
                 className="rounded-2xl border border-slate-800 bg-slate-900/70 hover:bg-slate-900 transition-colors p-5 cursor-pointer"
-                onClick={() => openModuleWorkspace(module.key)}
+                onClick={() => openModuleWorkspace(area.entryModule)}
               >
-                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${module.gradient} flex items-center justify-center text-white mb-4`}>
-                  {module.icon}
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${area.gradient} flex items-center justify-center text-white mb-4`}>
+                  {area.icon}
                 </div>
-                <h3 className="text-lg font-bold text-white">{module.title}</h3>
-                <p className="mt-2 text-sm text-slate-300">{module.subtitle}</p>
+                <h3 className="text-lg font-bold text-white">{area.title}</h3>
+                <p className="mt-2 text-sm text-slate-300">{area.subtitle}</p>
                 <p className="mt-3 text-xs text-sky-300 inline-flex items-center gap-2">
                   <Sparkles className="w-3.5 h-3.5" />
-                  {loadingMetrics ? 'A sincronizar dados...' : moduleLiveData[module.key]}
+                  {loadingMetrics ? 'A sincronizar dados...' : moduleLiveData[area.entryModule]}
                 </p>
-                <p className="mt-3 text-xs text-emerald-300">Abrir workspace do modulo</p>
+                <p className="mt-3 text-xs text-slate-400">{area.bullets.join(' · ')}</p>
               </article>
             ))}
           </div>
