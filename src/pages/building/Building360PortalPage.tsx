@@ -697,6 +697,16 @@ const Building360PortalPage: React.FC = () => {
               >
                 Abrir Operacao Building360
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAuthSession();
+                  navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+                }}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 transition-colors"
+              >
+                Sair
+              </button>
               <Link
                 to="/building360/blueprint"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-sky-600/50 text-sky-300 hover:bg-sky-900/20 transition-colors"
