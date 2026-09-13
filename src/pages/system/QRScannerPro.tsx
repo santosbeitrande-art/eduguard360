@@ -63,7 +63,7 @@ const QRScannerPro = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema?returnTo=%2Fsistema%2Fseguranca');
+    navigate('/sistema/login?returnTo=%2Fsistema%2Fseguranca', { replace: true });
   };
 
   const parseStudentPayload = (rawData: string): Student | null => {

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { withTimeout } from '@/lib/networkPerformance';
+import { clearAuthSession } from '@/lib/authSession';
 import {
   ArrowRight,
   Building2,
@@ -23,6 +24,12 @@ import {
   CalendarCheck2,
   Truck,
 } from 'lucide-react';
+import {
+  isApprovedByAdmin,
+  isBuilding360ManagementProfile,
+  isBuilding360ResidentProfile,
+  resolveBuilding360Profile,
+} from '@/lib/building360Access';
 
 type Building360Overview = {
   tenantId?: string;
@@ -318,24 +325,6 @@ const resolveAuthToken = (): string => {
 
 const hasAuthToken = (): boolean => resolveAuthToken().length > 0;
 
-const BUILDING360_ROLE_ALIASES: Record<string, string> = {
-  super_admin: 'platform_admin',
-  admin: 'platform_admin',
-  administrator: 'organization_admin',
-  director: 'organization_admin',
-  diretor: 'organization_admin',
-  financeiro: 'finance_manager',
-  maintenance: 'maintenance_manager',
-  seguranca: 'security_officer',
-  security: 'security_officer',
-  scanner: 'security_officer',
-};
-
-const resolveBuilding360Profile = (value: unknown): string => {
-  const normalized = String(value || '').trim().toLowerCase();
-  return BUILDING360_ROLE_ALIASES[normalized] || normalized || 'organization_admin';
-};
-
 const buildHeaders = (currentUser: any): HeadersInit => ({
   ...(hasAuthToken()
     ? { Authorization: `Bearer ${resolveAuthToken()}` }
@@ -358,6 +347,7 @@ const composeEndpoint = (base: string, path: string): string => {
 
 const Building360PortalPage: React.FC = () => {
   const navigate = useNavigate();
+  const [accessValidated, setAccessValidated] = useState(false);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [overview, setOverview] = useState<Building360Overview | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
@@ -372,6 +362,37 @@ const Building360PortalPage: React.FC = () => {
   const [selectedUnitStatus, setSelectedUnitStatus] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('this_month');
   const operationsRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const currentUser = resolveCurrentUserSnapshot();
+    const token = resolveAuthToken();
+
+    if (!currentUser || !token) {
+      navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+      return;
+    }
+
+    if (!isApprovedByAdmin(currentUser)) {
+      navigate('/building360/login?error=building360-account-not-approved&returnTo=%2Fbuilding360', { replace: true });
+      return;
+    }
+
+    const profile = resolveBuilding360Profile(
+      currentUser?.building360_role || currentUser?.perfil || currentUser?.role || ''
+    );
+
+    if (isBuilding360ResidentProfile(profile)) {
+      navigate('/building360/morador', { replace: true });
+      return;
+    }
+
+    if (!isBuilding360ManagementProfile(profile)) {
+      navigate('/portais', { replace: true });
+      return;
+    }
+
+    setAccessValidated(true);
+  }, [navigate]);
 
   const fetchWithFallback = async (
     securePath: string,
@@ -405,11 +426,18 @@ const Building360PortalPage: React.FC = () => {
 
   const openModuleWorkspace = (moduleKey: string) => {
     const currentUser = resolveCurrentUserSnapshot();
-    const profile = resolveBuilding360Profile(currentUser?.perfil || currentUser?.role || 'organization_admin');
+    const profile = resolveBuilding360Profile(
+      currentUser?.building360_role || currentUser?.perfil || currentUser?.role || 'organization_admin'
+    );
+    if (!isBuilding360ManagementProfile(profile)) {
+      setMetricsError('Acesso ao dashboard Building360 permitido apenas para gestao/administracao.');
+      return;
+    }
     navigate(`/building360/workspace/${profile}/${moduleKey}`);
   };
 
   useEffect(() => {
+    if (!accessValidated) return;
     const loadOverview = async () => {
       setLoadingMetrics(true);
       setMetricsError(null);
@@ -434,9 +462,10 @@ const Building360PortalPage: React.FC = () => {
     };
 
     loadOverview();
-  }, []);
+  }, [accessValidated]);
 
   useEffect(() => {
+    if (!accessValidated) return;
     const loadSites = async () => {
       setLoadingPortfolio(true);
       setPortfolioError(null);
@@ -462,9 +491,10 @@ const Building360PortalPage: React.FC = () => {
     };
 
     loadSites();
-  }, []);
+  }, [accessValidated]);
 
   useEffect(() => {
+    if (!accessValidated) return;
     const loadBuildings = async () => {
       if (!selectedSiteId) {
         setBuildings([]);
@@ -499,6 +529,7 @@ const Building360PortalPage: React.FC = () => {
   }, [selectedSiteId]);
 
   useEffect(() => {
+    if (!accessValidated) return;
     const loadUnits = async () => {
       if (!selectedSiteId) {
         setUnits([]);
@@ -531,6 +562,14 @@ const Building360PortalPage: React.FC = () => {
     loadUnits();
   }, [selectedSiteId, selectedBuildingId, selectedUnitType, selectedUnitStatus]);
 
+  if (!accessValidated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <p className="text-sm text-slate-300">A validar acesso Building360...</p>
+      </div>
+    );
+  }
+
   const portfolio = overview?.portfolio;
   const operations = overview?.operations;
   const maintenance = overview?.maintenance;
@@ -539,31 +578,28 @@ const Building360PortalPage: React.FC = () => {
   const warningAssets = maintenance?.warningAssets ?? 0;
   const criticalAssets = maintenance?.criticalAssets ?? 0;
 
-  const topCards = useMemo(
-    () => [
-      {
-        label: 'Sites Activos',
-        value: portfolio?.sites ?? 0,
-        subtitle: 'Sites operacionais no tenant actual',
-      },
-      {
-        label: 'Unidades',
-        value: portfolio?.units ?? 0,
-        subtitle: 'Unidades e espacos sob gestao',
-      },
-      {
-        label: 'Ordens Abertas',
-        value: workOrdersOpen,
-        subtitle: 'Ordens de manutencao em curso',
-      },
-      {
-        label: 'Risco de Activos',
-        value: `${criticalAssets}/${warningAssets}`,
-        subtitle: 'Criticos vs alertas preventivos',
-      },
-    ],
-    [criticalAssets, portfolio?.sites, portfolio?.units, warningAssets, workOrdersOpen]
-  );
+  const topCards = [
+    {
+      label: 'Sites Activos',
+      value: portfolio?.sites ?? 0,
+      subtitle: 'Sites operacionais no tenant actual',
+    },
+    {
+      label: 'Unidades',
+      value: portfolio?.units ?? 0,
+      subtitle: 'Unidades e espacos sob gestao',
+    },
+    {
+      label: 'Ordens Abertas',
+      value: workOrdersOpen,
+      subtitle: 'Ordens de manutencao em curso',
+    },
+    {
+      label: 'Risco de Activos',
+      value: `${criticalAssets}/${warningAssets}`,
+      subtitle: 'Criticos vs alertas preventivos',
+    },
+  ];
 
   const moduleLiveData: Record<string, string> = {
     property: `${portfolio?.sites ?? 0} sites · ${portfolio?.buildings ?? 0} edificios`,
@@ -608,16 +644,29 @@ const Building360PortalPage: React.FC = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(14,165,233,0.18),_transparent_45%),radial-gradient(circle_at_20%_80%,_rgba(16,185,129,0.16),_transparent_40%)] pointer-events-none" />
 
       <header className="relative z-10 border-b border-slate-800/80 backdrop-blur-sm bg-slate-950/70">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-3">
           <button
             onClick={() => navigate('/portais')}
             className="text-slate-300 hover:text-white font-medium"
           >
             Voltar aos portais
           </button>
-          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 bg-slate-800 border border-slate-700 text-xs uppercase tracking-widest text-sky-300">
-            <Activity className="w-3 h-3" />
-            Building360 Core
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                clearAuthSession();
+                navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-200 hover:bg-rose-500/20"
+            >
+              <span aria-hidden="true">⎋</span>
+              Sair
+            </button>
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 bg-slate-800 border border-slate-700 text-xs uppercase tracking-widest text-sky-300">
+              <Activity className="w-3 h-3" />
+              Building360 Core
+            </div>
           </div>
         </div>
       </header>
