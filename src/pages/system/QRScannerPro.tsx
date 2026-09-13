@@ -23,7 +23,20 @@ const getProfileLabel = (profile: string): string => {
   return profile || 'Perfil não identificado';
 };
 
-const SCANNER_ALLOWED_PROFILES = new Set(['seguranca']);
+const SCANNER_ALLOWED_PROFILES = new Set([
+  'super_admin',
+  'admin',
+  'director',
+  'administrator',
+  'secretaria',
+  'coordenador',
+  'professor',
+  'financeiro',
+  'rh',
+  'seguranca',
+  'parent',
+  'student',
+]);
 
 const QRScannerPro = () => {
   const navigate = useNavigate();

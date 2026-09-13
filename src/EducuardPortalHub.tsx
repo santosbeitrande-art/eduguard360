@@ -124,8 +124,7 @@ const PORTALS: PortalDef[] = [
     icon: <Shield className="w-8 h-8" />,
     color: 'from-blue-600 to-blue-700',
     route: '/sistema/seguranca',
-    allowedRoles: ['seguranca'],
-    restrictedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh', 'parent', 'guardian', 'student'],
+    allowedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh', 'seguranca', 'parent', 'guardian', 'student'],
   },
   {
     id: 'building360',

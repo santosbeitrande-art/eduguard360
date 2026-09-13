@@ -36,7 +36,7 @@ function getSupabase() {
 
 /* ── Portal access matrix ─────────────────────────────────────────── */
 const PORTAL_ACCESS = {
-  security:    { full: ['seguranca'], restricted: ['super_admin','admin','director','administrator','secretaria','coordenador','professor','financeiro','rh','parent','guardian','student'] },
+  security:    { full: ['super_admin','admin','director','administrator','secretaria','coordenador','professor','financeiro','rh','seguranca','parent','guardian','student'], restricted: [] },
   building360: { full: ['super_admin','admin','director','administrator','organization_admin','building_manager','finance_manager','maintenance_manager','security_manager','community_manager','document_manager','parking_manager','auditor','resident','occupant'], restricted: ['secretaria'] },
   edumarket:   { full: ['super_admin','admin','professor','teacher','administrator'], restricted: ['student','parent'] },
   'verify-ai': { full: ['super_admin','admin','administrator'], restricted: [] },

@@ -465,6 +465,10 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
     return route.startsWith('/sistema/seguranca');
   }
 
+  if (route.startsWith('/sistema/seguranca')) {
+    return normalized !== 'unknown';
+  }
+
   if (normalized === 'director') {
     return route.startsWith('/sistema/direcao');
   }
