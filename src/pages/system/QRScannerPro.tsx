@@ -23,7 +23,20 @@ const getProfileLabel = (profile: string): string => {
   return profile || 'Perfil não identificado';
 };
 
-const SCANNER_ALLOWED_PROFILES = new Set(['seguranca']);
+const SCANNER_ALLOWED_PROFILES = new Set([
+  'super_admin',
+  'admin',
+  'director',
+  'administrator',
+  'secretaria',
+  'coordenador',
+  'professor',
+  'financeiro',
+  'rh',
+  'seguranca',
+  'parent',
+  'student',
+]);
 
 const QRScannerPro = () => {
   const navigate = useNavigate();
@@ -63,7 +76,7 @@ const QRScannerPro = () => {
     localStorage.removeItem('eduguard_user');
     localStorage.removeItem('eduguard_token');
     void supabase.auth.signOut();
-    navigate('/sistema?returnTo=%2Fsistema%2Fseguranca');
+    navigate('/sistema/login?returnTo=%2Fsistema%2Fseguranca', { replace: true });
   };
 
   const parseStudentPayload = (rawData: string): Student | null => {

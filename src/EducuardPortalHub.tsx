@@ -7,7 +7,6 @@ import {
   Shield,
   ArrowRight,
   Users,
-  Lock,
   GraduationCap,
   CheckCircle2,
   XCircle,
@@ -20,6 +19,8 @@ import {
   FileSearch,
   RefreshCw,
 } from 'lucide-react';
+import { isBuilding360ResidentProfile, resolveBuilding360Profile } from '@/lib/building360Access';
+import { clearAuthSession } from '@/lib/authSession';
 
 /* ─────────────────────────────────────────────
    Tipos
@@ -123,8 +124,7 @@ const PORTALS: PortalDef[] = [
     icon: <Shield className="w-8 h-8" />,
     color: 'from-blue-600 to-blue-700',
     route: '/sistema/seguranca',
-    allowedRoles: ['seguranca'],
-    restrictedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh', 'parent', 'guardian', 'student'],
+    allowedRoles: ['super_admin', 'admin', 'director', 'administrator', 'secretaria', 'coordenador', 'professor', 'financeiro', 'rh', 'seguranca', 'parent', 'guardian', 'student'],
   },
   {
     id: 'building360',
@@ -134,8 +134,8 @@ const PORTALS: PortalDef[] = [
     icon: <Building2 className="w-8 h-8" />,
     color: 'from-sky-600 to-emerald-600',
     route: '/building360',
-    allowedRoles: ['super_admin', 'admin', 'director', 'administrator'],
-    restrictedRoles: ['secretaria', 'financeiro'],
+    allowedRoles: ['super_admin', 'admin', 'director', 'administrator', 'organization_admin', 'building_manager', 'finance_manager', 'maintenance_manager', 'security_manager', 'community_manager', 'document_manager', 'parking_manager', 'auditor', 'resident', 'occupant'],
+    restrictedRoles: ['secretaria'],
   },
   {
     id: 'edumarket',
@@ -321,21 +321,42 @@ const EducuardPortalHub: React.FC = () => {
       return '/sistema/seguranca';
     }
 
+    if (portal.id === 'building360') {
+      if (!user) return '/building360';
+      const buildingRole = resolveBuilding360Profile(
+        (user as any)?.building360_role || (user as any)?.perfil || (user as any)?.role || ''
+      );
+      if (isBuilding360ResidentProfile(buildingRole)) {
+        return '/building360/morador';
+      }
+      return '/building360';
+    }
+
     // For all other portals, the standard route applies
     if (!user) return portal.route;
     return portal.route;
   };
 
+  const getLoginRoute = (portal: PortalDef): string => {
+    return portal.id === 'building360' ? '/building360/login' : '/sistema/login';
+  };
+
   const handleOpen = (portal: PortalDef) => {
+    const destination = getDirectRoute(portal);
+
     if (!user) {
-      const destination = getDirectRoute(portal);
-      navigate(`/sistema/login?returnTo=${encodeURIComponent(destination)}`);
+      navigate(`${getLoginRoute(portal)}?returnTo=${encodeURIComponent(destination)}`);
       return;
     }
 
     const access = getAccess(portal);
     if (access === 'none') {
-      logAudit(portal.id, 'portal_denied');
+      if (portal.external) {
+        window.location.assign(portal.route);
+        return;
+      }
+
+      navigate(`${getLoginRoute(portal)}?returnTo=${encodeURIComponent(destination)}`);
       return;
     }
 
@@ -374,7 +395,6 @@ const EducuardPortalHub: React.FC = () => {
       .catch(() => { /* non-blocking */ })
       .finally(() => {
         logAudit(portal.id, 'portal_open');
-        const destination = getDirectRoute(portal);
         if (portal.external) { window.location.assign(portal.route); return; }
         navigate(destination);
       });
@@ -395,13 +415,28 @@ const EducuardPortalHub: React.FC = () => {
               EduGuard<span className="text-emerald-400">360</span>
             </span>
           </div>
-          <button
-            onClick={() => navigate(isAuthenticated ? '/sistema' : '/login')}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-medium transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            {isAuthenticated ? 'Dashboard' : language === 'pt' ? 'Entrar' : 'Sign In'}
-          </button>
+          <div className="flex items-center gap-3">
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearAuthSession();
+                  navigate('/login', { replace: true });
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/10 text-sm font-medium text-rose-200 hover:bg-rose-500/20 transition-colors"
+              >
+                <LogIn className="w-4 h-4 rotate-180" />
+                Sair
+              </button>
+            )}
+            <button
+              onClick={() => navigate(isAuthenticated ? '/sistema' : '/login')}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-medium transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              {isAuthenticated ? 'Dashboard' : language === 'pt' ? 'Entrar' : 'Sign In'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -466,23 +501,18 @@ const EducuardPortalHub: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {PORTALS.map((portal) => {
             const access = getAccess(portal);
-            const blocked = isAuthenticated ? access !== 'full' : false;
-            if (isAuthenticated && blocked) return null;
             const portalRoleLabel = getPortalRole(portal.id);
             const accessLabel =
               access === 'full' ? `✓ ${portalRoleLabel || roleLabel || activeRole}` :
               access === 'restricted' ? `Acesso limitado · ${portalRoleLabel || roleLabel}` :
-              access === 'guest' ? 'Entrar para aceder' : 'Sem acesso';
+              access === 'guest' ? 'Entrar para aceder' : 'Acesso via login';
 
             return (
               <div
                 key={portal.id}
-                onClick={() => !blocked && handleOpen(portal)}
+                onClick={() => handleOpen(portal)}
                 className={`relative rounded-2xl border bg-white/5 overflow-hidden flex flex-col transition-all duration-200
-                  ${blocked
-                    ? 'opacity-55 border-white/5'
-                    : 'border-white/10 hover:border-white/25 hover:bg-white/[0.08] hover:shadow-2xl cursor-pointer'
-                  }`}
+                  border-white/10 hover:border-white/25 hover:bg-white/[0.08] hover:shadow-2xl cursor-pointer`}
               >
                 {/* Top colour accent */}
                 <div className={`h-1 w-full bg-gradient-to-r ${portal.color}`} />
@@ -521,16 +551,9 @@ const EducuardPortalHub: React.FC = () => {
                   {/* CTA Button */}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleOpen(portal); }}
-                    disabled={blocked}
-                    className={`w-full rounded-xl py-2.5 px-4 text-sm font-semibold flex items-center justify-center gap-2 transition-all
-                      ${blocked
-                        ? 'bg-white/5 text-slate-500 cursor-not-allowed'
-                        : `bg-gradient-to-r ${portal.color} text-white hover:opacity-90 hover:shadow-lg`
-                      }`}
+                    className={`w-full rounded-xl py-2.5 px-4 text-sm font-semibold flex items-center justify-center gap-2 transition-all bg-gradient-to-r ${portal.color} text-white hover:opacity-90 hover:shadow-lg`}
                   >
-                    {blocked ? (
-                      <><Lock className="w-4 h-4" />Sem acesso</>
-                    ) : access === 'guest' ? (
+                    {access === 'guest' || access === 'none' ? (
                       <><LogIn className="w-4 h-4" />Entrar para aceder</>
                     ) : (
                       <>Abrir <ArrowRight className="w-4 h-4" /></>

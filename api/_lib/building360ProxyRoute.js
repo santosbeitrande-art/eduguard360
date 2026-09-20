@@ -98,8 +98,9 @@ const extractPathAndQuery = (path) => {
 const tryBuildMockResponse = (req, path) => {
   const method = String(req.method || 'GET').toUpperCase();
   const { path: cleanPath, query } = extractPathAndQuery(path);
+  const effectivePath = cleanPath.replace('/building360/public/', '/building360/');
 
-  if (method === 'GET' && cleanPath === '/building360/overview') {
+  if (method === 'GET' && effectivePath === '/building360/overview') {
     return {
       status: 200,
       data: {
@@ -113,44 +114,44 @@ const tryBuildMockResponse = (req, path) => {
     };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/sites') {
+  if (method === 'GET' && effectivePath === '/building360/sites') {
     return { status: 200, data: [MOCK_SITE] };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/buildings') {
+  if (method === 'GET' && effectivePath === '/building360/buildings') {
     const rows = query.siteId ? [MOCK_BUILDING].filter((item) => item.siteId === query.siteId) : [MOCK_BUILDING];
     return { status: 200, data: rows };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/units') {
+  if (method === 'GET' && effectivePath === '/building360/units') {
     return { status: 200, data: filterUnits(query) };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/assets') {
+  if (method === 'GET' && effectivePath === '/building360/assets') {
     return { status: 200, data: MOCK_ASSETS };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/work-orders') {
+  if (method === 'GET' && effectivePath === '/building360/work-orders') {
     return { status: 200, data: filterWorkOrders(query) };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/core/people') {
+  if (method === 'GET' && effectivePath === '/building360/core/people') {
     return { status: 200, data: MOCK_PEOPLE };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/core/role-assignments') {
+  if (method === 'GET' && effectivePath === '/building360/core/role-assignments') {
     return { status: 200, data: MOCK_ASSIGNMENTS };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/finance/contracts') {
+  if (method === 'GET' && effectivePath === '/building360/finance/contracts') {
     return { status: 200, data: MOCK_CONTRACTS };
   }
 
-  if (method === 'GET' && cleanPath === '/building360/finance/invoices') {
+  if (method === 'GET' && effectivePath === '/building360/finance/invoices') {
     return { status: 200, data: MOCK_INVOICES };
   }
 
-  if (method === 'POST' && cleanPath === '/building360/finance/contracts') {
+  if (method === 'POST' && effectivePath === '/building360/finance/contracts') {
     const payload = req.body && typeof req.body === 'object' ? req.body : {};
     return {
       status: 200,
@@ -166,7 +167,7 @@ const tryBuildMockResponse = (req, path) => {
     };
   }
 
-  const idPatchMatch = cleanPath.match(/^\/building360\/(work-orders|core\/people|core\/role-assignments|core\/units)\/([^/]+)$/);
+  const idPatchMatch = effectivePath.match(/^\/building360\/(work-orders|core\/people|core\/role-assignments|core\/units)\/([^/]+)$/);
   if (method === 'PATCH' && idPatchMatch) {
     const entity = idPatchMatch[1];
     const id = decodeURIComponent(idPatchMatch[2]);

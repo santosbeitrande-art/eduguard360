@@ -36,14 +36,31 @@ function getSupabase() {
 
 /* ── Portal access matrix ─────────────────────────────────────────── */
 const PORTAL_ACCESS = {
-  security:    { full: ['seguranca'], restricted: ['super_admin','admin','director','administrator','secretaria','coordenador','professor','financeiro','rh','parent','guardian','student'] },
-  building360: { full: ['super_admin','admin','director','administrator'], restricted: ['secretaria','financeiro'] },
+  security:    { full: ['super_admin','admin','director','administrator','secretaria','coordenador','professor','financeiro','rh','seguranca','parent','guardian','student'], restricted: [] },
+  building360: { full: ['super_admin','admin','director','administrator','organization_admin','building_manager','finance_manager','maintenance_manager','security_manager','community_manager','document_manager','parking_manager','auditor','resident','occupant'], restricted: ['secretaria'] },
   edumarket:   { full: ['super_admin','admin','professor','teacher','administrator'], restricted: ['student','parent'] },
   'verify-ai': { full: ['super_admin','admin','administrator'], restricted: [] },
   literature:  { full: ['super_admin','admin','director','professor','secretaria','financeiro','administrator','student','parent'], restricted: [] },
   enterprise:  { full: ['super_admin','admin'], restricted: ['director','administrator','secretaria','coordenador','professor','financeiro','rh','seguranca','parent','guardian','student'] },
   analytics:   { full: ['super_admin','admin','director','administrator'], restricted: ['financeiro','secretaria'] },
 };
+
+const BUILDING360_DASHBOARD_ALLOWED_PROFILES = new Set([
+  'platform_admin',
+  'organization_admin',
+  'building_manager',
+  'finance_manager',
+  'maintenance_manager',
+  'security_manager',
+  'community_manager',
+  'document_manager',
+  'parking_manager',
+  'auditor',
+]);
+
+const BUILDING360_REGISTRY_USER_ID = 'building360_registry';
+const BUILDING360_SITE_PRODUCT_ID = 'building360_site';
+const BUILDING360_BUILDING_PRODUCT_ID = 'building360_building';
 
 const ROLE_LABELS = {
   super_admin:'Super Admin', admin:'Administrador Sistema', director:'Diretor',
@@ -152,6 +169,49 @@ function decodeJwtPayload(token) {
     const json = Buffer.from(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
     return JSON.parse(json);
   } catch { return null; }
+}
+
+function parseRegistryMetadata(rawValue) {
+  try {
+    const parsed = JSON.parse(String(rawValue || '{}'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeRegistryRow(row) {
+  const meta = parseRegistryMetadata(row?.invited_by);
+  const productId = String(row?.product_id || '').trim();
+  if (productId === BUILDING360_SITE_PRODUCT_ID) {
+    return {
+      id: String(row?.organization_id || '').trim(),
+      name: String(meta.name || '').trim(),
+      city: String(meta.city || 'N/A').trim(),
+      type: String(meta.type || 'residential').trim(),
+      tenantId: meta.tenantId || null,
+      schoolId: meta.schoolId || null,
+      organizationId: meta.organizationId || null,
+      portfolioId: meta.portfolioId || null,
+      code: meta.code || null,
+      status: meta.status || 'active',
+      source: 'core-registry',
+    };
+  }
+
+  return {
+    id: String(row?.organization_id || '').trim(),
+    siteId: String(meta.siteId || '').trim(),
+    name: String(meta.name || '').trim(),
+    floors: Number(meta.floors || 1),
+    tenantId: meta.tenantId || null,
+    schoolId: meta.schoolId || null,
+    organizationId: meta.organizationId || null,
+    portfolioId: meta.portfolioId || null,
+    code: meta.code || null,
+    status: meta.status || 'active',
+    source: 'core-registry',
+  };
 }
 
 /**
@@ -301,6 +361,178 @@ function handleNotify(req, scope) {
   };
 }
 
+async function handleBuilding360RegistryList(_req) {
+  const sb = getSupabase();
+  if (!sb) {
+    return { sites: [], buildings: [], source: 'registry-unavailable' };
+  }
+
+  try {
+    const { data, error } = await sb
+      .from('core_memberships')
+    .select('product_id, organization_id, role, invited_by, status, updated_at')
+      .eq('user_id', BUILDING360_REGISTRY_USER_ID)
+      .in('product_id', [BUILDING360_SITE_PRODUCT_ID, BUILDING360_BUILDING_PRODUCT_ID])
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .limit(500);
+
+    if (error) {
+      return { sites: [], buildings: [], source: 'registry-error', error: error.message };
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const sites = rows
+      .filter((row) => row.product_id === BUILDING360_SITE_PRODUCT_ID)
+      .map(normalizeRegistryRow);
+    const buildings = rows
+      .filter((row) => row.product_id === BUILDING360_BUILDING_PRODUCT_ID)
+      .map(normalizeRegistryRow);
+
+    return { sites, buildings, source: 'core-registry' };
+  } catch (err) {
+    return { sites: [], buildings: [], source: 'registry-error', error: String(err?.message || err) };
+  }
+}
+
+async function handleBuilding360RegistryUpsert(req, scope) {
+  let effectiveScope = scope;
+  const sb = getSupabase();
+
+  if (!effectiveScope?.isAuthenticated && sb) {
+    const authHeader = String(req.headers.authorization || '').trim();
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (bearer) {
+      try {
+        const userResult = await sb.auth.getUser(bearer);
+        const verifiedUser = userResult?.data?.user || null;
+        if (verifiedUser?.id) {
+          const verifiedEmail = String(verifiedUser.email || '').trim().toLowerCase();
+          let verifiedRole = normalizeRole(req.headers['x-enterprise-role'] || req.body?.role || req.query?.role);
+
+          if (verifiedEmail === 'admin@eduguard360.co.mz') {
+            verifiedRole = 'super_admin';
+          } else {
+            try {
+              const { data: domainUser } = await sb
+                .from('utilizadores')
+                .select('perfil,role,escola_id')
+                .or(`auth_id.eq.${verifiedUser.id},email.eq.${verifiedEmail}`)
+                .maybeSingle();
+              if (domainUser) {
+                verifiedRole = normalizeRole(domainUser?.perfil || domainUser?.role || verifiedRole);
+              }
+            } catch {
+              // Keep header-derived role only after auth token verification.
+            }
+          }
+
+          effectiveScope = {
+            ...effectiveScope,
+            role: verifiedRole,
+            userId: verifiedUser.id,
+            userName: verifiedUser.user_metadata?.full_name || verifiedUser.email || effectiveScope.userName,
+            schoolId: effectiveScope.schoolId || null,
+            tenantId: effectiveScope.tenantId || effectiveScope.schoolId || null,
+            isAuthenticated: true,
+            authSource: 'supabase-jwt',
+          };
+        }
+      } catch {
+        // Keep original unauthenticated scope.
+      }
+    }
+  }
+
+  const guard = requireEnterpriseScope(effectiveScope);
+  if (!guard.ok) return { _error: guard.status, ...guard.body };
+
+  const allowedRoles = new Set(['super_admin', 'admin', 'platform_admin', 'organization_admin']);
+  const normalizedRole = normalizeRole(effectiveScope.role);
+  if (!allowedRoles.has(normalizedRole)) {
+    return { _error: 403, message: 'Somente administradores podem gerir o registry Building360.' };
+  }
+
+  if (!sb) {
+    return { _error: 503, message: 'Supabase service role indisponivel para persistencia global.' };
+  }
+
+  const body = req.body || {};
+  const entity = String(body.entity || '').trim().toLowerCase();
+  if (entity !== 'site' && entity !== 'building') {
+    return { _error: 400, message: 'entity deve ser site ou building.' };
+  }
+
+  const id = String(body.id || `${entity}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).trim();
+  const name = String(body.name || '').trim();
+  if (!name) {
+    return { _error: 400, message: 'name e obrigatorio.' };
+  }
+
+  const metadata = entity === 'site'
+    ? {
+        name,
+        city: String(body.city || 'N/A').trim(),
+        type: String(body.type || 'residential').trim(),
+        tenantId: String(body.tenantId || scope.tenantId || scope.schoolId || '').trim() || null,
+        schoolId: String(body.schoolId || scope.schoolId || '').trim() || null,
+        organizationId: String(body.organizationId || '').trim() || null,
+        portfolioId: String(body.portfolioId || '').trim() || null,
+        code: String(body.code || '').trim() || null,
+        status: String(body.status || 'active').trim(),
+      }
+    : {
+        name,
+        siteId: String(body.siteId || '').trim(),
+        floors: Number(body.floors || 1),
+        tenantId: String(body.tenantId || scope.tenantId || scope.schoolId || '').trim() || null,
+        schoolId: String(body.schoolId || scope.schoolId || '').trim() || null,
+        organizationId: String(body.organizationId || '').trim() || null,
+        portfolioId: String(body.portfolioId || '').trim() || null,
+        code: String(body.code || '').trim() || null,
+        status: String(body.status || 'active').trim(),
+      };
+
+  if (entity === 'building' && !metadata.siteId) {
+    return { _error: 400, message: 'siteId e obrigatorio para building.' };
+  }
+
+  const productId = entity === 'site' ? BUILDING360_SITE_PRODUCT_ID : BUILDING360_BUILDING_PRODUCT_ID;
+
+  try {
+    const { data, error } = await sb
+      .from('core_memberships')
+      .upsert(
+        {
+          user_id: BUILDING360_REGISTRY_USER_ID,
+          product_id: productId,
+          organization_id: id,
+          role: entity,
+          invited_by: JSON.stringify(metadata),
+          status: 'active',
+          accepted_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,product_id,organization_id' }
+      )
+      .select('product_id, organization_id, role, invited_by, status, updated_at')
+      .single();
+
+    if (error) {
+      return { _error: 500, message: error.message };
+    }
+
+    return {
+      entity,
+      item: normalizeRegistryRow(data),
+      source: 'core-registry',
+      persistedAt: new Date().toISOString(),
+      authSource: effectiveScope.authSource || 'unknown',
+    };
+  } catch (err) {
+    return { _error: 500, message: String(err?.message || err) };
+  }
+}
+
 /* ── Action: workspace-catalog ───────────────────────────────────── */
 function handleWorkspaceCatalog(req, scope, jwtClaims) {
   const body = req.body || {};
@@ -404,6 +636,13 @@ function handleBuilding360WorkspaceCatalog(req, scope, jwtClaims) {
   }
 
   const normalizedRequester = normalizeBuilding360Profile(requesterRole);
+  if (!BUILDING360_DASHBOARD_ALLOWED_PROFILES.has(normalizedRequester)) {
+    return {
+      _error: 403,
+      message: 'Perfil sem acesso ao dashboard Building360. Use o frontend de morador.',
+    };
+  }
+
   if (normalizedRequester !== requestedProfile && normalizedRequester !== 'platform_admin') {
     return {
       _error: 403,
@@ -433,6 +672,17 @@ function handleBuilding360WorkspaceAuthorize(req, scope, jwtClaims) {
 
   if (!requestedRoute || !requestedRoute.startsWith('/')) {
     return { _error: 400, message: 'Required: route (absolute path)' };
+  }
+
+  if (!BUILDING360_DASHBOARD_ALLOWED_PROFILES.has(role)) {
+    return {
+      role,
+      requestedRoute,
+      allowed: false,
+      reason: 'building360-resident-frontend-only',
+      source: 'core-building360-workspace-authorize',
+      resolvedAt: new Date().toISOString(),
+    };
   }
 
   const catalog = getBuilding360WorkspaceCatalog(role);
@@ -615,6 +865,8 @@ export default async function handler(req, res) {
     'building360-workspace-catalog',
     'building360-workspace-authorize',
     'building360-proxy',
+    'building360-registry-list',
+    'building360-registry-upsert',
   ]);
 
   let jwtClaims = null;
@@ -684,6 +936,14 @@ export default async function handler(req, res) {
     case 'building360-proxy':
       await handleBuilding360Proxy(req, res);
       return;
+    case 'building360-registry-list':
+      result = await handleBuilding360RegistryList(req);
+      break;
+    case 'building360-registry-upsert':
+      result = await handleBuilding360RegistryUpsert(req, scope);
+      if (result._error) { status = result._error; delete result._error; }
+      else status = 201;
+      break;
     default:
       result = {
         error: 'unknown-action',
@@ -701,6 +961,8 @@ export default async function handler(req, res) {
           'building360-workspace-catalog',
           'building360-workspace-authorize',
           'building360-proxy',
+          'building360-registry-list',
+          'building360-registry-upsert',
         ],
       };
       status = 400;

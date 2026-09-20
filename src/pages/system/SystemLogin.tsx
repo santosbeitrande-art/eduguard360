@@ -1,11 +1,25 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
 import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
 import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
 import { normalizeEnterpriseRole, resolvePortalRouteByRole } from "@/lib/enterpriseGovernance";
+import {
+  isBuilding360ManagementProfile,
+  isBuilding360ResidentProfile,
+  resolveBuilding360Profile,
+} from "@/lib/building360Access";
+import {
+  Building360BuildingRecord,
+  Building360SiteRecord,
+  getBuildingsForSite,
+  mergeBuilding360Buildings,
+  mergeBuilding360Sites,
+  readBuilding360BuildingsCache,
+  readBuilding360SitesCache,
+} from "@/lib/building360Registry";
 
 type BillingCycle = "monthly" | "quarterly" | "annual";
 
@@ -74,7 +88,7 @@ const LOCAL_APPROVED_USERS_KEY = 'eduguard_locally_approved_users';
 const SCHOOLS_CACHE_KEY = 'eduguard_admin_schools_cache';
 const GENERATED_CREDENTIALS_LOG_KEY = 'eduguard_generated_credentials_log';
 const KNOWN_ADMIN_EMAIL = 'admin@eduguard360.co.mz';
-const SECURITY_PORTAL_ROLE = 'seguranca';
+const ADMIN_PORTAL_ROLE = 'super_admin';
 
 const cycleConfig: Record<BillingCycle, { days: number; amountMzn: number }> = {
   monthly: { days: 30, amountMzn: 3500 },
@@ -148,6 +162,12 @@ const isTrialActive = (trial: SchoolTrial | null): boolean => {
 const isAlreadyRegisteredError = (message: string): boolean => {
   const text = message.toLowerCase();
   return text.includes('already registered') || text.includes('already been registered') || text.includes('user already registered');
+};
+
+const isRateLimitError = (error: any): boolean => {
+  const status = Number(error?.status || error?.statusCode || 0);
+  const message = String(error?.message || '').toLowerCase();
+  return status === 429 || message.includes('rate limit') || message.includes('too many requests');
 };
 
 const isMissingColumnError = (error: any, columnName: string): boolean => {
@@ -375,6 +395,8 @@ const mapAccessProfileToLegacyProfile = (accessProfile: string): string => {
 
 const mapRegistrationRoleToLegacyProfile = (registrationRole: string): string => {
   if (registrationRole === 'super_admin' || registrationRole === 'admin') return 'super_admin';
+  if (registrationRole === 'building_manager' || registrationRole === 'gestor' || registrationRole === 'manager') return 'building_manager';
+  if (registrationRole === 'resident' || registrationRole === 'morador' || registrationRole === 'occupant') return 'resident';
   if (registrationRole === 'director' || registrationRole === 'school_admin') return 'director';
   if (registrationRole === 'administrator') return 'administrator';
   if (registrationRole === 'secretaria') return 'secretaria';
@@ -407,11 +429,20 @@ const getRequestedReturnRoute = (): string | null => {
 };
 
 const getDefaultRouteByProfile = (perfil: string): string => {
+  const buildingProfile = resolveBuilding360Profile(perfil);
+  if (isBuilding360ResidentProfile(buildingProfile)) return '/building360/morador';
+  if (isBuilding360ManagementProfile(buildingProfile)) return '/building360';
+
   const normalized = normalizeEnterpriseRole(perfil);
   return resolvePortalRouteByRole(normalized);
 };
 
 const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
+  if (route.startsWith('/building360') || route.startsWith('/sistema/building360')) {
+    const buildingProfile = resolveBuilding360Profile(perfil);
+    return isBuilding360ResidentProfile(buildingProfile) || isBuilding360ManagementProfile(buildingProfile);
+  }
+
   const normalized = normalizeEnterpriseRole(perfil);
   const defaultRoute = resolvePortalRouteByRole(normalized);
 
@@ -432,6 +463,10 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
 
   if (normalized === 'seguranca') {
     return route.startsWith('/sistema/seguranca');
+  }
+
+  if (route.startsWith('/sistema/seguranca')) {
+    return normalized !== 'unknown';
   }
 
   if (normalized === 'director') {
@@ -465,6 +500,18 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
   return false;
 };
 
+const createCompatibilityToken = (payload: Record<string, unknown>): string => {
+  try {
+    return btoa(JSON.stringify({
+      ...payload,
+      exp: Date.now() + 24 * 60 * 60 * 1000,
+      mode: 'compat',
+    }));
+  } catch {
+    return `compat-${Date.now()}`;
+  }
+};
+
 const normalizeKnownAdminUser = (user: any): any => {
   if (!user) return user;
   const normalizedEmail = String(user?.email || '').trim().toLowerCase();
@@ -481,6 +528,8 @@ const normalizeKnownAdminUser = (user: any): any => {
 const getLegacyProfileLabel = (perfil: string): string => {
   const normalized = normalizeLegacyProfile(perfil);
   if (normalized === 'super_admin') return 'Administração Geral';
+  if (String(perfil || '').trim().toLowerCase() === 'building_manager') return 'Gestor de Condominio';
+  if (String(perfil || '').trim().toLowerCase() === 'resident' || String(perfil || '').trim().toLowerCase() === 'occupant') return 'Morador';
   if (normalized === 'director') return 'Direção';
   if (normalized === 'administrator') return 'Administração Escolar';
   if (normalized === 'secretaria') return 'Secretaria Académica';
@@ -637,6 +686,18 @@ const fetchDomainUserForAccountStatus = async (email: string) => {
   return { data: null, error: { message: 'unable-to-read-account-status' } };
 };
 
+const buildLoginModeQuery = (pathname: string, currentSearch: string, mode: 'login' | 'signup' | 'recovery'): string => {
+  const params = new URLSearchParams(currentSearch);
+  if (mode === 'login') {
+    params.delete('mode');
+  } else {
+    params.set('mode', mode);
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+};
+
 const SystemLoginContent = () => {
   const { t } = useLanguage();
   const { login: edgeLogin } = useSystemAuth();
@@ -654,6 +715,11 @@ const SystemLoginContent = () => {
   const [paymentDone, setPaymentDone] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState<string | null>(null);
   const [schools, setSchools] = useState<Array<{ id: string; nome: string }>>([]);
+  const [building360Sites, setBuilding360Sites] = useState<Building360SiteRecord[]>([]);
+  const [building360Buildings, setBuilding360Buildings] = useState<Building360BuildingRecord[]>([]);
+  const [building360SiteId, setBuilding360SiteId] = useState('');
+  const [building360BuildingId, setBuilding360BuildingId] = useState('');
+  const [loadingBuilding360Options, setLoadingBuilding360Options] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingSchools, setLoadingSchools] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
@@ -663,7 +729,101 @@ const SystemLoginContent = () => {
   const [accountStatusPanel, setAccountStatusPanel] = useState<AccountStatusPanel | null>(null);
   const [checkingAccountStatus, setCheckingAccountStatus] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const activeInsight = accessProfileInsights[accessProfile];
+  const requestedReturnRoute = getRequestedReturnRoute();
+  const building360Intent = Boolean(
+    requestedReturnRoute?.startsWith('/building360')
+    || requestedReturnRoute?.startsWith('/sistema/building360')
+    || location.pathname.startsWith('/building360/login')
+  );
+
+  useEffect(() => {
+    if (!building360Intent) return;
+    setSelectedRole((prev) => (prev === 'building_manager' || prev === 'resident') ? prev : 'building_manager');
+    setSelectedSchoolId('');
+    setAwaitingPin(false);
+    setPaymentDone(false);
+    setPaymentSummary(null);
+  }, [building360Intent]);
+
+  useEffect(() => {
+    if (!building360Intent) return;
+
+    setBuilding360Sites(readBuilding360SitesCache());
+    setBuilding360Buildings(readBuilding360BuildingsCache());
+
+    const loadBuilding360Options = async () => {
+      setLoadingBuilding360Options(true);
+      try {
+        const registryResponse = await fetch('/api/v1/core?action=building360-registry-list');
+        const registryData = registryResponse.ok ? await registryResponse.json() : null;
+
+        let normalizedSites = Array.isArray(registryData?.sites) ? mergeBuilding360Sites(registryData.sites) : readBuilding360SitesCache();
+        let normalizedBuildings = Array.isArray(registryData?.buildings) ? mergeBuilding360Buildings(registryData.buildings) : readBuilding360BuildingsCache();
+
+        if (normalizedSites.length === 0 || normalizedBuildings.length === 0) {
+          const [sitesResponse, buildingsResponse] = await Promise.all([
+            fetch('/api/v1/building360/public/sites'),
+            fetch('/api/v1/building360/public/buildings'),
+          ]);
+
+          const sitesData = sitesResponse.ok ? await sitesResponse.json() : [];
+          const buildingsData = buildingsResponse.ok ? await buildingsResponse.json() : [];
+
+          normalizedSites = Array.isArray(sitesData) ? mergeBuilding360Sites(sitesData) : normalizedSites;
+          normalizedBuildings = Array.isArray(buildingsData) ? mergeBuilding360Buildings(buildingsData) : normalizedBuildings;
+        }
+
+        setBuilding360Sites(normalizedSites);
+        setBuilding360Buildings(normalizedBuildings);
+      } catch {
+        setBuilding360Sites(readBuilding360SitesCache());
+        setBuilding360Buildings(readBuilding360BuildingsCache());
+      } finally {
+        setLoadingBuilding360Options(false);
+      }
+    };
+
+    void loadBuilding360Options();
+  }, [building360Intent]);
+
+  useEffect(() => {
+    if (!building360Intent) return;
+    if (building360SiteId) return;
+    if (building360Sites.length === 0) return;
+    setBuilding360SiteId(building360Sites[0].id);
+  }, [building360Intent, building360SiteId, building360Sites]);
+
+  useEffect(() => {
+    if (!building360Intent) return;
+
+    const availableBuildings = getBuildingsForSite(building360SiteId, building360Buildings);
+    if (availableBuildings.length === 0) {
+      setBuilding360BuildingId('');
+      return;
+    }
+
+    setBuilding360BuildingId((prev) => {
+      if (prev && availableBuildings.some((item) => item.id === prev)) return prev;
+      return availableBuildings[0].id;
+    });
+  }, [building360Intent, building360SiteId, building360Buildings]);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/sistema/login')) return;
+    const requested = getRequestedReturnRoute();
+    if (!requested) return;
+    if (!(requested.startsWith('/building360') || requested.startsWith('/sistema/building360'))) return;
+
+    navigate(`/building360/login?returnTo=${encodeURIComponent(requested)}`, { replace: true });
+  }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    const mode = new URLSearchParams(location.search).get('mode');
+    setRegisterMode(mode === 'signup');
+    setRecoveryMode(mode === 'recovery');
+  }, [location.search]);
 
   useEffect(() => {
     setAccountStatusPanel((prev) => {
@@ -727,8 +887,27 @@ const SystemLoginContent = () => {
 
   const isPendingUser = (user: any): boolean => user?.status === 'pending' || user?.status === 'inactive' || user?.is_active === false;
 
+  const setLoginMode = (mode: 'login' | 'signup' | 'recovery') => {
+    navigate(buildLoginModeQuery(location.pathname, location.search, mode), { replace: true });
+    setErrorMessage(null);
+    setInfoMessage(null);
+  };
+
   const redirectByProfile = (perfil: string) => {
     const requestedRoute = getRequestedReturnRoute();
+
+    if (requestedRoute && (requestedRoute.startsWith('/building360') || requestedRoute.startsWith('/sistema/building360'))) {
+      const buildingProfile = resolveBuilding360Profile(perfil);
+      if (isBuilding360ResidentProfile(buildingProfile)) {
+        navigate('/building360/morador');
+        return;
+      }
+      if (isBuilding360ManagementProfile(buildingProfile)) {
+        navigate('/building360');
+        return;
+      }
+    }
+
     const route = requestedRoute && canAccessRequestedRoute(perfil, requestedRoute)
       ? requestedRoute
       : getDefaultRouteByProfile(perfil);
@@ -771,7 +950,41 @@ const SystemLoginContent = () => {
     }
   };
 
-  const completeLogin = (user: any, useCompatibilityMode = false): boolean => {
+  const persistCompatibilitySession = (user: any, perfil: string, tokenOverride?: string | null) => {
+    const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+    const normalizedRole = normalizeEnterpriseRole(perfil);
+    const runtimeRole = normalizedRole === 'unknown' ? perfil : normalizedRole;
+    const schoolId = user?.escola_id || user?.school_id || user?.tenant_id || null;
+    const token = String(tokenOverride || '').trim() || createCompatibilityToken({
+      userId: user?.auth_id || user?.id || normalizedEmail,
+      email: normalizedEmail,
+      role: runtimeRole,
+      type: runtimeRole === 'parent' ? 'parent' : 'system_user',
+    });
+
+    localStorage.setItem('eduguard_user', JSON.stringify({
+      id: user?.auth_id || user?.id || normalizedEmail,
+      email: normalizedEmail,
+      name: user?.nome || user?.name || normalizedEmail,
+      type: runtimeRole === 'parent' ? 'parent' : 'system_user',
+      role: runtimeRole,
+      perfil: toStoredLegacyProfile(perfil),
+      building360_role: resolveBuilding360Profile(perfil),
+      building360_site_id: user?.building360_site_id || undefined,
+      building360_site_name: user?.building360_site_name || undefined,
+      building360_building_id: user?.building360_building_id || undefined,
+      building360_building_name: user?.building360_building_name || undefined,
+      school_id: schoolId || undefined,
+      escola_id: schoolId || undefined,
+      tenant_id: user?.tenant_id || schoolId || undefined,
+      password_changed: user?.password_changed ?? true,
+      status: user?.status || 'active',
+      is_active: user?.is_active ?? true,
+    }));
+    localStorage.setItem('eduguard_token', token);
+  };
+
+  const completeLogin = (user: any, useCompatibilityMode = false, tokenOverride?: string | null): boolean => {
     let normalizedUser = normalizeKnownAdminUser(user);
 
     const normalizedEmail = String(normalizedUser?.email || '').trim().toLowerCase();
@@ -797,7 +1010,8 @@ const SystemLoginContent = () => {
     const perfil = normalizeLegacyProfile(normalizedUser?.perfil || normalizedUser?.role);
 
     const schoolId = normalizedUser.escola_id || null;
-    if (schoolId && perfil !== 'super_admin') {
+    const bypassSchoolBillingGate = perfil === 'seguranca';
+    if (schoolId && perfil !== 'super_admin' && !bypassSchoolBillingGate) {
       const trial = getSchoolTrial(schoolId) || ensureSchoolTrial(schoolId);
       const subscription = getSchoolSubscription(schoolId);
       const trialActive = isTrialActive(trial);
@@ -823,6 +1037,7 @@ const SystemLoginContent = () => {
       perfil: toStoredLegacyProfile(perfil),
       email: String(normalizedUser?.email || '').trim().toLowerCase(),
     }));
+    persistCompatibilitySession(normalizedUser, perfil, tokenOverride);
     redirectByProfile(perfil);
     return true;
   };
@@ -838,7 +1053,7 @@ const SystemLoginContent = () => {
           if (currentEmail === normalizedEmail && currentPassword && currentPassword === normalizedPassword) {
             return {
               ...currentUser,
-              perfil: SECURITY_PORTAL_ROLE,
+              perfil: ADMIN_PORTAL_ROLE,
               status: 'active',
               is_active: true,
             };
@@ -899,47 +1114,49 @@ const SystemLoginContent = () => {
     let domainUserByEmail: any = null;
 
     try {
-      // The school security account must not pass through the enterprise edge auth path,
-      // because that backend can elevate it to a generic admin role.
-      if (!isSecurityPortalAccount) {
-        // Single login entrypoint: try both user types automatically.
-        const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
-        for (const attemptType of edgeAttempts) {
-          const edgeResult = await withTimeout(
-            edgeLogin(normalizedEmail, normalizedPassword, attemptType),
-            12000,
-            'Edge login timeout'
-          );
-          edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
-          if (!edgeResult.success) continue;
+      // Single login entrypoint: try both user types automatically.
+      const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
+      for (const attemptType of edgeAttempts) {
+        const edgeResult = await withTimeout(
+          edgeLogin(normalizedEmail, normalizedPassword, attemptType),
+          12000,
+          'Edge login timeout'
+        );
+        edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
+        if (!edgeResult.success) continue;
 
-          const edgeUserRaw = localStorage.getItem('eduguard_user');
-          if (!edgeUserRaw) continue;
+        const edgeUserRaw = localStorage.getItem('eduguard_user');
+        if (!edgeUserRaw) continue;
 
-          try {
-            const edgeUser = JSON.parse(edgeUserRaw);
+        try {
+          const edgeUser = JSON.parse(edgeUserRaw);
 
-            const { data: domainUser } = await withTimeout(
-              supabase
-                .from('utilizadores')
-                .select('id,email,perfil,role,escola_id,school_id')
-                .eq('email', normalizedEmail)
-                .maybeSingle(),
-              12000,
-              'Domain profile lookup timeout'
-            );
-
-            const edgePerfil = mapEdgeUserToLegacyProfile(edgeUser);
-            const domainPerfil = normalizeLegacyProfile(domainUser?.perfil || domainUser?.role || '');
-            const perfil = domainPerfil && domainPerfil !== 'unknown' ? domainPerfil : edgePerfil;
-            const resolvedSchoolId = domainUser?.escola_id || domainUser?.school_id || edgeUser?.school_id || edgeUser?.escola_id || null;
-
-            persistLegacyUserFromEdgeAuth(edgeUser, perfil, resolvedSchoolId);
-            redirectByProfile(perfil);
+          if (isSecurityPortalAccount) {
+            persistLegacyUserFromEdgeAuth(edgeUser, ADMIN_PORTAL_ROLE, edgeUser?.school_id || edgeUser?.escola_id || null);
+            redirectByProfile(ADMIN_PORTAL_ROLE);
             return;
-          } catch (parseError) {
-            console.warn('Falha ao ler eduguard_user apos edge login', parseError);
           }
+
+          const { data: domainUser } = await withTimeout(
+            supabase
+              .from('utilizadores')
+              .select('id,email,perfil,role,escola_id,school_id')
+              .eq('email', normalizedEmail)
+              .maybeSingle(),
+            12000,
+            'Domain profile lookup timeout'
+          );
+
+          const edgePerfil = mapEdgeUserToLegacyProfile(edgeUser);
+          const domainPerfil = normalizeLegacyProfile(domainUser?.perfil || domainUser?.role || '');
+          const perfil = domainPerfil && domainPerfil !== 'unknown' ? domainPerfil : edgePerfil;
+          const resolvedSchoolId = domainUser?.escola_id || domainUser?.school_id || edgeUser?.school_id || edgeUser?.escola_id || null;
+
+          persistLegacyUserFromEdgeAuth(edgeUser, perfil, resolvedSchoolId);
+          redirectByProfile(perfil);
+          return;
+        } catch (parseError) {
+          console.warn('Falha ao ler eduguard_user apos edge login', parseError);
         }
       }
 
@@ -1003,7 +1220,7 @@ const SystemLoginContent = () => {
               localStorage.setItem('currentUser', JSON.stringify({
                 ...domainUserByEmail,
                 senha: normalizedPassword,
-                perfil: SECURITY_PORTAL_ROLE,
+                perfil: ADMIN_PORTAL_ROLE,
                 status: 'active',
                 is_active: true,
               }));
@@ -1082,7 +1299,7 @@ const SystemLoginContent = () => {
         }
       }
 
-      completeLogin(user);
+      completeLogin(user, false, authData?.session?.access_token || null);
     } catch (err) {
       if (err instanceof NetworkTimeoutError) {
         setErrorMessage('Tempo excedido ao ligar ao servidor. Tente novamente.');
@@ -1114,8 +1331,9 @@ const SystemLoginContent = () => {
     setAccountStatusPanel(null);
 
     try {
-      const expectedLegacyProfile = mapAccessProfileToLegacyProfile(accessProfile);
-      const expectedProfileLabel = getAccessProfileLabel(accessProfile);
+      const isKnownAdmin = normalizedEmail === KNOWN_ADMIN_EMAIL;
+      const expectedLegacyProfile = isKnownAdmin ? 'super_admin' : mapAccessProfileToLegacyProfile(accessProfile);
+      const expectedProfileLabel = isKnownAdmin ? getAccessProfileLabel('super_admin') : getAccessProfileLabel(accessProfile);
       const localPending = readPendingRegistrations().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
       const localApproved = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
 
@@ -1147,6 +1365,21 @@ const SystemLoginContent = () => {
         : null);
 
       if (!domainUser && !localFallbackUser) {
+        if (isKnownAdmin) {
+          setAccountStatusPanel({
+            title: 'Estado da conta',
+            summary: 'Conta de administracao global reconhecida. Use a password oficial do admin para entrar.',
+            tone: 'ok',
+            items: [
+              { label: 'Email', value: normalizedEmail, tone: 'info' },
+              { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'ok' },
+              { label: 'Acesso', value: 'Concedido ao admin global', tone: 'ok' },
+              { label: 'Fonte de dados', value: 'Login global + cache local', tone: 'info' },
+            ],
+          });
+          return;
+        }
+
         setAccountStatusPanel({
           title: 'Estado da conta',
           summary: serverIssue
@@ -1163,7 +1396,7 @@ const SystemLoginContent = () => {
         return;
       }
 
-      const sourceUser = domainUser || localFallbackUser;
+      const sourceUser = normalizeKnownAdminUser(domainUser || localFallbackUser);
       const profileSource = sourceUser?.perfil || '';
       const normalizedProfile = normalizeLegacyProfile(profileSource);
       const profileMatches = normalizedProfile === expectedLegacyProfile || normalizedProfile === 'super_admin';
@@ -1172,7 +1405,12 @@ const SystemLoginContent = () => {
         ? `${getLegacyProfileLabel(normalizedProfile)} (ok para este acesso)`
         : `${getLegacyProfileLabel(normalizedProfile)}. Troque o perfil no topo para ${getLegacyProfileLabel(normalizedProfile)}.`;
 
-      const isPending = sourceUser?.status === 'pending' || sourceUser?.status === 'inactive' || sourceUser?.is_active === false || Boolean(localPending && !localApproved);
+      const isPending = !isKnownAdmin && (
+        sourceUser?.status === 'pending'
+        || sourceUser?.status === 'inactive'
+        || sourceUser?.is_active === false
+        || Boolean(localPending && !localApproved)
+      );
       const approvalTone: AccountStatusTone = isPending ? 'warn' : 'ok';
       const approvalValue = isPending
         ? 'Aprovacao pendente/inativa. Aguarde validacao do administrador.'
@@ -1281,6 +1519,15 @@ const SystemLoginContent = () => {
       return;
     }
 
+    const selectedBuilding360Site = building360Sites.find((item) => item.id === building360SiteId) || null;
+    const selectedBuilding360Building = building360Buildings.find((item) => item.id === building360BuildingId) || null;
+
+    if (building360Intent && !selectedBuilding360Building) {
+      setErrorMessage('Selecione o condominio/edificio para concluir o registo Building360.');
+      setLoading(false);
+      return;
+    }
+
     const localExistingUser = [
       ...readLocalApprovedUsers(),
       ...readPendingRegistrations(),
@@ -1299,20 +1546,20 @@ const SystemLoginContent = () => {
       return;
     }
 
-    const requiresSchoolSelection = selectedRole === 'director' || schools.length > 0;
+    const requiresSchoolSelection = !building360Intent && (selectedRole === 'director' || schools.length > 0);
     if (requiresSchoolSelection && !selectedSchoolId) {
       setErrorMessage(t('sistema.selecionar_escola'));
       setLoading(false);
       return;
     }
 
-    if (selectedRole === 'director' && !paymentDone) {
+    if (!building360Intent && selectedRole === 'director' && !paymentDone) {
       setErrorMessage('Conclua o pagamento do plano escolar antes de concluir o registo.');
       setLoading(false);
       return;
     }
 
-    if (selectedSchoolId) {
+    if (!building360Intent && selectedSchoolId) {
       ensureSchoolTrial(selectedSchoolId);
     }
 
@@ -1348,6 +1595,49 @@ const SystemLoginContent = () => {
       if (error) {
         if (isAlreadyRegisteredError(String(error.message || ''))) {
           setErrorMessage('Este email ja esta registado. Inicie sessao ou use a recuperacao de senha.');
+        } else if (isRateLimitError(error)) {
+          const localPendingUser = {
+            id: `pending-local-${Date.now()}`,
+            auth_id: null,
+            nome: normalizedName,
+            email: normalizedEmail,
+            perfil: mapRegistrationRoleToLegacyProfile(selectedRole),
+            escola_id: selectedSchoolId || null,
+            tenant_id: selectedBuilding360Site?.id || null,
+            building360_site_id: selectedBuilding360Site?.id || null,
+            building360_site_name: selectedBuilding360Site?.name || null,
+            building360_building_id: selectedBuilding360Building?.id || null,
+            building360_building_name: selectedBuilding360Building?.name || null,
+            senha: normalizedPassword,
+            is_active: false,
+            status: 'pending',
+            password_changed: false,
+            source: 'local-rate-limit',
+          };
+
+          try {
+            const existingPending = JSON.parse(localStorage.getItem('eduguard_pending_registrations') || '[]');
+            const nextPending = [
+              ...existingPending.filter((item: any) => String(item?.email || '').trim().toLowerCase() !== normalizedEmail),
+              localPendingUser,
+            ];
+            localStorage.setItem('eduguard_pending_registrations', JSON.stringify(nextPending));
+          } catch {
+            // Ignore local cache write errors.
+          }
+
+          setRegisterMode(false);
+          setLoginMode('login');
+          setInfoMessage('Limite temporario do servico de email atingido. O pedido foi guardado como pendente para validacao do admin.');
+          setPassword('');
+          setFullName('');
+          setSelectedRole(building360Intent ? 'building_manager' : 'director');
+          setSelectedSchoolId('');
+          setBuilding360SiteId(selectedBuilding360Site?.id || building360Sites[0]?.id || '');
+          setBuilding360BuildingId('');
+          setBillingCycle('monthly');
+          setPaymentDone(false);
+          setPaymentSummary(null);
         } else {
           setErrorMessage(error.message || t('mensagens.erro_generico'));
         }
@@ -1362,6 +1652,11 @@ const SystemLoginContent = () => {
         email: normalizedEmail,
         perfil: mapRegistrationRoleToLegacyProfile(selectedRole),
         escola_id: selectedSchoolId || null,
+        tenant_id: selectedBuilding360Site?.id || null,
+        building360_site_id: selectedBuilding360Site?.id || null,
+        building360_site_name: selectedBuilding360Site?.name || null,
+        building360_building_id: selectedBuilding360Building?.id || null,
+        building360_building_name: selectedBuilding360Building?.name || null,
         senha: normalizedPassword,
         is_active: false,
         status: 'pending',
@@ -1389,11 +1684,14 @@ const SystemLoginContent = () => {
       localStorage.setItem('eduguard_pending_registrations', JSON.stringify(nextPending));
 
       setRegisterMode(false);
+      setLoginMode('login');
       setInfoMessage(t('sistema.registo_pendente'));
       setPassword('');
       setFullName('');
-      setSelectedRole('director');
+      setSelectedRole(building360Intent ? 'building_manager' : 'director');
       setSelectedSchoolId('');
+      setBuilding360SiteId(selectedBuilding360Site?.id || building360Sites[0]?.id || '');
+      setBuilding360BuildingId('');
       setBillingCycle('monthly');
       setPaymentDone(false);
       setPaymentSummary(null);
@@ -1485,13 +1783,22 @@ const SystemLoginContent = () => {
 
         <h2 className="text-2xl font-bold text-white text-center">EduGuard360</h2>
         <div className="mt-2 text-center">
-          <p className="text-sm text-[#9bbbc9]">{t('sistema.title')} · {t('sistema.login')}</p>
+          <p className="text-sm text-[#9bbbc9]">{building360Intent ? 'Building360' : t('sistema.title')} · {t('sistema.login')}</p>
           <p className="mt-2 text-xs text-[#85a7b8]">
-            Entrada unica: apos login, o sistema redireciona automaticamente para o portal certo com base nas permissoes.
+            {building360Intent
+              ? 'Acesso Building360 por credenciais validadas: perfil de gestor ou perfil de morador.'
+              : 'Entrada unica: apos login, o sistema redireciona automaticamente para o portal certo com base nas permissoes.'}
           </p>
           <details className="mt-2 text-left mx-auto max-w-[320px]">
             <summary className="cursor-pointer text-xs text-[#9bbbc9]">Perfil esperado (opcional, para diagnostico)</summary>
             <div className="pt-2">
+              {building360Intent ? (
+                <div className="rounded-xl border border-[#2e5a6e] bg-[#102c3f] px-3 py-2 text-xs text-[#d1e4ef]">
+                  <p><strong>Perfis suportados:</strong> Gestor de condominio e Morador</p>
+                  <p className="mt-1 text-[#9bbbc9]">Apos login, o sistema direciona automaticamente para Dashboard Building360 (gestor) ou Frontend do Morador.</p>
+                </div>
+              ) : (
+                <>
               <label className="sr-only" htmlFor="access-profile">{t('sistema.selecionar_perfil_acesso')}</label>
               <select
                 id="access-profile"
@@ -1509,6 +1816,8 @@ const SystemLoginContent = () => {
                 <p className="mt-1 text-[#9bbbc9]">{activeInsight.focus}</p>
                 <p className="mt-1"><strong>Áreas:</strong> {activeInsight.areas.join(' · ')}</p>
               </div>
+                </>
+              )}
             </div>
           </details>
         </div>
@@ -1544,48 +1853,96 @@ const SystemLoginContent = () => {
                 onChange={(e) => {
                   const nextRole = e.target.value;
                   setSelectedRole(nextRole);
-                  if (nextRole !== "director") {
+                  if (building360Intent || nextRole !== "director") {
                     setPaymentDone(false);
                     setPaymentSummary(null);
                   }
                 }}
                 className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
               >
-                <option value="director">{t('sistema.role_director')}</option>
-                <option value="parent">{t('sistema.role_parent')}</option>
-                <option value="teacher">{t('sistema.role_teacher')}</option>
-                <option value="student">{t('sistema.role_student')}</option>
-                <option value="scanner">Segurança QR Code</option>
+                {building360Intent ? (
+                  <>
+                    <option value="building_manager">Gestor</option>
+                    <option value="resident">Morador</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="director">{t('sistema.role_director')}</option>
+                    <option value="parent">{t('sistema.role_parent')}</option>
+                    <option value="teacher">{t('sistema.role_teacher')}</option>
+                    <option value="student">{t('sistema.role_student')}</option>
+                    <option value="scanner">Segurança QR Code</option>
+                  </>
+                )}
               </select>
-              <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>
-              <select
-                id="registration-school"
-                value={selectedSchoolId}
-                onChange={(e) => setSelectedSchoolId(e.target.value)}
-                className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
-                disabled={loadingSchools}
-              >
-                <option value="">{loadingSchools ? t('botoes.carregando') : t('sistema.selecionar_escola')}</option>
-                {schools.map((school) => (
-                  <option key={school.id} value={school.id}>{school.nome}</option>
-                ))}
-              </select>
-              {!loadingSchools && schools.length === 0 && (
-                <button
-                  type="button"
-                  onClick={loadSchools}
-                  className="inline-flex items-center justify-center rounded-lg border border-[#2e5a6e] px-3 py-2 text-xs font-semibold text-[#d1e4ef] hover:bg-[#12344a]"
-                >
-                  Tentar novamente
-                </button>
+              {building360Intent && (
+                <>
+                  <select
+                    value={building360SiteId}
+                    onChange={(e) => setBuilding360SiteId(e.target.value)}
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                    disabled={loadingBuilding360Options || building360Sites.length === 0}
+                    aria-label="Selecionar condominio ou site"
+                  >
+                    <option value="">{loadingBuilding360Options ? 'A carregar condominios...' : 'Selecionar condominio / site'}</option>
+                    {building360Sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.name} {site.city ? `· ${site.city}` : ''}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={building360BuildingId}
+                    onChange={(e) => setBuilding360BuildingId(e.target.value)}
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                    disabled={loadingBuilding360Options || getBuildingsForSite(building360SiteId, building360Buildings).length === 0}
+                    aria-label="Selecionar edificio"
+                  >
+                    <option value="">{loadingBuilding360Options ? 'A carregar edificios...' : 'Selecionar edificio / bloco'}</option>
+                    {getBuildingsForSite(building360SiteId, building360Buildings).map((building) => (
+                      <option key={building.id} value={building.id}>{building.name}{building.floors ? ` · ${building.floors} piso(s)` : ''}</option>
+                    ))}
+                  </select>
+                </>
               )}
-              {!loadingSchools && schools.length === 0 && selectedRole !== 'director' && (
-                <p className="text-xs text-[#9bbbc9]">
-                  Sem escolas disponiveis no momento. Pode continuar o registo e o administrador ira associar a escola depois.
-                </p>
+              {!building360Intent && (
+                <>
+                  <label className="sr-only" htmlFor="registration-school">{t('sistema.selecionar_escola')}</label>
+                  <select
+                    id="registration-school"
+                    value={selectedSchoolId}
+                    onChange={(e) => setSelectedSchoolId(e.target.value)}
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all bg-[#0f2a3d] text-white"
+                    disabled={loadingSchools}
+                  >
+                    <option value="">{loadingSchools ? t('botoes.carregando') : t('sistema.selecionar_escola')}</option>
+                    {schools.map((school) => (
+                      <option key={school.id} value={school.id}>{school.nome}</option>
+                    ))}
+                  </select>
+                  {!loadingSchools && schools.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={loadSchools}
+                      className="inline-flex items-center justify-center rounded-lg border border-[#2e5a6e] px-3 py-2 text-xs font-semibold text-[#d1e4ef] hover:bg-[#12344a]"
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
+                  {!loadingSchools && schools.length === 0 && selectedRole !== 'director' && (
+                    <p className="text-xs text-[#9bbbc9]">
+                      Sem escolas disponiveis no momento. Pode continuar o registo e o administrador ira associar a escola depois.
+                    </p>
+                  )}
+                </>
               )}
 
-              {selectedRole === "director" && (
+              {building360Intent && (
+                <div className="rounded-xl border border-[#2e5a6e] bg-[#102c3f] p-3 text-xs text-[#d1e4ef]">
+                  O registo de Gestor/Morador entra como pendente e sera validado pelo Admin antes do primeiro acesso.
+                  <p className="mt-1 text-[#9bbbc9]">Cada pedido fica associado ao condominio/site e ao edificio escolhidos no momento do cadastro.</p>
+                </div>
+              )}
+
+              {!building360Intent && selectedRole === "director" && (
                 <div className="rounded-xl border border-[#2e5a6e] bg-[#102c3f] p-3 text-sm text-[#d1e4ef]">
                   <p className="font-semibold mb-2">{t('sistema.pagamento_escola_titulo')}</p>
                   <p className="text-xs text-[#9bbbc9] mb-2">{t('sistema.pagamento_escola_plans')}</p>
@@ -1735,12 +2092,7 @@ const SystemLoginContent = () => {
           <div className="flex items-center justify-between text-sm text-[#9bbbc9] mt-2">
             <button
               type="button"
-              onClick={() => {
-                setRecoveryMode(false);
-                setRegisterMode(false);
-                setErrorMessage(null);
-                setInfoMessage(null);
-              }}
+              onClick={() => setLoginMode(recoveryMode ? 'login' : 'recovery')}
               className="rounded-lg bg-[#1ac77c]/90 px-3 py-1 font-semibold text-[#032b1c] hover:bg-[#34d18d] transition-colors"
             >
               {recoveryMode ? t('sistema.voltar_login') : t('sistema.esqueceu_senha')}
@@ -1748,11 +2100,7 @@ const SystemLoginContent = () => {
             {!recoveryMode && (
               <button
                 type="button"
-                onClick={() => {
-                  setRegisterMode(!registerMode);
-                  setErrorMessage(null);
-                  setInfoMessage(null);
-                }}
+                onClick={() => setLoginMode(registerMode ? 'login' : 'signup')}
                 className="rounded-lg bg-[#1ac77c]/90 px-3 py-1 font-semibold text-[#032b1c] hover:bg-[#34d18d] transition-colors"
               >
                 {registerMode ? t('sistema.voltar_login') : t('sistema.registrar')}
