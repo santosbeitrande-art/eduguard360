@@ -9,17 +9,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Star, Users, Clock, BookOpen, Lock } from 'lucide-react';
+import { normalizeCourseList, safeJsonFetch } from '@/lib/portalFallbacks';
 
 // ============================================
 // 1. DESCOBERTA DE CURSOS (CourseDiscovery)
 // ============================================
 
 export const CourseDiscovery = () => {
-  const [courses, setCourses] = useState([]);
+  const [courses, setCourses] = useState(() => normalizeCourseList());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [priceRange, setPriceRange] = useState([0, 1000]);
-  const [filteredCourses, setFilteredCourses] = useState([]);
+  const [filteredCourses, setFilteredCourses] = useState(() => normalizeCourseList());
 
   const categories = [
     { id: 'all', name: 'Todos' },
@@ -57,20 +58,12 @@ export const CourseDiscovery = () => {
 
   const fetchCourses = async () => {
     try {
-      const response = await fetch('/api/courses');
-      const data = await response.json();
-      const rawCourses = Array.isArray(data?.courses) ? data.courses : Array.isArray(data) ? data : [];
-      setCourses(
-        rawCourses.map((course) => ({
-          ...course,
-          price_mzn: course.price_mzn ?? course.price ?? 0,
-          total_lessons: course.total_lessons ?? (Array.isArray(course.content) ? course.content.length : 0),
-          rating: course.rating ?? 0,
-          status: course.status ?? 'published',
-        }))
-      );
+      const data = await safeJsonFetch('/api/courses', { courses: normalizeCourseList() });
+      const rawCourses = normalizeCourseList(data);
+      setCourses(rawCourses);
     } catch (error) {
-      console.error('Erro ao carregar cursos:', error);
+      console.warn('Usando cursos de demonstração por ausência da API:', error);
+      setCourses(normalizeCourseList());
     }
   };
 
@@ -260,21 +253,21 @@ export const CourseDetail = ({ courseId }) => {
 
   const fetchCourse = async () => {
     try {
-      const response = await fetch(`/api/courses/${courseId}`);
-      const data = await response.json();
-      setCourse(data);
+      const data = await safeJsonFetch(`/api/courses/${courseId}`, normalizeCourseList()[0]);
+      setCourse(data && typeof data === 'object' ? { ...normalizeCourseList()[0], ...data } : normalizeCourseList()[0]);
     } catch (error) {
-      console.error('Erro:', error);
+      console.warn('Usando curso de demonstração por ausência da API:', error);
+      setCourse(normalizeCourseList()[0]);
     }
   };
 
   const checkEnrollment = async () => {
     try {
-      const response = await fetch(`/api/enrollments/check/${courseId}`);
-      const { enrolled } = await response.json();
-      setEnrolled(enrolled);
+      const result = await safeJsonFetch(`/api/enrollments/check/${courseId}`, { enrolled: false });
+      setEnrolled(Boolean((result as any)?.enrolled));
     } catch (error) {
-      console.error('Erro:', error);
+      console.warn('Verificação de matrícula indisponível:', error);
+      setEnrolled(false);
     }
   };
 

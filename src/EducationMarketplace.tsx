@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Users, TrendingUp, DollarSign, BookOpen, CheckCircle } from 'lucide-react';
+import { buildCoursePlaceholderImage } from '@/lib/portalFallbacks';
 
 interface Course {
   id: string;
@@ -43,7 +44,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 299,
       rating: 4.8,
       students: 1250,
-      image: 'https://via.placeholder.com/300x200?text=React',
+      image: buildCoursePlaceholderImage('React', '#2563eb'),
       category: 'tecnologia',
       description: 'Aprenda a criar aplicações web modernas com React e JavaScript',
       duration: '8 semanas',
@@ -56,7 +57,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 199,
       rating: 4.6,
       students: 890,
-      image: 'https://via.placeholder.com/300x200?text=Marketing',
+      image: buildCoursePlaceholderImage('Marketing', '#7c3aed'),
       category: 'negocio',
       description: 'Domine as estratégias de marketing digital e redes sociais',
       duration: '6 semanas',
@@ -69,7 +70,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 149,
       rating: 4.7,
       students: 650,
-      image: 'https://via.placeholder.com/300x200?text=Contabilidade',
+      image: buildCoursePlaceholderImage('Contabilidade', '#0f766e'),
       category: 'financeiro',
       description: 'Fundamentos de contabilidade para pequenos negócios',
       duration: '4 semanas',
@@ -82,7 +83,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 179,
       rating: 4.5,
       students: 1050,
-      image: 'https://via.placeholder.com/300x200?text=Design',
+      image: buildCoursePlaceholderImage('Design', '#f59e0b'),
       category: 'criativo',
       description: 'Crie designs profissionais sem experiência prévia',
       duration: '3 semanas',
@@ -95,7 +96,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 129,
       rating: 4.9,
       students: 2100,
-      image: 'https://via.placeholder.com/300x200?text=Agricultura',
+      image: buildCoursePlaceholderImage('Agricultura', '#15803d'),
       category: 'agricultura',
       description: 'Use tecnologia para melhorar produtividade agrícola',
       duration: '5 semanas',
@@ -108,7 +109,7 @@ export const EducationMarketplace: React.FC = () => {
       price: 229,
       rating: 4.7,
       students: 1450,
-      image: 'https://via.placeholder.com/300x200?text=Idiomas',
+      image: buildCoursePlaceholderImage('Idiomas', '#0284c7'),
       category: 'idiomas',
       description: 'Aprenda inglês profissional para carreiras internacionais',
       duration: '10 semanas',
@@ -126,7 +127,7 @@ export const EducationMarketplace: React.FC = () => {
       category: 'consultoria',
       description: 'Análise e estratégia para seu negócio crescer',
       deliveryTime: '3-5 dias',
-      image: 'https://via.placeholder.com/300x200?text=Consultoria',
+      image: buildCoursePlaceholderImage('Consultoria', '#f97316'),
     },
     {
       id: 's2',
@@ -137,7 +138,7 @@ export const EducationMarketplace: React.FC = () => {
       category: 'desenvolvimento',
       description: 'Website ou aplicação personalizada para seu negócio',
       deliveryTime: '2-4 semanas',
-      image: 'https://via.placeholder.com/300x200?text=Web',
+      image: buildCoursePlaceholderImage('Web', '#1d4ed8'),
     },
     {
       id: 's3',
@@ -148,7 +149,7 @@ export const EducationMarketplace: React.FC = () => {
       category: 'marketing',
       description: 'Aumente sua presença online com conteúdo profissional',
       deliveryTime: '1-2 semanas',
-      image: 'https://via.placeholder.com/300x200?text=Social',
+      image: buildCoursePlaceholderImage('Social', '#ef4444'),
     },
     {
       id: 's4',
@@ -159,7 +160,7 @@ export const EducationMarketplace: React.FC = () => {
       category: 'tecnologia',
       description: 'Suporte e manutenção de seus sistemas informativos',
       deliveryTime: 'Resposta em 24h',
-      image: 'https://via.placeholder.com/300x200?text=TI',
+      image: buildCoursePlaceholderImage('TI', '#0ea5e9'),
     },
   ];
 
