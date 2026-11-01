@@ -25,6 +25,9 @@ import { GenerateChargeDto } from './dto/generate-charge.dto';
 import { IssueInvoiceDto } from './dto/issue-invoice.dto';
 import { RegisterPaymentDto } from './dto/register-payment.dto';
 import { FinanceFiltersDto } from './dto/finance-filters.dto';
+import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateOpeningBalanceDto } from './dto/create-opening-balance.dto';
+import { ReconcilePaymentDto } from './dto/reconcile-payment.dto';
 import { EnterpriseRbacGuard } from '../enterprise/guards/enterprise-rbac.guard';
 import { RequireEnterprisePermission } from '../enterprise/decorators/enterprise-permission.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -185,6 +188,34 @@ export class Building360Controller {
   @RequireEnterprisePermission('payments', 'read')
   listReceipts(@Req() req: any, @Query('tenantId') tenantId?: string) {
     return this.building360Service.listReceipts(scopeFromRequest(req), { tenantId });
+  }
+
+  @Get('finance/ledger')
+  @RequireEnterprisePermission('payments', 'read')
+  listLedgerEntries(
+    @Req() req: any,
+    @Query('tenantId') tenantId?: string,
+    @Query('entryType') entryType?: string,
+  ) {
+    return this.building360Service.listLedgerEntries(scopeFromRequest(req), { tenantId, entryType });
+  }
+
+  @Post('finance/expenses')
+  @RequireEnterprisePermission('payments', 'create')
+  createExpense(@Req() req: any, @Body() body: CreateExpenseDto) {
+    return this.building360Service.createExpense(body, scopeFromRequest(req));
+  }
+
+  @Post('finance/opening-balances')
+  @RequireEnterprisePermission('payments', 'create')
+  createOpeningBalance(@Req() req: any, @Body() body: CreateOpeningBalanceDto) {
+    return this.building360Service.createOpeningBalance(body, scopeFromRequest(req));
+  }
+
+  @Post('finance/bank-reconciliations')
+  @RequireEnterprisePermission('payments', 'create')
+  reconcilePayment(@Req() req: any, @Body() body: ReconcilePaymentDto) {
+    return this.building360Service.reconcilePayment(body, scopeFromRequest(req));
   }
 
   @Get('core/organizations')

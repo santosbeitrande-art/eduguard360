@@ -14,6 +14,16 @@ describe('Enterprise RBAC matrix for Building360 roles', () => {
     );
   });
 
+  it('allows building administrators to create their tenant setup and operate its finances', () => {
+    for (const role of ['organization_admin', 'building_manager'] as const) {
+      const permissions = getRolePermissions(role);
+      expect(permissions.schools).toContain('create');
+      expect(permissions.students).toContain('create');
+      expect(permissions.users).toContain('create');
+      expect(permissions.payments).toContain('create');
+    }
+  });
+
   it('denies payment create capability for security officer', () => {
     const permissions = getRolePermissions('security_officer');
     expect(permissions.payments).not.toContain('create');

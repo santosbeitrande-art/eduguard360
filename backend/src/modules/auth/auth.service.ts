@@ -147,7 +147,9 @@ export class AuthService {
       { sub: user.id, type: 'refresh' },
       {
         secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret-key',
-        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN
+          ? process.env.JWT_REFRESH_EXPIRES_IN as import('@nestjs/jwt').JwtSignOptions['expiresIn']
+          : '30d',
       },
     );
 

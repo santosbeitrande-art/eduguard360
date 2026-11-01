@@ -110,13 +110,30 @@ describe('Building360 Finance flow', () => {
       scope,
     );
 
-    const settled = await service.registerPayment(
+    const partial = await service.registerPayment(
       {
         invoiceId: invoice.id,
-        amount: 125000,
+        amount: 50000,
         method: 'bank_transfer',
         reference: 'TRX-8877',
         paidAt: '2026-08-11',
+      },
+      scope,
+    );
+    expect(partial.invoiceStatus).toBe('partially_paid');
+
+    await expect(service.registerPayment(
+      { invoiceId: invoice.id, amount: 80000, method: 'bank_transfer' },
+      scope,
+    )).rejects.toThrow('Payment exceeds invoice balance');
+
+    const settled = await service.registerPayment(
+      {
+        invoiceId: invoice.id,
+        amount: 75000,
+        method: 'bank_transfer',
+        reference: 'TRX-8878',
+        paidAt: '2026-08-12',
       },
       scope,
     );
@@ -129,6 +146,125 @@ describe('Building360 Finance flow', () => {
     expect(settled.invoiceStatus).toBe('paid');
 
     expect(auditRepo.save).toHaveBeenCalled();
-    expect(ledgerRepo.save).toHaveBeenCalledTimes(2);
+    expect(ledgerRepo.save).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not attach a contract to a unit from another tenant', async () => {
+    unitRepo.findOne.mockResolvedValueOnce(null);
+    await expect(service.createContract(
+      {
+        title: 'Contrato fora do tenant',
+        amount: 1000,
+        startsAt: '2026-01-01',
+        unitId: 'unit-from-other-tenant',
+      },
+      { role: 'finance_manager', tenantId: 'tenant-fin-2' } as any,
+    )).rejects.toThrow('Unit not found in this tenant');
+    expect(contractRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('records expenses and opening cash within the authenticated tenant', async () => {
+    const scope = { role: 'finance_manager', tenantId: 'tenant-ledger-a', userId: 'finance-a' } as any;
+    const expense = await service.createExpense({
+      description: 'Reparação da bomba',
+      supplier: 'Fornecedor local',
+      amount: 1200,
+      occurredAt: '2026-09-15',
+      reference: 'REC-EXP-10',
+    }, scope);
+    const opening = await service.createOpeningBalance({
+      kind: 'system_cash',
+      amount: 8000,
+      asOfDate: '2026-09-01',
+    }, scope);
+
+    expect(expense).toMatchObject({
+      tenantId: 'tenant-ledger-a',
+      entryType: 'expense',
+      direction: 'debit',
+      amount: 1200,
+      referenceId: 'REC-EXP-10',
+    });
+    expect(opening.bankBalanceConfirmed).toBe(false);
+    expect(opening.entry).toMatchObject({
+      tenantId: 'tenant-ledger-a',
+      entryType: 'system_opening_balance',
+      direction: 'credit',
+      amount: 8000,
+    });
+    await service.listLedgerEntries({ role: 'finance_manager', tenantId: 'tenant-ledger-b' } as any);
+    expect(ledgerRepo.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: { tenantId: 'tenant-ledger-b' },
+    }));
+  });
+
+  it('creates historical debt as a dated invoice associated to a unit and contract', async () => {
+    const scope = { role: 'finance_manager', tenantId: 'tenant-history-a', userId: 'finance-a' } as any;
+    const unit = await unitRepo.save({
+      tenantId: scope.tenantId,
+      number: 'A-12',
+      isActive: true,
+    });
+    const contract = await service.createContract({
+      title: 'Quota mensal A-12',
+      amount: 3000,
+      startsAt: '2025-01-01',
+      unitId: unit.id,
+    }, scope);
+
+    const invoice = await service.createOpeningBalance({
+      kind: 'historical_debt',
+      amount: 6000,
+      asOfDate: '2025-12-01',
+      unitId: unit.id,
+      note: 'Dívida anterior à adesão',
+    }, scope);
+
+    expect(invoice).toMatchObject({
+      tenantId: scope.tenantId,
+      contractId: contract.id,
+      issuedAt: '2025-12-01',
+      amount: 6000,
+      status: 'issued',
+    });
+    expect((await service.listInvoices(scope)).some((item) => item.id === invoice.id)).toBe(true);
+  });
+
+  it('reconciles an exact tenant payment once and rejects amount mismatches', async () => {
+    const scope = { role: 'finance_manager', tenantId: 'tenant-bank-a', userId: 'finance-a' } as any;
+    const payment = await paymentRepo.save({
+      tenantId: scope.tenantId,
+      invoiceId: 'invoice-bank-a',
+      amount: 2500,
+      currency: 'MZN',
+      status: 'confirmed',
+      isActive: true,
+    });
+
+    await expect(service.reconcilePayment({
+      paymentId: payment.id,
+      statementDate: '2026-09-20',
+      statementReference: 'BANK-REF-55',
+      amount: 2499,
+    }, scope)).rejects.toThrow('Statement amount must match');
+
+    const reconciled = await service.reconcilePayment({
+      paymentId: payment.id,
+      statementDate: '2026-09-20',
+      statementReference: 'BANK-REF-55',
+      amount: 2500,
+    }, scope);
+    expect(reconciled).toMatchObject({ reconciled: true });
+    expect(reconciled.entry).toMatchObject({
+      tenantId: scope.tenantId,
+      entryType: 'bank_reconciled',
+      referenceId: payment.id,
+    });
+    await expect(service.reconcilePayment({
+      paymentId: payment.id,
+      statementDate: '2026-09-20',
+      statementReference: 'BANK-REF-55',
+      amount: 2500,
+    }, scope)).rejects.toThrow('already been reconciled');
   });
 });

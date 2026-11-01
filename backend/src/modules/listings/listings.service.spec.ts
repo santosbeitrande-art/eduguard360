@@ -27,7 +27,12 @@ describe('ListingsService', () => {
       mockImageRepository as any,
     );
 
-    const result = await service.getListings({ latitude: 38.72, longitude: -9.14, radius: 5 }, 1, 10);
+    const result = await service.getListings(
+      { latitude: 38.72, longitude: -9.14, radius: 5 },
+      1,
+      10,
+      { role: 'tenant_admin', tenantId: 'tenant-1' },
+    );
 
     expect(mockListingRepository.createQueryBuilder).toHaveBeenCalledWith('listing');
     expect(mockQueryBuilder.andWhere).toHaveBeenCalled();

@@ -50,8 +50,9 @@ export class ListingsService {
     const scope = this.normalizeScope(scopeInput);
     this.enforceTenantScope(scope);
 
+    const { images, ...listingFields } = createListingDto;
     const listing = this.listingsRepository.create({
-      ...createListingDto,
+      ...listingFields,
       userId,
       schoolId: scope.schoolId,
       tenantId: scope.tenantId,
@@ -62,16 +63,16 @@ export class ListingsService {
     const saved = await this.listingsRepository.save(listing);
 
     // Salvar imagens se existirem
-    if (createListingDto.images && createListingDto.images.length > 0) {
-      for (let i = 0; i < createListingDto.images.length; i++) {
+    if (images && images.length > 0) {
+      for (let i = 0; i < images.length; i++) {
         const image = this.imagesRepository.create({
           listingId: saved.id,
-          url: createListingDto.images[i],
+          url: images[i],
           orderIndex: i,
         });
         await this.imagesRepository.save(image);
       }
-      saved.imagesCount = createListingDto.images.length;
+      saved.imagesCount = images.length;
       await this.listingsRepository.save(saved);
     }
 

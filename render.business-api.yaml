@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: eduguard360-business-api
+    name: eduguard360-building360-api
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
@@ -15,17 +15,15 @@ services:
         value: 3000
       - key: JWT_SECRET
         generateValue: true
-      - key: DATABASE_HOST
+      - key: DATABASE_URL
         sync: false
-      - key: DATABASE_PORT
-        value: 5432
-      - key: DATABASE_USER
+      - key: SUPABASE_URL
         sync: false
-      - key: DATABASE_PASSWORD
+      - key: SUPABASE_ANON_KEY
         sync: false
-      - key: DATABASE_NAME
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: BUILDING360_PUBLIC_TENANT_ID
-        value: tenant-demo-1
+      - key: BUILDING360_INVITE_REDIRECT_URL
+        value: https://eduguard360.co.mz/auth/recovery?returnTo=%2Fbuilding360%2Fdashboard&mode=update-password
       - key: BUILDING360_AUTO_SEED
-        value: 1
+        value: 0

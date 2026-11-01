@@ -30,7 +30,7 @@ export class EnterpriseRbacGuard implements CanActivate {
       throw new ForbiddenException('Role is required for enterprise endpoints.');
     }
 
-    if (principal.role !== 'super_admin' && !principal.schoolId && !principal.tenantId) {
+    if (!['super_admin', 'platform_admin'].includes(principal.role) && !principal.schoolId && !principal.tenantId) {
       throw new ForbiddenException('Tenant scope is required for this role.');
     }
 

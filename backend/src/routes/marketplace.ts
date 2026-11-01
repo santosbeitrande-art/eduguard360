@@ -213,7 +213,7 @@ router.post('/auth/register', async (req: Request, res: Response) => {
  */
 router.get('/users/:userId', (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
     const user = users.get(userId);
 
     if (!user) {
@@ -302,7 +302,7 @@ router.get('/courses', (req: Request, res: Response) => {
  */
 router.put('/courses/:courseId', async (req: Request, res: Response) => {
   try {
-    const { courseId } = req.params;
+    const courseId = String(req.params.courseId);
     const { title, price, description, status, instructorId, content, disciplineIds, turmaIds } = req.body;
 
     const course = courses.get(courseId);
@@ -338,7 +338,7 @@ router.put('/courses/:courseId', async (req: Request, res: Response) => {
  */
 router.delete('/courses/:courseId', async (req: Request, res: Response) => {
   try {
-    const { courseId } = req.params;
+    const courseId = String(req.params.courseId);
 
     if (!courses.has(courseId)) {
       return res.status(404).json({ error: 'Curso não encontrado' });
@@ -403,7 +403,7 @@ router.post('/disciplines', (req: Request, res: Response) => {
 
 router.put('/disciplines/:disciplineId', (req: Request, res: Response) => {
   try {
-    const { disciplineId } = req.params;
+    const disciplineId = String(req.params.disciplineId);
     const { name, code, description, courseIds, status } = req.body;
 
     const discipline = disciplines.get(disciplineId);
@@ -426,7 +426,7 @@ router.put('/disciplines/:disciplineId', (req: Request, res: Response) => {
 
 router.delete('/disciplines/:disciplineId', (req: Request, res: Response) => {
   try {
-    const { disciplineId } = req.params;
+    const disciplineId = String(req.params.disciplineId);
     if (!disciplines.has(disciplineId)) {
       return res.status(404).json({ error: 'Disciplina não encontrada' });
     }
@@ -486,7 +486,7 @@ router.post('/turmas', (req: Request, res: Response) => {
 
 router.put('/turmas/:turmaId', (req: Request, res: Response) => {
   try {
-    const { turmaId } = req.params;
+    const turmaId = String(req.params.turmaId);
     const { name, grade, shift, capacity, courseIds, status } = req.body;
 
     const turma = turmas.get(turmaId);
@@ -510,7 +510,7 @@ router.put('/turmas/:turmaId', (req: Request, res: Response) => {
 
 router.delete('/turmas/:turmaId', (req: Request, res: Response) => {
   try {
-    const { turmaId } = req.params;
+    const turmaId = String(req.params.turmaId);
     if (!turmas.has(turmaId)) {
       return res.status(404).json({ error: 'Turma não encontrada' });
     }
@@ -532,7 +532,7 @@ router.delete('/turmas/:turmaId', (req: Request, res: Response) => {
  */
 router.post('/courses/:courseId/enroll', async (req: Request, res: Response) => {
   try {
-    const { courseId } = req.params;
+    const courseId = String(req.params.courseId);
     const { studentId } = req.body;
 
     const course = courses.get(courseId);
@@ -708,7 +708,7 @@ router.post('/payments/withdraw', async (req: Request, res: Response) => {
  */
 router.get('/transactions/:userId', (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
     const userTransactions = Array.from(transactions.values()).filter(
       (t) => t.userId === userId
     );
@@ -732,7 +732,7 @@ router.get('/transactions/:userId', (req: Request, res: Response) => {
  */
 router.get('/analytics/educator/:userId', (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
 
     const educatorCourses = Array.from(courses.values()).filter(
       (c) => c.instructorId === userId

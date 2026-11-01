@@ -28,14 +28,21 @@ import { BuildingInvoice } from '../modules/building360/entities/invoice.entity'
 import { BuildingPayment } from '../modules/building360/entities/payment.entity';
 import { BuildingReceipt } from '../modules/building360/entities/receipt.entity';
 import { BuildingLedgerEntry } from '../modules/building360/entities/ledger-entry.entity';
+import { Building360DemoRequest } from '../modules/building360/entities/demo-request.entity';
+
+const databaseUrl = String(process.env.DATABASE_URL || '').trim();
 
 export default new DataSource({
   type: 'postgres',
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT || '5432', 10),
-  username: process.env.DATABASE_USER || 'ecotrade_app',
-  password: process.env.DATABASE_PASSWORD || 'secure_password',
-  database: process.env.DATABASE_NAME || 'ecotrade360',
+  ...(databaseUrl
+    ? { url: databaseUrl }
+    : {
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: parseInt(process.env.DATABASE_PORT || '5432', 10),
+        username: process.env.DATABASE_USER || 'ecotrade_app',
+        password: process.env.DATABASE_PASSWORD || 'secure_password',
+        database: process.env.DATABASE_NAME || 'ecotrade360',
+      }),
   entities: [
     User,
     Listing,
@@ -64,6 +71,7 @@ export default new DataSource({
     BuildingPayment,
     BuildingReceipt,
     BuildingLedgerEntry,
+    Building360DemoRequest,
   ],
   // Resolve from current build location to avoid loading src and dist migrations together.
   migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],

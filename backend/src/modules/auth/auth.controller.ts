@@ -20,13 +20,13 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getCurrentUser(@Request() req) {
+  async getCurrentUser(@Request() req: { user: { sub: string } }) {
     return this.authService.getCurrentUser(req.user.sub);
   }
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
-  async logout(@Request() req) {
+  async logout(@Request() req: { user: { sub: string } }) {
     // Em produção, adicionar token à blacklist
     return { success: true, message: 'Logout realizado' };
   }

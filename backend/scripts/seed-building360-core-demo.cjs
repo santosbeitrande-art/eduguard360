@@ -1,13 +1,16 @@
 const { Client } = require('pg');
 
 async function run() {
-  const client = new Client({
-    host: process.env.DATABASE_HOST || 'localhost',
-    port: Number(process.env.DATABASE_PORT || 5432),
-    user: process.env.DATABASE_USER || 'ecotrade_app',
-    password: process.env.DATABASE_PASSWORD || 'secure_password',
-    database: process.env.DATABASE_NAME || 'ecotrade360',
-  });
+  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  const client = new Client(databaseUrl
+    ? { connectionString: databaseUrl }
+    : {
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: Number(process.env.DATABASE_PORT || 5432),
+        user: process.env.DATABASE_USER || 'ecotrade_app',
+        password: process.env.DATABASE_PASSWORD || 'secure_password',
+        database: process.env.DATABASE_NAME || 'ecotrade360',
+      });
 
   const tenantId = process.env.BUILDING360_PUBLIC_TENANT_ID || 'tenant-demo-1';
   const schoolId = process.env.BUILDING360_PUBLIC_SCHOOL_ID || 'school-demo-1';

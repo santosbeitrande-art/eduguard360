@@ -1,8 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
 import { RunBillingDto } from './dto/run-billing.dto';
+import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateOpeningBalanceDto } from './dto/create-opening-balance.dto';
+import { ReconcilePaymentDto } from './dto/reconcile-payment.dto';
 import { AuditLog } from '../enterprise/entities/audit-log.entity';
 import { BuildingOrganization } from './entities/organization.entity';
 import { BuildingPortfolio } from './entities/portfolio.entity';
@@ -66,6 +69,9 @@ export class Building360Service {
     private readonly ledgerRepository: Repository<BuildingLedgerEntry>,
     @InjectRepository(AuditLog)
     private readonly auditRepository: Repository<AuditLog>,
+    @Optional()
+    @InjectDataSource()
+    private readonly dataSource?: DataSource,
   ) {}
 
   private isGlobalRole(role?: string | null): boolean {
@@ -112,8 +118,10 @@ export class Building360Service {
     resourceId: string | null,
     scopeInput: Partial<Building360Scope>,
     metadata: Record<string, any> = {},
+    manager?: EntityManager,
   ) {
-    const audit = this.auditRepository.create({
+    const auditRepository = manager?.getRepository(AuditLog) || this.auditRepository;
+    const audit = auditRepository.create({
       action,
       resourceType,
       resourceId,
@@ -128,7 +136,7 @@ export class Building360Service {
       userAgent: null,
     });
 
-    await this.auditRepository.save(audit);
+    await auditRepository.save(audit);
   }
 
   private normalizeToken(value: unknown): string {
@@ -376,6 +384,12 @@ export class Building360Service {
 
   async createContract(payload: any, scopeInput: Partial<Building360Scope>) {
     const scope = this.resolveScope(scopeInput, payload?.tenantId);
+    if (payload?.unitId) {
+      const unit = await this.unitRepository.findOne({
+        where: { id: payload.unitId, tenantId: scope.tenantId, isActive: true },
+      });
+      if (!unit) throw new NotFoundException('Unit not found in this tenant');
+    }
     const entity = this.contractRepository.create({
       tenantId: scope.tenantId,
       schoolId: payload?.schoolId || scope.schoolId || null,
@@ -493,6 +507,14 @@ export class Building360Service {
 
     const amount = Number(payload?.amount || 0);
     if (amount <= 0) throw new BadRequestException('Payment amount must be greater than zero');
+    const confirmedPayments = await this.paymentRepository.find({
+      where: { tenantId: scope.tenantId, invoiceId: invoice.id, isActive: true, status: 'confirmed' },
+    });
+    const paidAmount = confirmedPayments.reduce((total, item) => total + Number(item.amount || 0), 0);
+    const balance = Number(invoice.amount || 0) - paidAmount;
+    if (amount > balance + 0.000001) {
+      throw new BadRequestException(`Payment exceeds invoice balance (${Math.max(0, balance).toFixed(2)} ${invoice.currency || 'MZN'})`);
+    }
 
     const payment = await this.paymentRepository.save(
       this.paymentRepository.create({
@@ -523,7 +545,7 @@ export class Building360Service {
       }),
     );
 
-    invoice.status = amount >= Number(invoice.amount || 0) ? 'paid' : 'partially_paid';
+    invoice.status = paidAmount + amount >= Number(invoice.amount || 0) ? 'paid' : 'partially_paid';
     await this.invoiceRepository.save(invoice);
 
     await this.ledgerRepository.save(
@@ -560,13 +582,213 @@ export class Building360Service {
     const where: any = { tenantId: scope.tenantId, isActive: true };
     if (filters.status) where.status = filters.status;
     const invoices = await this.invoiceRepository.find({ where, order: { createdAt: 'DESC' } });
-    if (!filters.period) return invoices;
-    return invoices.filter((item) => String(item.issuedAt || '').startsWith(`${filters.period}-`) || String(item.invoiceNumber || '').includes(filters.period.replace('-', '')));
+    const period = filters.period;
+    if (!period) return invoices;
+    return invoices.filter((item) => String(item.issuedAt || '').startsWith(`${period}-`) || String(item.invoiceNumber || '').includes(period.replace('-', '')));
   }
 
   async listReceipts(scopeInput: Partial<Building360Scope>, filters: { tenantId?: string } = {}) {
     const scope = this.resolveScope(scopeInput, filters.tenantId);
     return this.receiptRepository.find({ where: { tenantId: scope.tenantId, isActive: true }, order: { createdAt: 'DESC' } });
+  }
+
+  async listLedgerEntries(
+    scopeInput: Partial<Building360Scope>,
+    filters: { tenantId?: string; entryType?: string } = {},
+  ) {
+    const scope = this.resolveScope(scopeInput, filters.tenantId);
+    const where: any = { tenantId: scope.tenantId };
+    if (filters.entryType) where.entryType = filters.entryType;
+    return this.ledgerRepository.find({ where, order: { occurredAt: 'DESC', createdAt: 'DESC' } });
+  }
+
+  async createExpense(payload: CreateExpenseDto, scopeInput: Partial<Building360Scope>) {
+    const scope = this.resolveScope(scopeInput);
+    const description = payload.description.trim();
+    const supplier = payload.supplier?.trim();
+    const reference = payload.reference?.trim();
+    const persistExpense = async (manager?: EntityManager) => {
+      const repository = manager?.getRepository(BuildingLedgerEntry) || this.ledgerRepository;
+      const entry = await repository.save(repository.create({
+        tenantId: scope.tenantId,
+        schoolId: scope.schoolId || null,
+        direction: 'debit',
+        entryType: 'expense',
+        amount: payload.amount,
+        currency: payload.currency || 'MZN',
+        referenceType: 'expense',
+        referenceId: reference || null,
+        note: [description, supplier ? `Fornecedor: ${supplier}` : null].filter(Boolean).join(' | '),
+        occurredAt: payload.occurredAt,
+      }));
+      await this.registerAudit('building360.expense.created', 'ledger_entry', entry.id, scope, {
+        amount: payload.amount,
+        currency: entry.currency,
+        occurredAt: payload.occurredAt,
+        reference,
+      }, manager);
+      return entry;
+    };
+    return this.dataSource ? this.dataSource.transaction((manager) => persistExpense(manager)) : persistExpense();
+  }
+
+  async createOpeningBalance(payload: CreateOpeningBalanceDto, scopeInput: Partial<Building360Scope>) {
+    const scope = this.resolveScope(scopeInput);
+    if (payload.kind === 'system_cash') {
+      const persistOpeningBalance = async (manager?: EntityManager) => {
+        const repository = manager?.getRepository(BuildingLedgerEntry) || this.ledgerRepository;
+        const entry = await repository.save(repository.create({
+          tenantId: scope.tenantId,
+          schoolId: scope.schoolId || null,
+          direction: 'credit',
+          entryType: 'system_opening_balance',
+          amount: payload.amount,
+          currency: 'MZN',
+          referenceType: 'opening_balance',
+          referenceId: null,
+          note: payload.note?.trim() || 'Saldo inicial registado no sistema; não confirmado por extrato bancário.',
+          occurredAt: payload.asOfDate,
+        }));
+        await this.registerAudit('building360.opening_balance.created', 'ledger_entry', entry.id, scope, {
+          kind: payload.kind,
+          amount: payload.amount,
+          asOfDate: payload.asOfDate,
+        }, manager);
+        return { entry, bankBalanceConfirmed: false };
+      };
+      return this.dataSource
+        ? this.dataSource.transaction((manager) => persistOpeningBalance(manager))
+        : persistOpeningBalance();
+    }
+
+    if (!payload.unitId) throw new BadRequestException('unitId is required for historical debt.');
+    const unit = await this.unitRepository.findOne({
+      where: { id: payload.unitId, tenantId: scope.tenantId, isActive: true },
+    });
+    if (!unit) throw new NotFoundException('Unit not found in this tenant.');
+    const contract = await this.contractRepository.findOne({
+      where: { tenantId: scope.tenantId, unitId: payload.unitId, status: 'active', isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+    if (!contract) throw new BadRequestException('An active contract for this unit is required to register historical debt.');
+    if (contract.startsAt > payload.asOfDate || (contract.endsAt && contract.endsAt < payload.asOfDate)) {
+      throw new BadRequestException('The selected contract was not active on the historical debt date.');
+    }
+
+    const persistHistoricalDebt = async (manager?: EntityManager) => {
+      const chargeRepository = manager?.getRepository(BuildingCharge) || this.chargeRepository;
+      const invoiceRepository = manager?.getRepository(BuildingInvoice) || this.invoiceRepository;
+      const ledgerRepository = manager?.getRepository(BuildingLedgerEntry) || this.ledgerRepository;
+      const charge = await chargeRepository.save(chargeRepository.create({
+        tenantId: scope.tenantId,
+        schoolId: scope.schoolId || null,
+        contractId: contract.id,
+        unitId: unit.id,
+        period: payload.asOfDate.slice(0, 7),
+        amount: payload.amount,
+        dueDate: payload.asOfDate,
+        status: 'invoiced',
+        isActive: true,
+      }));
+      const invoice = await invoiceRepository.save(invoiceRepository.create({
+        tenantId: scope.tenantId,
+        schoolId: scope.schoolId || null,
+        contractId: contract.id,
+        chargeId: charge.id,
+        invoiceNumber: this.buildDocumentNumber('INV'),
+        amount: payload.amount,
+        currency: contract.currency || 'MZN',
+        issuedAt: payload.asOfDate,
+        dueDate: payload.asOfDate,
+        status: 'issued',
+        isActive: true,
+      }));
+      await ledgerRepository.save(ledgerRepository.create({
+        tenantId: scope.tenantId,
+        schoolId: scope.schoolId || null,
+        direction: 'debit',
+        entryType: 'historical_debt',
+        amount: payload.amount,
+        currency: invoice.currency,
+        referenceType: 'invoice',
+        referenceId: invoice.id,
+        note: payload.note?.trim() || `Dívida histórica da unidade ${unit.number}.`,
+        occurredAt: payload.asOfDate,
+      }));
+      await this.registerAudit('building360.historical_debt.created', 'building_invoice', invoice.id, scope, {
+        unitId: unit.id,
+        amount: payload.amount,
+        asOfDate: payload.asOfDate,
+      }, manager);
+      return invoice;
+    };
+
+    return this.dataSource
+      ? this.dataSource.transaction((manager) => persistHistoricalDebt(manager))
+      : persistHistoricalDebt();
+  }
+
+  async reconcilePayment(payload: ReconcilePaymentDto, scopeInput: Partial<Building360Scope>) {
+    const scope = this.resolveScope(scopeInput);
+    const payment = await this.paymentRepository.findOne({
+      where: { id: payload.paymentId, tenantId: scope.tenantId, isActive: true, status: 'confirmed' },
+    });
+    if (!payment) throw new NotFoundException('Confirmed payment not found in this tenant.');
+    if (Math.round(Number(payment.amount) * 100) !== Math.round(payload.amount * 100)) {
+      throw new BadRequestException('Statement amount must match the recorded payment amount.');
+    }
+    const existing = await this.ledgerRepository.findOne({
+      where: {
+        tenantId: scope.tenantId,
+        entryType: 'bank_reconciled',
+        referenceType: 'payment',
+        referenceId: payment.id,
+      },
+    });
+    if (existing) throw new BadRequestException('Payment has already been reconciled.');
+
+    const persistReconciliation = async (manager?: EntityManager) => {
+      const ledgerRepository = manager?.getRepository(BuildingLedgerEntry) || this.ledgerRepository;
+      const existing = await ledgerRepository.findOne({
+        where: {
+          tenantId: scope.tenantId,
+          entryType: 'bank_reconciled',
+          referenceType: 'payment',
+          referenceId: payment.id,
+        },
+      });
+      if (existing) throw new BadRequestException('Payment has already been reconciled.');
+
+      const entry = await ledgerRepository.save(ledgerRepository.create({
+        tenantId: scope.tenantId,
+        schoolId: scope.schoolId || null,
+        direction: 'credit',
+        entryType: 'bank_reconciled',
+        amount: payload.amount,
+        currency: payment.currency,
+        referenceType: 'payment',
+        referenceId: payment.id,
+        note: `Extrato ${payload.statementDate} · Referência ${payload.statementReference.trim()}`,
+        occurredAt: payload.statementDate,
+      }));
+      await this.registerAudit('building360.payment.reconciled', 'building_payment', payment.id, scope, {
+        statementDate: payload.statementDate,
+        statementReference: payload.statementReference,
+        amount: payload.amount,
+      }, manager);
+      return { entry, payment, reconciled: true };
+    };
+
+    try {
+      return this.dataSource
+        ? await this.dataSource.transaction((manager) => persistReconciliation(manager))
+        : await persistReconciliation();
+    } catch (error) {
+      if ((error as { code?: string })?.code === '23505') {
+        throw new BadRequestException('Payment has already been reconciled.');
+      }
+      throw error;
+    }
   }
 
   async listOrganizations(scopeInput: Partial<Building360Scope>, filters: { tenantId?: string } = {}) {

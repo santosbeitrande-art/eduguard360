@@ -26,17 +26,23 @@ import { BuildingInvoice } from '../modules/building360/entities/invoice.entity'
 import { BuildingPayment } from '../modules/building360/entities/payment.entity';
 import { BuildingReceipt } from '../modules/building360/entities/receipt.entity';
 import { BuildingLedgerEntry } from '../modules/building360/entities/ledger-entry.entity';
+import { Building360DemoRequest } from '../modules/building360/entities/demo-request.entity';
 import { join } from 'path';
 
 const isProduction = process.env.NODE_ENV === 'production';
+const databaseUrl = String(process.env.DATABASE_URL || '').trim();
 
 export const DatabaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT) || 5432,
-  username: process.env.DATABASE_USER || 'ecotrade_app',
-  password: process.env.DATABASE_PASSWORD || 'secure_password',
-  database: process.env.DATABASE_NAME || 'ecotrade360',
+  ...(databaseUrl
+    ? { url: databaseUrl }
+    : {
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: Number.parseInt(process.env.DATABASE_PORT || '5432', 10),
+        username: process.env.DATABASE_USER || 'ecotrade_app',
+        password: process.env.DATABASE_PASSWORD || 'secure_password',
+        database: process.env.DATABASE_NAME || 'ecotrade360',
+      }),
   entities: [
     User,
     Listing,
@@ -65,6 +71,7 @@ export const DatabaseConfig: TypeOrmModuleOptions = {
     BuildingPayment,
     BuildingReceipt,
     BuildingLedgerEntry,
+    Building360DemoRequest,
   ],
   migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
   migrationsRun: isProduction,

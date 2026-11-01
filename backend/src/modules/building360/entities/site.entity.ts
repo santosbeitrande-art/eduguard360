@@ -27,6 +27,9 @@ export class BuildingSite {
   @Column({ type: 'varchar', length: 40, default: 'commercial' })
   type!: string;
 
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  code!: string | null;
+
   @Column({ type: 'varchar', length: 24, default: 'active' })
   status!: string;
 

@@ -18,10 +18,10 @@ import { Reservation } from '../../reservations/entities/reservation.entity';
 @Index(['userId'])
 @Index(['type'])
 @Index(['status'])
-@Index(['latitude', 'longitude'])
+@Index('IDX_listing_latitude_longitude', ['latitude', 'longitude'])
 @Index(['schoolId'])
 @Index(['tenantId'])
-@Index(['createdAt'], { sort: 'DESC' })
+@Index('IDX_listing_created_at_desc', ['createdAt'])
 export class Listing {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
