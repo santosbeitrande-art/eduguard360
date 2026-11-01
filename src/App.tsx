@@ -10,8 +10,13 @@ import EnterprisePortalPage from "@/pages/system/EnterprisePortalPage";
 import EnterpriseWorkspacePage from "@/pages/system/EnterpriseWorkspacePage";
 import AnalyticsPortalPage from "@/pages/system/AnalyticsPortalPage";
 import Building360PortalPage from "@/pages/building/Building360PortalPage";
+import Building360SalesPage from "@/pages/building/Building360SalesPage";
+import Building360DashboardPage from "@/pages/building/Building360DashboardPage";
+import Building360OnboardingPage from "@/pages/building/Building360OnboardingPage";
+import Building360AdminRequestsPage from "@/pages/building/Building360AdminRequestsPage";
 import Building360BlueprintV1Page from "@/pages/building/Building360BlueprintV1Page";
 import Building360WorkspacePage from "@/pages/building/Building360WorkspacePage";
+import Building360ResidentFrontendPage from "@/pages/building/Building360ResidentFrontendPage";
 import ParentDashboard from "@/pages/system/ParentDashboard";
 import SchoolDashboard from "@/pages/system/SchoolDashboard";
 import DirecaoDashboard from "@/pages/system/DirecaoDashboard";
@@ -97,6 +102,7 @@ function App() {
         {/* ROTA CRÍTICA — resolve /sistema */}
         <Route path="/sistema" element={<SystemLogin />} />
         <Route path="/sistema/login" element={<SystemLogin />} />
+        <Route path="/auth/recovery" element={<SystemLogin />} />
         <Route path="/sistema/pais" element={<ParentDashboard />} />
         <Route path="/sistema/encarregado" element={<ParentDashboard />} />
         <Route path="/sistema/admin" element={<AdminDashboard />} />
@@ -106,9 +112,16 @@ function App() {
         <Route path="/enterprise" element={<Navigate to="/sistema/enterprise" replace />} />
         <Route path="/enterprise/workspace/:role/:module" element={<EnterpriseWorkspacePage />} />
         <Route path="/analytics" element={<AnalyticsPortalPage />} />
-        <Route path="/building360" element={<Building360PortalPage />} />
+        <Route path="/building360" element={<Building360SalesPage />} />
+        <Route path="/building360/portal" element={<Building360PortalPage />} />
+        <Route path="/building360/dashboard" element={<Building360DashboardPage />} />
+        <Route path="/building360/onboarding" element={<Building360OnboardingPage />} />
+        <Route path="/building360/admin/requests" element={<Building360AdminRequestsPage />} />
+        <Route path="/building360/login" element={<SystemLogin />} />
+        <Route path="/building360/morador" element={<Building360ResidentFrontendPage />} />
         <Route path="/building360/blueprint" element={<Building360BlueprintV1Page />} />
         <Route path="/building360/workspace/:profile/:module" element={<Building360WorkspacePage />} />
+        <Route path="/sistema/building360/morador" element={<Navigate to="/building360/morador" replace />} />
         <Route path="/sistema/building360/:profile/:module" element={<Building360WorkspacePage />} />
         <Route path="/sistema/escola" element={<Navigate to="/sistema/administracao" replace />} />
         <Route path="/sistema/direcao" element={<DirecaoDashboard />} />

@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageSelectorCompact } from "@/components/LanguageSelector";
-import { SystemAuthProvider, useSystemAuth } from "@/context/SystemAuthContext";
+import { SystemAuthProvider } from "@/context/SystemAuthContext";
 import { withTimeout, NetworkTimeoutError } from "@/lib/networkPerformance";
 import { normalizeEnterpriseRole, resolvePortalRouteByRole } from "@/lib/enterpriseGovernance";
 import {
@@ -276,15 +276,6 @@ const toStoredLegacyProfile = (normalizedProfile: string): string => {
   return normalizedProfile === 'super_admin' ? 'admin' : normalizedProfile;
 };
 
-const mapEdgeUserToLegacyProfile = (edgeUser: any): string => {
-  const role = String(edgeUser?.role || '').trim().toLowerCase();
-  const type = String(edgeUser?.type || '').trim().toLowerCase();
-
-  if (type === 'parent' || role === 'parent' || role === 'guardian' || role === 'encarregado' || role === 'pai') return 'parent';
-  if (type === 'student' || role === 'student' || role === 'aluno') return 'student';
-  return normalizeLegacyProfile(role || type || 'director') || 'director';
-};
-
 const getAccessProfileLabel = (accessProfile: string): string => {
   if (accessProfile === 'super_admin') return 'Administração Geral';
   if (accessProfile === 'director') return 'Direção';
@@ -429,15 +420,22 @@ const getRequestedReturnRoute = (): string | null => {
 };
 
 const getDefaultRouteByProfile = (perfil: string): string => {
+  const normalized = normalizeEnterpriseRole(perfil);
+  const enterpriseRoute = resolvePortalRouteByRole(normalized);
+  if (enterpriseRoute !== '/sistema/login') return enterpriseRoute;
+
   const buildingProfile = resolveBuilding360Profile(perfil);
   if (isBuilding360ResidentProfile(buildingProfile)) return '/building360/morador';
-  if (isBuilding360ManagementProfile(buildingProfile)) return '/building360';
+  if (isBuilding360ManagementProfile(buildingProfile)) return '/building360/dashboard';
 
-  const normalized = normalizeEnterpriseRole(perfil);
-  return resolvePortalRouteByRole(normalized);
+  return '/sistema/login';
 };
 
 const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
+  if (route === '/building360/admin/requests') {
+    return ['super_admin', 'platform_admin'].includes(normalizeEnterpriseRole(perfil));
+  }
+
   if (route.startsWith('/building360') || route.startsWith('/sistema/building360')) {
     const buildingProfile = resolveBuilding360Profile(perfil);
     return isBuilding360ResidentProfile(buildingProfile) || isBuilding360ManagementProfile(buildingProfile);
@@ -448,6 +446,7 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
 
   if (defaultRoute === '/sistema/login') return false;
   if (route === defaultRoute) return true;
+  if (route.startsWith('/sistema/seguranca')) return normalized !== 'unknown';
 
   if (normalized === 'super_admin' || normalized === 'admin') {
     return route.startsWith('/sistema/admin') || route.startsWith('/sistema/enterprise') || route.startsWith('/enterprise');
@@ -463,10 +462,6 @@ const canAccessRequestedRoute = (perfil: string, route: string): boolean => {
 
   if (normalized === 'seguranca') {
     return route.startsWith('/sistema/seguranca');
-  }
-
-  if (route.startsWith('/sistema/seguranca')) {
-    return normalized !== 'unknown';
   }
 
   if (normalized === 'director') {
@@ -545,20 +540,21 @@ const getLegacyProfileLabel = (perfil: string): string => {
 
 const resolveLoginErrorMessage = (params: {
   authError: any;
-  edgeError?: string;
   hasDomainUser?: boolean;
   requestedProfile?: string;
   email?: string;
 }): string => {
   const authMessage = String(params.authError?.message || '').trim();
-  const edgeMessage = String(params.edgeError || '').trim();
-  const merged = `${authMessage} ${edgeMessage}`.toLowerCase();
+  const merged = authMessage.toLowerCase();
 
   if (merged.includes('email not confirmed') || merged.includes('ainda nao confirmado') || merged.includes('not confirmed')) {
     return 'Email ainda nao confirmado. Verifique a sua caixa de entrada para ativar a conta.';
   }
 
   if (merged.includes('invalid login credentials') || merged.includes('invalid credentials') || merged.includes('credenciais invalidas') || merged.includes('email ou senha')) {
+    if (String(params.email || '').trim().toLowerCase() === KNOWN_ADMIN_EMAIL) {
+      return 'O email admin e reconhecido localmente, mas a autenticacao Supabase recusou a senha. Use "Esqueceu a senha?" para redefinir ou peça ao administrador Supabase para criar/vincular a conta.';
+    }
     return 'Email ou senha incorretos. Verifique os dados e tente novamente.';
   }
 
@@ -575,7 +571,6 @@ const resolveLoginErrorMessage = (params: {
   }
 
   if (authMessage) return authMessage;
-  if (edgeMessage) return edgeMessage;
   if (params.hasDomainUser) {
     if (params.requestedProfile === 'director' && String(params.email || '').trim().toLowerCase() === KNOWN_ADMIN_EMAIL) {
       return 'A conta admin existe, mas o login remoto nao respondeu corretamente. Tente novamente em alguns segundos ou redefina a palavra-passe do admin.';
@@ -700,15 +695,15 @@ const buildLoginModeQuery = (pathname: string, currentSearch: string, mode: 'log
 
 const SystemLoginContent = () => {
   const { t } = useLanguage();
-  const { login: edgeLogin } = useSystemAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [selectedRole, setSelectedRole] = useState("director");
   const [accessProfile, setAccessProfile] = useState<AccessProfile>('director');
   const [selectedSchoolId, setSelectedSchoolId] = useState("");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const [paymentProvider, setPaymentProvider] = useState<"mpesa" | "emola">("mpesa");
+  const [paymentProvider, setPaymentProvider] = useState<"mpesa" | "emola" | "payzeno">("mpesa");
   const [paymentPhone, setPaymentPhone] = useState("");
   const [paymentPin, setPaymentPin] = useState("");
   const [awaitingPin, setAwaitingPin] = useState(false);
@@ -723,6 +718,7 @@ const SystemLoginContent = () => {
   const [loading, setLoading] = useState(false);
   const [loadingSchools, setLoadingSchools] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [passwordUpdateMode, setPasswordUpdateMode] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -823,6 +819,19 @@ const SystemLoginContent = () => {
     const mode = new URLSearchParams(location.search).get('mode');
     setRegisterMode(mode === 'signup');
     setRecoveryMode(mode === 'recovery');
+    const isPasswordUpdate = mode === 'update-password';
+    setPasswordUpdateMode(isPasswordUpdate);
+
+    if (isPasswordUpdate) {
+      void supabase.auth.getSession().then(({ data, error }) => {
+        if (error || !data.session) {
+          setPasswordUpdateMode(false);
+          setErrorMessage('O link de recuperacao expirou ou ja foi utilizado. Solicite um novo link.');
+          return;
+        }
+        setEmail(data.session.user.email || '');
+      });
+    }
   }, [location.search]);
 
   useEffect(() => {
@@ -896,6 +905,14 @@ const SystemLoginContent = () => {
   const redirectByProfile = (perfil: string) => {
     const requestedRoute = getRequestedReturnRoute();
 
+    if (
+      requestedRoute === '/building360/admin/requests'
+      && ['super_admin', 'platform_admin'].includes(normalizeEnterpriseRole(perfil))
+    ) {
+      navigate(requestedRoute);
+      return;
+    }
+
     if (requestedRoute && (requestedRoute.startsWith('/building360') || requestedRoute.startsWith('/sistema/building360'))) {
       const buildingProfile = resolveBuilding360Profile(perfil);
       if (isBuilding360ResidentProfile(buildingProfile)) {
@@ -903,7 +920,9 @@ const SystemLoginContent = () => {
         return;
       }
       if (isBuilding360ManagementProfile(buildingProfile)) {
-        navigate('/building360');
+        const customerRoute = requestedRoute === '/building360/dashboard'
+          || requestedRoute === '/building360/onboarding';
+        navigate(customerRoute ? requestedRoute : '/building360/dashboard');
         return;
       }
     }
@@ -912,42 +931,6 @@ const SystemLoginContent = () => {
       ? requestedRoute
       : getDefaultRouteByProfile(perfil);
     navigate(route);
-  };
-
-  const persistLegacyUserFromEdgeAuth = (edgeUser: any, profileOverride?: string, schoolIdOverride?: string | null) => {
-    if (!edgeUser) return;
-
-    const fallbackPerfil = mapEdgeUserToLegacyProfile(edgeUser);
-    const normalizedOverride = profileOverride ? normalizeLegacyProfile(profileOverride) : '';
-    const legacyPerfil = normalizedOverride || fallbackPerfil;
-    const resolvedSchoolId = schoolIdOverride ?? edgeUser.school_id ?? edgeUser.escola_id ?? null;
-
-    localStorage.setItem('currentUser', JSON.stringify({
-      id: edgeUser.id,
-      auth_id: edgeUser.id,
-      nome: edgeUser.name,
-      email: edgeUser.email,
-      perfil: toStoredLegacyProfile(legacyPerfil),
-      escola_id: resolvedSchoolId,
-      password_changed: edgeUser.password_changed ?? true,
-    }));
-
-    const currentEdgeUserRaw = localStorage.getItem('eduguard_user');
-    if (currentEdgeUserRaw) {
-      try {
-        const parsedEdgeUser = JSON.parse(currentEdgeUserRaw);
-        const normalizedRole = normalizeEnterpriseRole(legacyPerfil);
-        localStorage.setItem('eduguard_user', JSON.stringify({
-          ...parsedEdgeUser,
-          role: normalizedRole,
-          perfil: toStoredLegacyProfile(legacyPerfil),
-          school_id: resolvedSchoolId,
-          escola_id: resolvedSchoolId,
-        }));
-      } catch {
-        // Keep original edge payload when it cannot be parsed.
-      }
-    }
   };
 
   const persistCompatibilitySession = (user: any, perfil: string, tokenOverride?: string | null) => {
@@ -1042,124 +1025,19 @@ const SystemLoginContent = () => {
     return true;
   };
 
-  const resolveLocalFallbackUser = (normalizedEmail: string, normalizedPassword: string) => {
-    if (normalizedEmail === KNOWN_ADMIN_EMAIL) {
-      const currentUserRaw = localStorage.getItem('currentUser');
-      if (currentUserRaw) {
-        try {
-          const currentUser = JSON.parse(currentUserRaw);
-          const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
-          const currentPassword = String(currentUser?.senha || '').trim();
-          if (currentEmail === normalizedEmail && currentPassword && currentPassword === normalizedPassword) {
-            return {
-              ...currentUser,
-              perfil: ADMIN_PORTAL_ROLE,
-              status: 'active',
-              is_active: true,
-            };
-          }
-        } catch {
-          // Ignore parse failures and continue with other fallbacks.
-        }
-      }
-    }
-
-    const approvedUser = readLocalApprovedUsers().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
-    if (approvedUser && String(approvedUser?.senha || '').trim() === normalizedPassword) {
-      return approvedUser;
-    }
-
-    const pendingUser = readPendingRegistrations().find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail);
-    if (pendingUser && String(pendingUser?.senha || '').trim() === normalizedPassword && !isPendingUser(pendingUser)) {
-      return pendingUser;
-    }
-
-    const generatedEntry = readGeneratedCredentialsLog().find((item) =>
-      String(item?.email || '').trim().toLowerCase() === normalizedEmail &&
-      String(item?.senha || '').trim() === normalizedPassword
-    );
-
-    if (generatedEntry) {
-      return {
-        id: generatedEntry.id || `local-${Date.now()}`,
-        nome: generatedEntry.nome || normalizedEmail,
-        email: normalizedEmail,
-        perfil: generatedEntry.perfil || generatedEntry.role || 'pai',
-        escola_id: null,
-        senha: normalizedPassword,
-        status: 'active',
-        is_active: true,
-        approved_locally: true,
-      };
-    }
-
-    return null;
-  };
-
   const handleLogin = async () => {
     setLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
-    const isSecurityPortalAccount = normalizedEmail === KNOWN_ADMIN_EMAIL;
-
     if (!normalizedEmail || !normalizedPassword) {
       setLoading(false);
       setErrorMessage('Informe email e senha para entrar.');
       return;
     }
 
-    let edgeErrorMessage = '';
-    let domainUserByEmail: any = null;
-
     try {
-      // Single login entrypoint: try both user types automatically.
-      const edgeAttempts: Array<'system' | 'parent'> = ['system', 'parent'];
-      for (const attemptType of edgeAttempts) {
-        const edgeResult = await withTimeout(
-          edgeLogin(normalizedEmail, normalizedPassword, attemptType),
-          12000,
-          'Edge login timeout'
-        );
-        edgeErrorMessage = String(edgeResult?.error || edgeErrorMessage || '');
-        if (!edgeResult.success) continue;
-
-        const edgeUserRaw = localStorage.getItem('eduguard_user');
-        if (!edgeUserRaw) continue;
-
-        try {
-          const edgeUser = JSON.parse(edgeUserRaw);
-
-          if (isSecurityPortalAccount) {
-            persistLegacyUserFromEdgeAuth(edgeUser, ADMIN_PORTAL_ROLE, edgeUser?.school_id || edgeUser?.escola_id || null);
-            redirectByProfile(ADMIN_PORTAL_ROLE);
-            return;
-          }
-
-          const { data: domainUser } = await withTimeout(
-            supabase
-              .from('utilizadores')
-              .select('id,email,perfil,role,escola_id,school_id')
-              .eq('email', normalizedEmail)
-              .maybeSingle(),
-            12000,
-            'Domain profile lookup timeout'
-          );
-
-          const edgePerfil = mapEdgeUserToLegacyProfile(edgeUser);
-          const domainPerfil = normalizeLegacyProfile(domainUser?.perfil || domainUser?.role || '');
-          const perfil = domainPerfil && domainPerfil !== 'unknown' ? domainPerfil : edgePerfil;
-          const resolvedSchoolId = domainUser?.escola_id || domainUser?.school_id || edgeUser?.school_id || edgeUser?.escola_id || null;
-
-          persistLegacyUserFromEdgeAuth(edgeUser, perfil, resolvedSchoolId);
-          redirectByProfile(perfil);
-          return;
-        } catch (parseError) {
-          console.warn('Falha ao ler eduguard_user apos edge login', parseError);
-        }
-      }
-
       let authData: any = null;
       let authError: any = null;
 
@@ -1172,86 +1050,8 @@ const SystemLoginContent = () => {
       authError = firstSignIn.error;
 
       if (authError || !authData?.user) {
-        const { data: domainUser } = await supabase
-          .from("utilizadores")
-          .select("*")
-          .eq("email", normalizedEmail)
-          .maybeSingle();
-        domainUserByEmail = domainUser;
-        const localApprovedUser = resolveLocalFallbackUser(normalizedEmail, normalizedPassword);
-
-        const canAutoProvisionAuth = Boolean(domainUserByEmail?.id && !domainUserByEmail?.auth_id);
-
-        if (canAutoProvisionAuth) {
-          const signUpAttempt = await withTimeout(supabase.auth.signUp({
-            email: normalizedEmail,
-            password: normalizedPassword,
-            options: { data: { source: 'system-login-autoprovision' } }
-          }), 12000, 'Auto-provision timeout');
-
-          const signUpErrorMessage = String(signUpAttempt.error?.message || '');
-          if (!signUpAttempt.error || isAlreadyRegisteredError(signUpErrorMessage)) {
-            const retrySignIn = await withTimeout(supabase.auth.signInWithPassword({
-              email: normalizedEmail,
-              password: normalizedPassword,
-            }), 12000, 'Retry sign-in timeout');
-
-            authData = retrySignIn.data;
-            authError = retrySignIn.error;
-          } else {
-            authError = signUpAttempt.error;
-          }
-        }
-
-        const fallbackPassword = String(domainUserByEmail?.senha || '');
-        const hasDomainUser = Boolean(domainUserByEmail?.id);
-        const hasStoredPassword = fallbackPassword.length > 0;
-
-        // Autonomous recovery path: if account exists in domain table but has no password yet,
-        // bootstrap it with the entered password and allow access for approved users.
-        if ((!authData?.user || authError) && hasDomainUser && !hasStoredPassword) {
-          const { error: setPasswordError } = await withTimeout(supabase
-            .from('utilizadores')
-            .update({ senha: normalizedPassword })
-            .eq('id', domainUserByEmail.id), 12000, 'Password bootstrap timeout');
-
-          if (!setPasswordError) {
-            if (normalizedEmail === KNOWN_ADMIN_EMAIL) {
-              localStorage.setItem('currentUser', JSON.stringify({
-                ...domainUserByEmail,
-                senha: normalizedPassword,
-                perfil: ADMIN_PORTAL_ROLE,
-                status: 'active',
-                is_active: true,
-              }));
-            }
-            const didLogin = completeLogin({ ...domainUserByEmail, senha: normalizedPassword }, true);
-            if (didLogin) {
-              return;
-            }
-          }
-        }
-
-        if ((!authData?.user || authError) && hasDomainUser && hasStoredPassword && fallbackPassword === normalizedPassword) {
-          const didLogin = completeLogin(domainUserByEmail, true);
-          if (didLogin) {
-            return;
-          }
-        }
-
-        if ((!authData?.user || authError) && localApprovedUser) {
-          const didLogin = completeLogin(localApprovedUser, true);
-          if (didLogin) {
-            return;
-          }
-        }
-      }
-
-      if (authError || !authData?.user) {
         setErrorMessage(resolveLoginErrorMessage({
           authError,
-          edgeError: edgeErrorMessage,
-          hasDomainUser: Boolean(domainUserByEmail?.id),
           requestedProfile: accessProfile,
           email: normalizedEmail,
         }));
@@ -1259,33 +1059,56 @@ const SystemLoginContent = () => {
       }
 
       const userId = authData.user.id;
-      
-      // Buscar utilizador na tabela "utilizadores". Em bases antigas, auth_id pode estar vazio.
-      const { data: userByAuth } = await withTimeout(supabase
-        .from("utilizadores")
-        .select("*")
-        .eq("auth_id", userId)
-        .maybeSingle(), 12000, 'User lookup timeout');
+      const trustedMetadata = authData.user.app_metadata || {};
+      const buildingTenantId = trustedMetadata.building360_tenant_id;
+      const isBuilding360InvitedAdmin = trustedMetadata.building360_role === 'building_manager'
+        && typeof buildingTenantId === 'string'
+        && buildingTenantId.trim().length > 0;
+      let user: Record<string, unknown> | null = null;
 
-      let user = userByAuth;
-
-      if (!user) {
-        const { data: userByEmail } = await withTimeout(supabase
+      if (isBuilding360InvitedAdmin) {
+        user = {
+          id: userId,
+          auth_id: userId,
+          email: normalizedEmail,
+          nome: authData.user.user_metadata?.full_name || normalizedEmail,
+          perfil: 'building_manager',
+          role: 'building_manager',
+          tenant_id: buildingTenantId,
+          building360_organization_id: trustedMetadata.building360_organization_id,
+          building360_site_id: trustedMetadata.building360_site_id,
+          building360_building_id: trustedMetadata.building360_building_id,
+          status: 'active',
+          is_active: true,
+        };
+      } else {
+        // Buscar utilizador na tabela "utilizadores". Em bases antigas, auth_id pode estar vazio.
+        const { data: userByAuth } = await withTimeout(supabase
           .from("utilizadores")
           .select("*")
-          .eq("email", normalizedEmail)
-          .maybeSingle(), 12000, 'User email lookup timeout');
+          .eq("auth_id", userId)
+          .maybeSingle(), 12000, 'User lookup timeout');
 
-        user = userByEmail;
+        user = userByAuth;
 
-        if (user?.id && !user?.auth_id) {
-          // Melhor esforço para vincular o auth user à conta de domínio.
-          await withTimeout(supabase
+        if (!user) {
+          const { data: userByEmail } = await withTimeout(supabase
             .from("utilizadores")
-            .update({ auth_id: userId })
-            .eq("id", user.id), 12000, 'User link timeout');
+            .select("*")
+            .eq("email", normalizedEmail)
+            .maybeSingle(), 12000, 'User email lookup timeout');
 
-          user = { ...user, auth_id: userId };
+          user = userByEmail;
+
+          if (user?.id && !user?.auth_id) {
+            // Melhor esforço para vincular o auth user à conta de domínio.
+            await withTimeout(supabase
+              .from("utilizadores")
+              .update({ auth_id: userId })
+              .eq("id", user.id), 12000, 'User link timeout');
+
+            user = { ...user, auth_id: userId };
+          }
         }
       }
 
@@ -1368,13 +1191,14 @@ const SystemLoginContent = () => {
         if (isKnownAdmin) {
           setAccountStatusPanel({
             title: 'Estado da conta',
-            summary: 'Conta de administracao global reconhecida. Use a password oficial do admin para entrar.',
-            tone: 'ok',
+            summary: 'Email reconhecido pela configuracao local; a conta e a senha do Supabase ainda nao foram confirmadas.',
+            tone: 'warn',
             items: [
               { label: 'Email', value: normalizedEmail, tone: 'info' },
               { label: 'Perfil esperado', value: expectedProfileLabel, tone: 'ok' },
-              { label: 'Acesso', value: 'Concedido ao admin global', tone: 'ok' },
-              { label: 'Fonte de dados', value: 'Login global + cache local', tone: 'info' },
+              { label: 'Reconhecimento local', value: 'Admin global', tone: 'info' },
+              { label: 'Autenticacao Supabase', value: 'Nao confirmada. Use "Esqueceu a senha?" ou crie/vincule o utilizador no projeto Supabase.', tone: 'warn' },
+              { label: 'Consulta do perfil', value: serverIssue ? 'API indisponivel' : 'Perfil remoto nao encontrado', tone: 'warn' },
             ],
           });
           return;
@@ -1482,8 +1306,15 @@ const SystemLoginContent = () => {
     }
 
     try {
+      const recoveryOrigin = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+        ? 'https://eduguard360.co.mz'
+        : window.location.origin;
+      const returnRoute = getRequestedReturnRoute() || (building360Intent ? '/building360' : '/sistema');
+      const recoveryRedirect = new URL('/auth/recovery', recoveryOrigin);
+      recoveryRedirect.searchParams.set('returnTo', returnRoute);
+      recoveryRedirect.searchParams.set('mode', 'update-password');
       const { error } = await withTimeout(supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${window.location.origin}/sistema`
+        redirectTo: recoveryRedirect.toString(),
       }), 12000, 'Password recovery timeout');
 
       if (error) {
@@ -1499,6 +1330,53 @@ const SystemLoginContent = () => {
       }
       console.error(err);
       setErrorMessage(err?.message || t('mensagens.erro_generico'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordUpdate = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+
+    const newPassword = password.trim();
+    if (newPassword.length < 8 || !/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setErrorMessage('A nova senha deve ter pelo menos 8 caracteres, incluindo maiuscula, minuscula e numero.');
+      setLoading(false);
+      return;
+    }
+    if (newPassword !== confirmPassword.trim()) {
+      setErrorMessage('As senhas nao coincidem.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        throw new Error('O link de recuperacao expirou ou ja foi utilizado. Solicite um novo link.');
+      }
+
+      const { error } = await withTimeout(
+        supabase.auth.updateUser({ password: newPassword }),
+        12000,
+        'Password update timeout'
+      );
+      if (error) throw error;
+
+      await supabase.auth.signOut({ scope: 'local' });
+      setPassword('');
+      setConfirmPassword('');
+      setPasswordUpdateMode(false);
+      const returnRoute = getRequestedReturnRoute() || (building360Intent ? '/building360' : '/sistema');
+      const loginPath = returnRoute.startsWith('/building360') || returnRoute.startsWith('/sistema/building360')
+        ? '/building360/login'
+        : '/sistema/login';
+      navigate(`${loginPath}?returnTo=${encodeURIComponent(returnRoute)}`, { replace: true });
+      setInfoMessage('Senha atualizada. Entre com a nova senha.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('mensagens.erro_generico'));
     } finally {
       setLoading(false);
     }
@@ -1722,6 +1600,13 @@ const SystemLoginContent = () => {
       return;
     }
 
+    if (paymentProvider === 'payzeno') {
+      setAwaitingPin(false);
+      setPaymentPin('');
+      setErrorMessage('A cobrança Payzeno ficará disponível quando a integração estiver configurada.');
+      return;
+    }
+
     if (!awaitingPin) {
       setAwaitingPin(true);
       setInfoMessage(`${t('sistema.pedido_pagamento_enviado')} ${normalizedPhone}. ${t('sistema.inserir_pin_confirmar')}`);
@@ -1736,6 +1621,7 @@ const SystemLoginContent = () => {
 
     const paidAt = new Date();
     const validUntil = new Date(paidAt.getTime() + cfg.days * 24 * 60 * 60 * 1000).toISOString();
+    const providerLabel = paymentProvider === 'payzeno' ? 'Payzeno' : paymentProvider.toUpperCase();
 
     const list = readSchoolSubscriptions();
     const next: SchoolSubscription = {
@@ -1758,8 +1644,12 @@ const SystemLoginContent = () => {
     setAwaitingPin(false);
     setPaymentPin("");
     setErrorMessage(null);
-    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${paymentProvider.toUpperCase()} ${normalizedPhone} | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()}`);
-    setInfoMessage(t('sistema.pagamento_registado'));
+    setPaymentSummary(`${selectedSchool?.nome || "Escola"} | ${t(`sistema.billing_${billingCycle}`)} | ${cfg.amountMzn.toLocaleString()} MZN | ${providerLabel} ${normalizedPhone} | ${t('sistema.validade_ate')}: ${new Date(validUntil).toLocaleDateString()}`);
+    setInfoMessage(
+      paymentProvider === 'payzeno'
+        ? 'Cobrança registada via Payzeno. O pagamento está associado à escola e ao ciclo de faturação selecionado.'
+        : t('sistema.pagamento_registado')
+    );
   };
 
   return (
@@ -1949,7 +1839,7 @@ const SystemLoginContent = () => {
                   <select
                     value={paymentProvider}
                     onChange={(e) => {
-                      setPaymentProvider(e.target.value as "mpesa" | "emola");
+                      setPaymentProvider(e.target.value as "mpesa" | "emola" | "payzeno");
                       setPaymentDone(false);
                       setAwaitingPin(false);
                       setPaymentPin("");
@@ -1959,6 +1849,7 @@ const SystemLoginContent = () => {
                   >
                     <option value="mpesa">M-Pesa</option>
                     <option value="emola">eMola</option>
+                    <option value="payzeno">Payzeno</option>
                   </select>
                   <select
                     value={billingCycle}
@@ -2015,18 +1906,42 @@ const SystemLoginContent = () => {
             </>
           ) : (
             <>
-              <input
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setAccountStatusPanel(null);
-                }}
-                type="email"
-                placeholder={t('sistema.email')}
-                className="w-full rounded-xl px-4 py-3 outline-none transition-all"
-              />
+              {!passwordUpdateMode && (
+                <input
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setAccountStatusPanel(null);
+                  }}
+                  type="email"
+                  placeholder={t('sistema.email')}
+                  className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+                />
+              )}
 
-              {!recoveryMode && (
+              {passwordUpdateMode && (
+                <>
+                  <p className="text-sm text-[#d1e4ef]">Defina uma nova senha para {email}.</p>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Nova senha"
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+                  />
+                  <input
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Confirmar nova senha"
+                    className="w-full rounded-xl px-4 py-3 outline-none transition-all"
+                  />
+                </>
+              )}
+
+              {!recoveryMode && !passwordUpdateMode && (
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -2036,7 +1951,7 @@ const SystemLoginContent = () => {
                 />
               )}
 
-              {!recoveryMode && (
+              {!recoveryMode && !passwordUpdateMode && (
                 <button
                   type="button"
                   onClick={handleCheckAccountStatus}
@@ -2048,15 +1963,17 @@ const SystemLoginContent = () => {
               )}
 
               <button
-                onClick={recoveryMode ? handlePasswordRecovery : handleLogin}
+                onClick={passwordUpdateMode ? handlePasswordUpdate : recoveryMode ? handlePasswordRecovery : handleLogin}
                 disabled={loading}
                 className="btn w-full px-4 py-3.5 font-semibold shadow-lg transition-all hover:-translate-y-0.5 mt-2"
               >
                 {loading
                   ? t('botoes.carregando')
-                  : recoveryMode
-                    ? t('sistema.enviar_link_recuperacao')
-                    : t('sistema.entrar')}
+                  : passwordUpdateMode
+                    ? 'Atualizar senha'
+                    : recoveryMode
+                      ? t('sistema.enviar_link_recuperacao')
+                      : t('sistema.entrar')}
               </button>
 
               {accountStatusPanel && !recoveryMode && (
@@ -2097,7 +2014,7 @@ const SystemLoginContent = () => {
             >
               {recoveryMode ? t('sistema.voltar_login') : t('sistema.esqueceu_senha')}
             </button>
-            {!recoveryMode && (
+            {!recoveryMode && !passwordUpdateMode && (
               <button
                 type="button"
                 onClick={() => setLoginMode(registerMode ? 'login' : 'signup')}
@@ -2133,4 +2050,3 @@ const SystemLogin = () => (
 );
 
 export default SystemLogin;
-

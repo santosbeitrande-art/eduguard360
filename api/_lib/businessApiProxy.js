@@ -484,9 +484,18 @@ export function buildPermissionsByRole(roleInput) {
 }
 
 export async function proxyBusinessApi(req, path) {
-  const base = String(process.env.BUSINESS_API_BASE || DEFAULT_BUSINESS_API_BASE).replace(/\/$/, '');
+  const isBuilding360Route = /^\/(?:api\/v1\/)?building360(?:\/|$)/.test(path);
+  const base = String(
+    (isBuilding360Route && process.env.BUILDING360_API_BASE)
+      || process.env.BUSINESS_API_BASE
+      || DEFAULT_BUSINESS_API_BASE,
+  ).replace(/\/$/, '');
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
-  const timeoutMs = Number(process.env.BUSINESS_API_TIMEOUT_MS || UPSTREAM_TIMEOUT_MS);
+  const timeoutMs = Number(
+    (isBuilding360Route && process.env.BUILDING360_API_TIMEOUT_MS)
+      || process.env.BUSINESS_API_TIMEOUT_MS
+      || (isBuilding360Route ? 10000 : UPSTREAM_TIMEOUT_MS),
+  );
 
   try {
     const trustedScope = resolveScope(req);

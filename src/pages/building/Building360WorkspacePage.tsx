@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  isApprovedByAdmin,
+  isBuilding360ManagementProfile,
+  isBuilding360ResidentProfile,
+} from '@/lib/building360Access';
 
 type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'approve' | 'export';
 type PermissionDomain =
@@ -72,6 +77,36 @@ type FlowRecord = {
     notificationBy?: string;
     historyBy?: string;
   };
+};
+
+type FinanceContract = {
+  id: string;
+  code?: string | null;
+  title: string;
+  amount: number | string;
+  currency: string;
+  billingCycle: string;
+  status: string;
+};
+
+type FinanceInvoice = {
+  id: string;
+  invoiceNumber: string;
+  amount: number | string;
+  currency: string;
+  issuedAt: string;
+  dueDate?: string | null;
+  status: string;
+};
+
+type FinanceReceipt = {
+  id: string;
+  invoiceId?: string;
+  paymentId?: string;
+  receiptNumber: string;
+  amount: number | string;
+  currency: string;
+  issuedAt: string;
 };
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
@@ -203,8 +238,6 @@ const FALLBACK_ALLOWED_MODULES: Record<string, string[]> = {
   document_manager: ['documents', 'complaint', 'insight'],
   parking_manager: ['parking', 'reserve', 'access', 'buildingpass', 'insight'],
   technician: ['request', 'maintenance', 'asset'],
-  resident: ['people', 'buildingpass', 'request', 'complaint', 'finance', 'reserve', 'move', 'documents', 'community', 'chat'],
-  occupant: ['people', 'buildingpass', 'request', 'complaint', 'reserve', 'community', 'chat'],
   auditor: ['finance', 'documents', 'security', 'insight', 'complaint', 'request', 'maintenance', 'asset'],
 };
 
@@ -398,6 +431,24 @@ const Building360WorkspacePage = () => {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [flowRecords, setFlowRecords] = useState<FlowRecord[]>([]);
+  const [accessValidated, setAccessValidated] = useState(false);
+  const [financeContracts, setFinanceContracts] = useState<FinanceContract[]>([]);
+  const [financeInvoices, setFinanceInvoices] = useState<FinanceInvoice[]>([]);
+  const [financeReceipts, setFinanceReceipts] = useState<FinanceReceipt[]>([]);
+  const [financeLedger, setFinanceLedger] = useState<Array<{ id: string; direction: string; entryType: string; amount: number | string; note?: string | null; occurredAt: string; referenceId?: string | null }>>([]);
+  const [contractTitle, setContractTitle] = useState('');
+  const [contractCode, setContractCode] = useState('');
+  const [contractAmount, setContractAmount] = useState('');
+  const [contractUnitId, setContractUnitId] = useState('');
+  const [contractStartsAt, setContractStartsAt] = useState(new Date().toISOString().slice(0, 10));
+  const [billingContractId, setBillingContractId] = useState('');
+  const [billingPeriod, setBillingPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [billingDueDate, setBillingDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentInvoiceId, setPaymentInvoiceId] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
 
   const selectedModule = useMemo(
     () => catalog?.modules?.find((module) => module.key === requestedModule) || null,
@@ -457,6 +508,24 @@ const Building360WorkspacePage = () => {
     const resultRows = extractRows(data);
     setRows(resultRows);
 
+    if (moduleKey === 'finance') {
+      const [invoiceCall, receiptCall, ledgerCall] = await Promise.all([
+        requestJson('/api/v1/building360/finance/invoices', { headers: buildHeaders(currentUser) }),
+        requestJson('/api/v1/building360/finance/receipts', { headers: buildHeaders(currentUser) }),
+        requestJson('/api/v1/building360/finance/ledger', { headers: buildHeaders(currentUser) }),
+      ]);
+      if (!invoiceCall.response.ok || !receiptCall.response.ok || !ledgerCall.response.ok) {
+        throw new Error(String(invoiceCall.data?.message || receiptCall.data?.message || ledgerCall.data?.message || 'Nao foi possivel carregar os dados financeiros.'));
+      }
+      const contracts = resultRows as FinanceContract[];
+      setFinanceContracts(contracts);
+      setFinanceInvoices(extractRows(invoiceCall.data) as FinanceInvoice[]);
+      setFinanceReceipts(extractRows(receiptCall.data) as FinanceReceipt[]);
+      setFinanceLedger(extractRows(ledgerCall.data));
+      setBillingContractId((current) => current || contracts[0]?.id || '');
+      setPaymentInvoiceId((current) => current || extractRows(invoiceCall.data).find((invoice: any) => invoice.status !== 'paid')?.id || '');
+    }
+
     const first = resultRows[0] || null;
     setSelectedRow(first);
     setEditorValue(first ? JSON.stringify(first, null, 2) : '{}');
@@ -469,9 +538,44 @@ const Building360WorkspacePage = () => {
 
     const currentUser = resolveCurrentUserSnapshot();
     if (!currentUser) {
-      navigate('/sistema');
+      navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
       return;
     }
+
+    const token = String(localStorage.getItem('eduguard_token') || localStorage.getItem('token') || '').trim();
+    if (!token) {
+      navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+      return;
+    }
+
+    if (!isApprovedByAdmin(currentUser)) {
+      navigate('/building360/login?error=building360-account-not-approved&returnTo=%2Fbuilding360', { replace: true });
+      return;
+    }
+
+    const rawRole = currentUser?.building360_role || currentUser?.perfil || currentUser?.role;
+    if (isBuilding360ResidentProfile(rawRole)) {
+      navigate('/building360/morador', { replace: true });
+      return;
+    }
+
+    if (!isBuilding360ManagementProfile(rawRole)) {
+      setAccessValidated(true);
+      setAuthorize({
+        role: String(rawRole || 'unknown'),
+        requestedRoute: `/building360/workspace/${requestedProfile}/${requestedModule || 'property'}`,
+        allowed: false,
+        reason: 'building360-dashboard-requires-management-role',
+        canonicalRoute: '/building360',
+      });
+      setRows([]);
+      setSelectedRow(null);
+      setEditorValue('');
+      setLoading(false);
+      return;
+    }
+
+    setAccessValidated(true);
 
     const profileToLoad = requestedProfile || resolveRole(currentUser?.perfil || currentUser?.role);
     const targetRoute = `/building360/workspace/${profileToLoad}/${requestedModule || 'property'}`;
@@ -551,9 +655,23 @@ const Building360WorkspacePage = () => {
         return;
       }
 
-      setAuthorize(authPayload);
+      const requesterRole = resolveRole(currentUser?.building360_role || currentUser?.perfil || currentUser?.role);
+      const requesterIsPlatformAdmin = requesterRole === 'platform_admin';
+      const canInspectProfile = requesterRole === profileToLoad || requesterIsPlatformAdmin;
+      const localAllowed = canInspectProfile && (catalogCall.data?.allowedRoutePrefixes || []).some((prefix: string) => targetRoute.startsWith(prefix));
+      const effectiveAuthorize = authPayload.allowed || !localAllowed
+        ? authPayload
+        : {
+            ...authPayload,
+            role: requesterRole,
+            allowed: true,
+            reason: 'frontend-fallback-route-allowed',
+            canonicalRoute: catalogCall.data?.route || authPayload.canonicalRoute,
+          };
 
-      if (!authPayload.allowed) {
+      setAuthorize(effectiveAuthorize);
+
+      if (!effectiveAuthorize.allowed) {
         setRows([]);
         setSelectedRow(null);
         setEditorValue('');
@@ -649,6 +767,194 @@ const Building360WorkspacePage = () => {
       setErrorMessage(String(error instanceof Error ? error.message : error));
     }
   };
+
+  const refreshFinance = async (currentUser: any) => {
+    await loadModuleRows(currentUser, 'finance');
+  };
+
+  const handleCreateFinanceContract = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const currentUser = resolveCurrentUserSnapshot();
+    if (!currentUser) return;
+    const { response, data } = await requestJson('/api/v1/building360/finance/contracts', {
+      method: 'POST',
+      headers: buildHeaders(currentUser),
+      body: JSON.stringify({
+        title: contractTitle.trim(),
+        code: contractCode.trim() || undefined,
+        amount: Number(contractAmount),
+        unitId: contractUnitId.trim() || undefined,
+        billingCycle: 'monthly',
+        currency: 'MZN',
+        startsAt: contractStartsAt,
+      }),
+    });
+    if (!response.ok) {
+      setErrorMessage(String(data?.message || data?.error || `HTTP ${response.status}`));
+      return;
+    }
+    setContractTitle('');
+    setContractCode('');
+    setContractAmount('');
+    setContractUnitId('');
+    setStatusMessage('Contrato criado e guardado no Building360.');
+    setErrorMessage('');
+    await refreshFinance(currentUser);
+    setBillingContractId(String(data?.id || ''));
+  };
+
+  const handleIssueFinanceInvoice = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const currentUser = resolveCurrentUserSnapshot();
+    if (!currentUser || !billingContractId) return;
+    const chargeCall = await requestJson('/api/v1/building360/finance/charges/generate', {
+      method: 'POST',
+      headers: buildHeaders(currentUser),
+      body: JSON.stringify({ contractId: billingContractId, period: billingPeriod, dueDate: billingDueDate }),
+    });
+    if (!chargeCall.response.ok) {
+      setErrorMessage(String(chargeCall.data?.message || chargeCall.data?.error || `HTTP ${chargeCall.response.status}`));
+      return;
+    }
+    const invoiceCall = await requestJson('/api/v1/building360/finance/invoices/issue', {
+      method: 'POST',
+      headers: buildHeaders(currentUser),
+      body: JSON.stringify({ chargeId: chargeCall.data?.id, dueDate: billingDueDate }),
+    });
+    if (!invoiceCall.response.ok) {
+      setErrorMessage(String(invoiceCall.data?.message || invoiceCall.data?.error || `HTTP ${invoiceCall.response.status}`));
+      return;
+    }
+    setStatusMessage(`Fatura ${invoiceCall.data?.invoiceNumber || ''} emitida.`);
+    setErrorMessage('');
+    setPaymentInvoiceId(String(invoiceCall.data?.id || ''));
+    setPaymentAmount(String(invoiceCall.data?.amount || ''));
+    await refreshFinance(currentUser);
+  };
+
+  const handleRegisterFinancePayment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const currentUser = resolveCurrentUserSnapshot();
+    if (!currentUser || !paymentInvoiceId) return;
+    const { response, data } = await requestJson('/api/v1/building360/finance/payments/register', {
+      method: 'POST',
+      headers: buildHeaders(currentUser),
+      body: JSON.stringify({
+        invoiceId: paymentInvoiceId,
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        reference: paymentReference.trim() || undefined,
+        paidAt: paymentDate,
+      }),
+    });
+    if (!response.ok) {
+      setErrorMessage(String(data?.message || data?.error || `HTTP ${response.status}`));
+      return;
+    }
+    setPaymentReference('');
+    setStatusMessage(`Pagamento registado. Recibo ${data?.receipt?.receiptNumber || ''}.`);
+    setErrorMessage('');
+    await refreshFinance(currentUser);
+  };
+
+  const submitFinanceRecord = async (
+    path: string,
+    payload: Record<string, unknown>,
+    successMessage: string,
+  ): Promise<boolean> => {
+    const currentUser = resolveCurrentUserSnapshot();
+    if (!currentUser) return false;
+    const { response, data } = await requestJson(path, {
+      method: 'POST',
+      headers: buildHeaders(currentUser),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      setErrorMessage(String(data?.message || data?.error || `HTTP ${response.status}`));
+      return false;
+    }
+    setErrorMessage('');
+    setStatusMessage(successMessage);
+    await refreshFinance(currentUser);
+    return true;
+  };
+
+  const handleCreateExpense = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const saved = await submitFinanceRecord('/api/v1/building360/finance/expenses', {
+      description: String(form.get('description') || '').trim(),
+      supplier: String(form.get('supplier') || '').trim() || undefined,
+      amount: Number(form.get('amount')),
+      occurredAt: String(form.get('occurredAt') || ''),
+      reference: String(form.get('reference') || '').trim() || undefined,
+    }, 'Despesa registada e incluída no livro financeiro.');
+    if (saved) formElement.reset();
+  };
+
+  const handleCreateOpeningBalance = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const saved = await submitFinanceRecord('/api/v1/building360/finance/opening-balances', {
+      kind: String(form.get('kind') || ''),
+      amount: Number(form.get('amount')),
+      asOfDate: String(form.get('asOfDate') || ''),
+      unitId: String(form.get('unitId') || '').trim() || undefined,
+      note: String(form.get('note') || '').trim() || undefined,
+    }, 'Saldo de abertura/dívida histórica registado com trilha de auditoria.');
+    if (saved) formElement.reset();
+  };
+
+  const handleReconcilePayment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const receipt = financeReceipts.find((item) => item.paymentId === String(form.get('paymentId') || ''));
+    if (!receipt?.paymentId) {
+      setErrorMessage('Seleccione um recibo associado a um pagamento válido.');
+      return;
+    }
+    const saved = await submitFinanceRecord('/api/v1/building360/finance/bank-reconciliations', {
+      paymentId: receipt.paymentId,
+      amount: Number(receipt.amount),
+      statementDate: String(form.get('statementDate') || ''),
+      statementReference: String(form.get('statementReference') || '').trim(),
+    }, 'Pagamento conciliado com a linha indicada do extrato bancário.');
+    if (saved) formElement.reset();
+  };
+
+  const financeOutstanding = financeInvoices
+    .filter((invoice) => invoice.status !== 'paid' && invoice.status !== 'void')
+    .reduce((total, invoice) => {
+      const received = financeReceipts
+        .filter((receipt) => receipt.invoiceId === invoice.id)
+        .reduce((sum, receipt) => sum + Number(receipt.amount || 0), 0);
+      return total + Math.max(0, Number(invoice.amount || 0) - received);
+    }, 0);
+  const financePaid = financeReceipts.reduce((total, receipt) => total + Number(receipt.amount || 0), 0);
+  const financeExpenses = financeLedger
+    .filter((entry) => entry.entryType === 'expense' && entry.occurredAt?.slice(0, 7) === new Date().toISOString().slice(0, 7))
+    .reduce((total, entry) => total + Number(entry.amount || 0), 0);
+  const reconciledPaymentIds = new Set(
+    financeLedger.filter((entry) => entry.entryType === 'bank_reconciled').map((entry) => entry.referenceId),
+  );
+  const financeBankReconciled = financeLedger
+    .filter((entry) => entry.entryType === 'bank_reconciled')
+    .reduce((total, entry) => total + Number(entry.amount || 0), 0);
+  const openingCashEntry = financeLedger
+    .filter((entry) => entry.entryType === 'system_opening_balance' && entry.direction === 'credit')
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
+  const balanceStartDate = openingCashEntry?.occurredAt || '';
+  const financeOpeningCash = Number(openingCashEntry?.amount || 0);
+  const financeCashReceiptsSinceOpening = financeReceipts
+    .filter((receipt) => !balanceStartDate || receipt.issuedAt >= balanceStartDate)
+    .reduce((total, receipt) => total + Number(receipt.amount || 0), 0);
+  const financeSystemBalance = financeOpeningCash + financeCashReceiptsSinceOpening - financeLedger
+    .filter((entry) => entry.entryType === 'expense' && entry.direction === 'debit' && (!balanceStartDate || entry.occurredAt >= balanceStartDate))
+    .reduce((total, entry) => total + Number(entry.amount || 0), 0);
+  const formatMzn = (amount: number | string) => `${Number(amount || 0).toLocaleString('pt-MZ')} MZN`;
 
   const handleQuickCreate = () => {
     if (!canCreate) {
@@ -802,6 +1108,14 @@ const Building360WorkspacePage = () => {
     );
   }
 
+  if (!accessValidated && !authorize) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <p className="text-sm text-slate-300">A validar perfil Building360...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-sm">
@@ -815,6 +1129,16 @@ const Building360WorkspacePage = () => {
           <div className="flex items-center gap-2 text-sm">
             <Link className="px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-900" to="/building360">Portal Building360</Link>
             <Link className="px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-900" to="/portais">Portais</Link>
+            <button
+              type="button"
+              onClick={() => {
+                clearAuthSession();
+                navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+              }}
+              className="px-3 py-2 rounded-lg border border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+            >
+              Sair
+            </button>
           </div>
         </div>
       </header>
@@ -905,6 +1229,143 @@ const Building360WorkspacePage = () => {
           <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
             {statusMessage}
           </div>
+        )}
+
+        {selectedModule?.key === 'finance' && authorize?.allowed && (
+          <section className="mt-6 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Contratos activos</p>
+                <p className="mt-1 text-2xl font-semibold">{financeContracts.filter((item) => item.status === 'active').length}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Saldo faturado em aberto</p>
+                <p className="mt-1 text-2xl font-semibold">{formatMzn(financeOutstanding)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Recebido (recibos)</p>
+                <p className="mt-1 text-2xl font-semibold">{formatMzn(financePaid)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Despesas neste mês</p>
+                <p className="mt-1 text-2xl font-semibold">{formatMzn(financeExpenses)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Saldo registado no sistema</p>
+                <p className="mt-1 text-2xl font-semibold">{formatMzn(financeSystemBalance)}</p>
+                <p className="mt-1 text-[11px] text-amber-200">Não equivale a saldo bancário confirmado.</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+                <p className="text-xs text-slate-400">Pagamentos conciliados com extrato</p>
+                <p className="mt-1 text-2xl font-semibold">{formatMzn(financeBankReconciled)}</p>
+              </div>
+            </div>
+
+            {errorMessage && (
+              <p role="alert" className="rounded-md border border-rose-700/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-200">{errorMessage}</p>
+            )}
+
+            {canCreate && <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+              <form onSubmit={handleCreateFinanceContract} className="space-y-3 border-t-2 border-emerald-500 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Novo contrato de cobrança</h2>
+                  <p className="mt-1 text-xs text-slate-400">Mensalidade recorrente em MZN.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Descrição<input required minLength={3} maxLength={160} value={contractTitle} onChange={(event) => setContractTitle(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="Quota mensal · Unidade 4B" /></label>
+                <label className="block text-xs text-slate-300">Código<input value={contractCode} onChange={(event) => setContractCode(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="CTR-4B" /></label>
+                <label className="block text-xs text-slate-300">Unidade (ID opcional)<input value={contractUnitId} onChange={(event) => setContractUnitId(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="UUID da unidade" /></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Valor mensal<input required type="number" min="0.01" step="0.01" value={contractAmount} onChange={(event) => setContractAmount(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                  <label className="block text-xs text-slate-300">Início<input required type="date" value={contractStartsAt} onChange={(event) => setContractStartsAt(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <button type="submit" className="w-full rounded bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Criar contrato</button>
+              </form>
+
+              <form onSubmit={handleIssueFinanceInvoice} className="space-y-3 border-t-2 border-sky-500 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Emitir fatura mensal</h2>
+                  <p className="mt-1 text-xs text-slate-400">Gera cobrança e fatura com número registado.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Contrato<select required value={billingContractId} onChange={(event) => setBillingContractId(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">Selecione</option>{financeContracts.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>{item.code ? `${item.code} · ` : ''}{item.title} · {formatMzn(item.amount)}</option>)}</select></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Período<input required type="month" value={billingPeriod} onChange={(event) => setBillingPeriod(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                  <label className="block text-xs text-slate-300">Vencimento<input required type="date" value={billingDueDate} onChange={(event) => setBillingDueDate(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <button type="submit" disabled={!financeContracts.length} className="w-full rounded bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50">Emitir fatura</button>
+              </form>
+
+              <form onSubmit={handleRegisterFinancePayment} className="space-y-3 border-t-2 border-amber-400 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Registar pagamento</h2>
+                  <p className="mt-1 text-xs text-amber-200">Conciliação manual. Confirme o recebimento fora do sistema antes de registar.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Fatura<select required value={paymentInvoiceId} onChange={(event) => { const invoiceId = event.target.value; setPaymentInvoiceId(invoiceId); const invoice = financeInvoices.find((item) => item.id === invoiceId); if (invoice) setPaymentAmount(String(invoice.amount)); }} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">Selecione</option>{financeInvoices.filter((item) => item.status !== 'paid' && item.status !== 'void').map((item) => <option key={item.id} value={item.id}>{item.invoiceNumber} · {formatMzn(item.amount)} · {item.status}</option>)}</select></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Valor recebido<input required type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                  <label className="block text-xs text-slate-300">Data<input required type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Método<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="bank_transfer">Transferência</option><option value="cash">Numerário</option><option value="mobile_money">Mobile money</option><option value="card">Cartão</option></select></label>
+                  <label className="block text-xs text-slate-300">Referência<input maxLength={80} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <button type="submit" disabled={!financeInvoices.some((item) => item.id === paymentInvoiceId)} className="w-full rounded bg-amber-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50">Confirmar e emitir recibo</button>
+              </form>
+            </div>}
+
+            {canCreate && <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+              <form onSubmit={handleCreateExpense} className="space-y-3 border-t-2 border-rose-400 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Registar despesa</h2>
+                  <p className="mt-1 text-xs text-slate-400">Lançamento auditado no livro. O campo referência identifica o comprovativo externo; o upload de ficheiros não está configurado.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Descrição<input required minLength={2} maxLength={160} name="description" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <label className="block text-xs text-slate-300">Fornecedor<input maxLength={160} name="supplier" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Valor<input required type="number" min="0.01" step="0.01" name="amount" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                  <label className="block text-xs text-slate-300">Data<input required type="date" name="occurredAt" defaultValue={new Date().toISOString().slice(0, 10)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <label className="block text-xs text-slate-300">Referência do comprovativo<input maxLength={120} name="reference" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <button type="submit" className="w-full rounded bg-rose-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-300">Registar despesa</button>
+              </form>
+
+              <form onSubmit={handleCreateOpeningBalance} className="space-y-3 border-t-2 border-violet-400 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Saldo inicial ou dívida histórica</h2>
+                  <p className="mt-1 text-xs text-slate-400">O saldo inicial é apenas contabilístico; não confirma o saldo bancário. Dívida histórica cria uma fatura pagável associada a contrato e unidade.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Tipo<select required name="kind" defaultValue="system_cash" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="system_cash">Saldo inicial do sistema</option><option value="historical_debt">Dívida histórica de unidade</option></select></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-300">Valor<input required type="number" min="0.01" step="0.01" name="amount" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                  <label className="block text-xs text-slate-300">Data de referência<input required type="date" name="asOfDate" defaultValue={new Date().toISOString().slice(0, 10)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                </div>
+                <label className="block text-xs text-slate-300">ID da unidade (obrigatório para dívida)<input maxLength={64} name="unitId" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <label className="block text-xs text-slate-300">Nota<input maxLength={600} name="note" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <button type="submit" className="w-full rounded bg-violet-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-violet-300">Registar abertura</button>
+              </form>
+
+              <form onSubmit={handleReconcilePayment} className="space-y-3 border-t-2 border-cyan-400 bg-slate-900/70 p-4">
+                <div>
+                  <h2 className="font-semibold">Conciliar com extrato</h2>
+                  <p className="mt-1 text-xs text-slate-400">Confirma manualmente a correspondência exacta entre um pagamento registado e uma linha do extrato; não é integração bancária automática.</p>
+                </div>
+                <label className="block text-xs text-slate-300">Pagamento por recibo<select required name="paymentId" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">Selecione</option>{financeReceipts.filter((receipt) => receipt.paymentId && !reconciledPaymentIds.has(receipt.paymentId)).map((receipt) => <option key={receipt.paymentId} value={receipt.paymentId}>{receipt.receiptNumber} · {formatMzn(receipt.amount)}</option>)}</select></label>
+                <label className="block text-xs text-slate-300">Data no extrato<input required type="date" name="statementDate" defaultValue={new Date().toISOString().slice(0, 10)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <label className="block text-xs text-slate-300">Referência bancária<input required maxLength={120} name="statementReference" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /></label>
+                <button type="submit" disabled={!financeReceipts.some((receipt) => receipt.paymentId && !reconciledPaymentIds.has(receipt.paymentId))} className="w-full rounded bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50">Confirmar conciliação</button>
+              </form>
+            </div>}
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+              <div className="overflow-x-auto border-t border-slate-700 bg-slate-900/50">
+                <h2 className="px-4 py-3 font-semibold">Faturas recentes</h2>
+                <table className="w-full min-w-[560px] text-left text-xs"><thead className="bg-slate-900 text-slate-400"><tr><th className="p-3">Número</th><th className="p-3">Emissão</th><th className="p-3">Vencimento</th><th className="p-3">Valor</th><th className="p-3">Estado</th></tr></thead><tbody>{financeInvoices.length ? financeInvoices.map((invoice) => <tr key={invoice.id} className="border-t border-slate-800"><td className="p-3 font-medium text-slate-200">{invoice.invoiceNumber}</td><td className="p-3">{invoice.issuedAt}</td><td className="p-3">{invoice.dueDate || '-'}</td><td className="p-3">{formatMzn(invoice.amount)}</td><td className="p-3">{invoice.status}</td></tr>) : <tr><td colSpan={5} className="p-4 text-slate-400">Ainda não há faturas.</td></tr>}</tbody></table>
+              </div>
+              <div className="overflow-x-auto border-t border-slate-700 bg-slate-900/50">
+                <h2 className="px-4 py-3 font-semibold">Recibos emitidos</h2>
+                <table className="w-full min-w-[420px] text-left text-xs"><thead className="bg-slate-900 text-slate-400"><tr><th className="p-3">Recibo</th><th className="p-3">Data</th><th className="p-3">Valor</th></tr></thead><tbody>{financeReceipts.length ? financeReceipts.map((receipt) => <tr key={receipt.id} className="border-t border-slate-800"><td className="p-3 font-medium text-slate-200">{receipt.receiptNumber}</td><td className="p-3">{receipt.issuedAt}</td><td className="p-3">{formatMzn(receipt.amount)}</td></tr>) : <tr><td colSpan={3} className="p-4 text-slate-400">Ainda não há recibos.</td></tr>}</tbody></table>
+              </div>
+            </div>
+          </section>
         )}
 
         {!!catalog?.modules?.length && (

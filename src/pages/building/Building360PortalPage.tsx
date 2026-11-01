@@ -305,13 +305,15 @@ const focusAreas: FocusArea[] = [
   },
 ];
 
-const resolveCurrentUserSnapshot = () => {
+const resolveCurrentUserSnapshot = (): Record<string, unknown> | null => {
   for (const key of ['currentUser', 'eduguard_user', 'user']) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
     } catch {
       continue;
     }
@@ -325,7 +327,7 @@ const resolveAuthToken = (): string => {
 
 const hasAuthToken = (): boolean => resolveAuthToken().length > 0;
 
-const buildHeaders = (currentUser: any): HeadersInit => ({
+const buildHeaders = (currentUser: Record<string, unknown> | null): HeadersInit => ({
   ...(hasAuthToken()
     ? { Authorization: `Bearer ${resolveAuthToken()}` }
     : {}),
@@ -368,12 +370,12 @@ const Building360PortalPage: React.FC = () => {
     const token = resolveAuthToken();
 
     if (!currentUser || !token) {
-      navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+      navigate('/building360/login?returnTo=%2Fbuilding360%2Fportal', { replace: true });
       return;
     }
 
     if (!isApprovedByAdmin(currentUser)) {
-      navigate('/building360/login?error=building360-account-not-approved&returnTo=%2Fbuilding360', { replace: true });
+      navigate('/building360/login?error=building360-account-not-approved&returnTo=%2Fbuilding360%2Fportal', { replace: true });
       return;
     }
 
@@ -397,7 +399,7 @@ const Building360PortalPage: React.FC = () => {
   const fetchWithFallback = async (
     securePath: string,
     publicPath: string,
-    currentUser: any,
+    currentUser: Record<string, unknown> | null,
     timeoutLabel: string
   ): Promise<Response> => {
     const prioritizedPaths = [securePath, publicPath];
@@ -526,7 +528,7 @@ const Building360PortalPage: React.FC = () => {
     };
 
     loadBuildings();
-  }, [selectedSiteId]);
+  }, [accessValidated, selectedSiteId]);
 
   useEffect(() => {
     if (!accessValidated) return;
@@ -560,7 +562,7 @@ const Building360PortalPage: React.FC = () => {
     };
 
     loadUnits();
-  }, [selectedSiteId, selectedBuildingId, selectedUnitType, selectedUnitStatus]);
+  }, [accessValidated, selectedSiteId, selectedBuildingId, selectedUnitType, selectedUnitStatus]);
 
   if (!accessValidated) {
     return (
@@ -603,40 +605,28 @@ const Building360PortalPage: React.FC = () => {
 
   const moduleLiveData: Record<string, string> = {
     property: `${portfolio?.sites ?? 0} sites · ${portfolio?.buildings ?? 0} edificios`,
-    buildingpass: `${operations?.assets ?? 0} credenciais e dispositivos monitorados`,
-    community: `${portfolio?.units ?? 0} unidades elegiveis para comunicados`,
-    chat: `${workOrdersOpen} conversas operacionais activas`,
-    request: `${workOrdersOpen} solicitacoes em tratamento`,
-    complaint: `${warningAssets + criticalAssets} reclamacoes e alertas auditaveis`,
-    finance: `${workOrdersDone} ordens encerradas para fecho financeiro`,
-    asset: `${operations?.assets ?? 0} activos inventariados`,
-    maintenance: `${workOrdersOpen} ordens activas`,
-    access: `${portfolio?.buildings ?? 0} edificios com politicas de acesso`,
-    people: `${portfolio?.units ?? 0} unidades com actividade`,
-    reserve: `${portfolio?.units ?? 0} espacos sob regras de reserva`,
-    move: `${workOrdersOpen} processos de mudanca em coordenacao`,
-    documents: `${workOrdersDone} registos de operacao concluidos`,
-    parking: `${warningAssets} activos em alerta`,
-    insight: `${operations?.assets ?? 0} sinais no painel analitico`,
-    intelligence: `${criticalAssets} activos criticos para decisao`,
-    security: `${warningAssets + criticalAssets} alertas operacionais totais`,
+    request: `${workOrdersOpen} ordens de trabalho abertas`,
+    complaint: `${workOrdersOpen} ordens de trabalho abertas`,
+    asset: `${operations?.assets ?? 0} activos registados`,
+    maintenance: `${workOrdersOpen} abertas · ${workOrdersDone} concluidas`,
+    insight: `${portfolio?.sites ?? 0} sites · ${portfolio?.units ?? 0} unidades`,
   };
 
   const selectedSite = sites.find((item) => item.id === selectedSiteId);
   const selectedBuilding = buildings.find((item) => item.id === selectedBuildingId);
   const currentUser = resolveCurrentUserSnapshot();
   const currentUserName = String(currentUser?.nome || currentUser?.name || currentUser?.email || 'Utilizador').trim();
-  const activeTenantLabel = String(currentUser?.tenant_id || currentUser?.escola_id || overview?.tenantId || 'tenant-demo-1');
+  const activeTenantLabel = String(currentUser?.tenant_id || currentUser?.escola_id || overview?.tenantId || 'Tenant nao identificado');
   const totalUnits = units.length;
   const occupiedUnits = units.filter((item) => item.status === 'occupied').length;
   const vacantUnits = units.filter((item) => item.status === 'vacant').length;
   const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+  const portfolioAvailable = !loadingPortfolio && !portfolioError;
+  const overviewAvailable = !loadingMetrics && !metricsError && Boolean(overview);
   const attentionItems = [
-    { level: 'critico', label: `${criticalAssets} activos criticos` },
-    { level: 'medio', label: `${workOrdersOpen} solicitacoes abertas` },
-    { level: 'critico', label: `${Math.min(99, Math.max(0, warningAssets + 2))}% inadimplencia (estimada)` },
-    { level: 'alerta', label: `${Math.max(0, warningAssets - 1)} reclamacoes pendentes` },
-    { level: 'ok', label: `${Math.max(0, occupiedUnits + 7)} visitantes hoje` },
+    ...(criticalAssets > 0 ? [{ level: 'critico', label: `${criticalAssets} activos criticos` }] : []),
+    ...(warningAssets > 0 ? [{ level: 'alerta', label: `${warningAssets} activos em alerta` }] : []),
+    ...(workOrdersOpen > 0 ? [{ level: 'medio', label: `${workOrdersOpen} ordens de trabalho abertas` }] : []),
   ];
 
   return (
@@ -656,7 +646,7 @@ const Building360PortalPage: React.FC = () => {
               type="button"
               onClick={() => {
                 clearAuthSession();
-                navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+                navigate('/building360/login?returnTo=%2Fbuilding360%2Fportal', { replace: true });
               }}
               className="inline-flex items-center gap-2 rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-200 hover:bg-rose-500/20"
             >
@@ -701,7 +691,7 @@ const Building360PortalPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   clearAuthSession();
-                  navigate('/building360/login?returnTo=%2Fbuilding360', { replace: true });
+                  navigate('/building360/login?returnTo=%2Fbuilding360%2Fportal', { replace: true });
                 }}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 transition-colors"
               >
@@ -733,7 +723,7 @@ const Building360PortalPage: React.FC = () => {
                 <div key={card.label} className="rounded-xl bg-slate-800/90 p-4 border border-slate-700">
                   <p className="text-slate-400">{card.label}</p>
                   <p className="text-2xl font-bold text-white mt-1">
-                    {loadingMetrics ? '...' : card.value}
+                    {loadingMetrics ? '...' : overviewAvailable ? card.value : '—'}
                   </p>
                   <p className="text-slate-300 text-xs mt-1">{card.subtitle}</p>
                 </div>
@@ -810,15 +800,15 @@ const Building360PortalPage: React.FC = () => {
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
               <p className="text-slate-400">Taxa de ocupacao</p>
-              <p className="mt-1 text-lg font-bold text-emerald-300">{occupancyRate}%</p>
+              <p className="mt-1 text-lg font-bold text-emerald-300">{portfolioAvailable ? `${occupancyRate}%` : '—'}</p>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
               <p className="text-slate-400">Unidades ocupadas</p>
-              <p className="mt-1 text-lg font-bold text-white">{occupiedUnits}</p>
+              <p className="mt-1 text-lg font-bold text-white">{portfolioAvailable ? occupiedUnits : '—'}</p>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
               <p className="text-slate-400">Unidades vagas</p>
-              <p className="mt-1 text-lg font-bold text-white">{vacantUnits}</p>
+              <p className="mt-1 text-lg font-bold text-white">{portfolioAvailable ? vacantUnits : '—'}</p>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
               <p className="text-slate-400">Periodo</p>
@@ -845,19 +835,23 @@ const Building360PortalPage: React.FC = () => {
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
                 <p className="text-slate-400">Edificios</p>
-                <p className="text-lg font-bold text-white">{portfolio?.buildings ?? 0}</p>
+                <p className="text-lg font-bold text-white">{overviewAvailable ? portfolio?.buildings ?? 0 : '—'}</p>
               </div>
               <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
                 <p className="text-slate-400">Unidades</p>
-                <p className="text-lg font-bold text-white">{portfolio?.units ?? 0}</p>
+                <p className="text-lg font-bold text-white">{overviewAvailable ? portfolio?.units ?? 0 : '—'}</p>
               </div>
               <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
-                <p className="text-slate-400">Cobranca</p>
-                <p className="text-lg font-bold text-emerald-300">{Math.max(70, 100 - Math.min(25, warningAssets + 4))}%</p>
+                <p className="text-slate-400">Activos registados</p>
+                <p className="text-lg font-bold text-emerald-300">{overviewAvailable ? operations?.assets ?? 0 : '—'}</p>
               </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                  <p className="text-slate-400">Dados financeiros</p>
+                  <p className="text-sm font-semibold text-slate-300">Disponiveis no Finance360</p>
+                </div>
               <div className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
                 <p className="text-slate-400">Solicitacoes</p>
-                <p className="text-lg font-bold text-amber-300">{workOrdersOpen}</p>
+                  <p className="text-lg font-bold text-amber-300">{overviewAvailable ? workOrdersOpen : '—'}</p>
               </div>
             </div>
 
@@ -869,6 +863,9 @@ const Building360PortalPage: React.FC = () => {
                     {item.level === 'critico' ? '🔴' : item.level === 'medio' ? '🟠' : item.level === 'alerta' ? '🟡' : '🟢'} {item.label}
                   </li>
                 ))}
+                {attentionItems.length === 0 && (
+                  <li>{overviewAvailable ? 'Sem alertas registados.' : 'Indicadores indisponiveis ate a sincronizacao dos dados.'}</li>
+                )}
               </ul>
             </div>
           </div>
@@ -887,7 +884,7 @@ const Building360PortalPage: React.FC = () => {
                 <p className="mt-2 text-sm text-slate-300">{area.subtitle}</p>
                 <p className="mt-3 text-xs text-sky-300 inline-flex items-center gap-2">
                   <Sparkles className="w-3.5 h-3.5" />
-                  {loadingMetrics ? 'A sincronizar dados...' : moduleLiveData[area.entryModule]}
+                  {loadingMetrics ? 'A sincronizar dados...' : moduleLiveData[area.entryModule] || 'Sem dados operacionais integrados'}
                 </p>
                 <p className="mt-3 text-xs text-slate-400">{area.bullets.join(' · ')}</p>
               </article>

@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Database, Layers3, LockKeyhole, Server, Workflow } from 'lucide-react';
+import {
+  isApprovedByAdmin,
+  isBuilding360ManagementProfile,
+  isBuilding360ResidentProfile,
+  resolveBuilding360Profile,
+} from '@/lib/building360Access';
 
 const coreEntities = [
   'organizations',
@@ -49,19 +55,34 @@ const financeEntities = [
 ];
 
 const endpoints = [
-  ['GET', '/api/v1/building360/overview', 'Resumo operacional por tenant'],
-  ['GET', '/api/v1/building360/sites', 'Lista de sites e complexos'],
-  ['GET', '/api/v1/building360/buildings', 'Lista de edificios por site'],
-  ['GET', '/api/v1/building360/units', 'Unidades por filtros (tipo, estado, edificio)'],
-  ['GET', '/api/v1/building360/core/people', 'Base de pessoas do condominio/comunidade'],
-  ['GET', '/api/v1/building360/core/role-assignments', 'Credenciais e atribuicoes BuildingPass'],
-  ['GET', '/api/v1/building360/assets', 'Activos e proxima manutencao'],
-  ['POST', '/api/v1/building360/work-orders', 'Criar ordem de trabalho'],
-  ['PATCH', '/api/v1/building360/work-orders/:id', 'Actualizar estado de manutencao'],
-  ['POST', '/api/v1/building360/core/role-assignments', 'Emitir credencial/visita com regras de acesso'],
-  ['POST', '/api/v1/building360/billing/run', 'Executar ciclo de cobranca'],
-  ['GET', '/api/v1/building360/finance/invoices', 'Facturas por contrato/unidade'],
-  ['POST', '/api/v1/building360/finance/payments/register', 'Registar pagamento e emitir recibo'],
+  ['GET', '/api/v1/building360/overview', 'Resumo operacional por tenant', 'Rota no controller; operação não certificada'],
+  ['GET', '/api/v1/building360/sites', 'Lista de sites e complexos', 'Rota no controller; operação não certificada'],
+  ['GET', '/api/v1/building360/buildings', 'Lista de edifícios por site', 'Rota no controller; operação não certificada'],
+  ['GET', '/api/v1/building360/units', 'Unidades por filtros (tipo, estado, edifício)', 'Rota no controller; operação não certificada'],
+  ['GET', '/api/v1/building360/core/people', 'Base de pessoas do condomínio/comunidade', 'Rota no controller; operação não certificada'],
+  ['GET', '/api/v1/building360/core/role-assignments', 'Atribuições de perfil', 'Rota no controller; não equivale a BuildingPass'],
+  ['GET', '/api/v1/building360/assets', 'Activos e próxima manutenção', 'Rota no controller; operação não certificada'],
+  ['POST', '/api/v1/building360/work-orders', 'Criar ordem de trabalho', 'Rota no controller; ciclo completo não certificado'],
+  ['PATCH', '/api/v1/building360/work-orders/:id', 'Actualizar estado de manutenção', 'Rota no controller; ciclo completo não certificado'],
+  ['POST', '/api/v1/building360/core/role-assignments', 'Criar atribuição de perfil', 'Rota no controller; não emite credenciais de visitante'],
+  ['POST', '/api/v1/building360/billing/run', 'Executar ciclo de cobrança', 'Rota no controller; fluxo financeiro não certificado'],
+  ['GET', '/api/v1/building360/finance/invoices', 'Facturas por contrato/unidade', 'Rota no controller; operação não certificada'],
+  ['POST', '/api/v1/building360/finance/payments/register', 'Registar pagamento e emitir recibo', 'Implementado; confirmado no sistema, não confirmado por banco'],
+  ['GET', '/api/v1/building360/finance/ledger', 'Consultar movimentos do tenant', 'Implementado; scope por tenant'],
+  ['POST', '/api/v1/building360/finance/expenses', 'Registar despesa no livro financeiro', 'Implementado; comprovativo guardado apenas como referência, sem upload de ficheiro'],
+  ['POST', '/api/v1/building360/finance/opening-balances', 'Registar saldo inicial ou dívida histórica', 'Implementado; dívida cria fatura pagável associada a unidade/contrato; saldo não é bancário'],
+  ['POST', '/api/v1/building360/finance/bank-reconciliations', 'Conciliar pagamento com linha do extrato', 'Implementado para correspondência manual exacta; sem integração/importação bancária automática'],
+  ['POST', '/api/v1/building360/public/demo-requests', 'Receber pedido comercial de demonstração', 'Implementado no código; pendente de migração e validação em produção'],
+  ['GET', '/api/v1/building360/admin/demo-requests', 'Consultar pedidos de demonstração', 'Implementado; reservado a super_admin/platform_admin'],
+  ['POST', '/api/v1/building360/admin/demo-requests/:id/approve', 'Aprovar pedido, criar tenant e convidar administrador', 'Implementado no código; depende de credenciais Supabase server-side e migração aplicada'],
+  ['POST', '/api/v1/building360/admin/demo-requests/:id/reject', 'Rejeitar pedido comercial pendente', 'Implementado; decisão registada em auditoria'],
+  ['POST', '/api/v1/building360/visitors', 'Registar visitante', 'Planeado; rota não localizada no controller'],
+  ['POST', '/api/v1/building360/core/organizations', 'Criar organização no tenant autenticado', 'Rota no controller; tenant vem do âmbito autenticado'],
+  ['POST', '/api/v1/building360/core/sites', 'Criar condomínio/site', 'Rota no controller; operação não certificada'],
+  ['POST', '/api/v1/building360/core/buildings', 'Criar edifício associado ao site', 'Rota no controller; operação não certificada'],
+  ['POST', '/api/v1/building360/core/units', 'Criar unidade associada ao edifício', 'Rota no controller; operação não certificada'],
+  ['POST', '/api/v1/building360/core/people', 'Registar ficha de pessoa', 'Rota no controller; não cria conta nem envia convite'],
+  ['POST', '/api/v1/building360/finance/contracts', 'Criar contrato de cobrança', 'Rota no controller; não emite fatura automaticamente'],
 ];
 
 const permissionRows = [
@@ -83,6 +104,45 @@ const permissionRows = [
 
 const Building360BlueprintV1Page: React.FC = () => {
   const navigate = useNavigate();
+  const [accessValidated, setAccessValidated] = useState(false);
+
+  useEffect(() => {
+    let currentUser: Record<string, unknown> | null = null;
+    for (const key of ['currentUser', 'eduguard_user', 'user']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          currentUser = parsed as Record<string, unknown>;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    const token = localStorage.getItem('eduguard_token') || localStorage.getItem('token');
+    if (!currentUser || !token || !isApprovedByAdmin(currentUser)) {
+      navigate('/building360/login?returnTo=%2Fbuilding360%2Fblueprint', { replace: true });
+      return;
+    }
+
+    const profile = resolveBuilding360Profile(
+      String(currentUser.building360_role || currentUser.perfil || currentUser.role || ''),
+    );
+    if (isBuilding360ResidentProfile(profile)) {
+      navigate('/building360/morador', { replace: true });
+      return;
+    }
+    if (!isBuilding360ManagementProfile(profile)) {
+      navigate('/portais', { replace: true });
+      return;
+    }
+    setAccessValidated(true);
+  }, [navigate]);
+
+  if (!accessValidated) return null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -107,6 +167,31 @@ const Building360BlueprintV1Page: React.FC = () => {
           </p>
           <p className="mt-2 text-sm text-emerald-200">
             Regra obrigatoria de arquitetura: identidade unica Building360 com RBAC por perfil; sem logins separados por modulo.
+          </p>
+          <div className="mt-5 rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-sm leading-relaxed text-amber-100">
+            Estado verificado no código: há entidades TypeORM e rotas no controller para parte do
+            núcleo, manutenção e cobrança. A existência de uma rota ou entidade não prova que o
+            fluxo esteja completo, validado ponta a ponta ou pronto para produção. Os restantes
+            elementos abaixo são desenho/planeamento. Documentação interna para utilizadores
+            autorizados.
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-slate-300">
+            O onboarding de edifício cria registos dentro de um tenant já atribuído. O pedido
+            comercial, a aprovação manual, o provisionamento inicial de tenant e o convite Supabase
+            existem no código, mas não foram validados com as credenciais e base de dados de produção.
+            Despesas, saldo inicial, dívida histórica faturável e conciliação manual de pagamentos estão disponíveis no
+            livro financeiro. A referência de comprovativo não faz upload de ficheiro e a
+            conciliação não consulta o banco. A validação da sessão Supabase usa o endpoint oficial
+            de utilizador, e o backend só aceita papel/tenant vindos de app_metadata administrada
+            pelo servidor; ainda é necessário testar o ciclo completo de aceitação do convite.
+          </p>
+          <p className="mt-3 text-xs leading-relaxed text-slate-400">
+            Antes de activar os pedidos em produção: aplicar a migration
+            <code className="mx-1 text-sky-200">CreateBuilding360DemoRequests</code>
+            e configurar no backend <code className="mx-1 text-sky-200">SUPABASE_URL</code>,
+            <code className="mx-1 text-sky-200">SUPABASE_SERVICE_ROLE_KEY</code>,
+            uma chave pública para validar sessões e um redirect de convite permitido no Supabase.
+            A chave de serviço nunca deve ser exposta no frontend.
           </p>
         </header>
 
@@ -168,15 +253,17 @@ const Building360BlueprintV1Page: React.FC = () => {
               <tr className="text-slate-300 border-b border-slate-700">
                 <th className="py-2 pr-4">Metodo</th>
                 <th className="py-2 pr-4">Endpoint</th>
-                <th className="py-2">Objectivo</th>
+                <th className="py-2 pr-4">Objectivo</th>
+                <th className="py-2">Estado verificado</th>
               </tr>
             </thead>
             <tbody>
-              {endpoints.map(([method, path, purpose]) => (
+              {endpoints.map(([method, path, purpose, status]) => (
                 <tr key={path} className="border-b border-slate-800/60 text-slate-200">
                   <td className="py-2 pr-4 font-semibold text-sky-300">{method}</td>
                   <td className="py-2 pr-4 font-mono text-xs">{path}</td>
-                  <td className="py-2">{purpose}</td>
+                  <td className="py-2 pr-4">{purpose}</td>
+                  <td className="py-2 text-xs text-slate-300">{status}</td>
                 </tr>
               ))}
             </tbody>
@@ -231,6 +318,16 @@ const Building360BlueprintV1Page: React.FC = () => {
             </a>
           </div>
         </section>
+
+        <p className="mt-6 text-xs leading-relaxed text-slate-500">
+          Estado do modelo de dados: estão presentes entidades TypeORM para organizations,
+          portfolios, sites, buildings, floors, units, people, role assignments, assets,
+          work orders, contracts, charges, invoices, payments, receipts e ledger entries.
+          As demais entidades/tabelas enumeradas neste blueprint são propostas. A presença
+          de uma entidade não confirma migração aplicada, dados de produção nem um processo
+          operacional completo. As permissões acima são o modelo de referência; validar
+          autorização por rota e perfil antes de disponibilizar cada fluxo.
+        </p>
       </div>
     </div>
   );
