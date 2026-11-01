@@ -1383,6 +1383,11 @@ const SystemLoginContent = () => {
   };
 
   const handleSelfRegister = async () => {
+    if (building360Intent) {
+      setErrorMessage('O acesso ao Building360 é apenas por convite, após aprovação da equipa comercial.');
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
@@ -1679,6 +1684,11 @@ const SystemLoginContent = () => {
               ? 'Acesso Building360 por credenciais validadas: perfil de gestor ou perfil de morador.'
               : 'Entrada unica: apos login, o sistema redireciona automaticamente para o portal certo com base nas permissoes.'}
           </p>
+          {building360Intent && (
+            <p className="mt-2 text-xs text-[#9bbbc9]">
+              As contas são ativadas apenas por convite depois da aprovação do pedido de demonstração.
+            </p>
+          )}
           <details className="mt-2 text-left mx-auto max-w-[320px]">
             <summary className="cursor-pointer text-xs text-[#9bbbc9]">Perfil esperado (opcional, para diagnostico)</summary>
             <div className="pt-2">
@@ -1713,7 +1723,7 @@ const SystemLoginContent = () => {
         </div>
 
         <div className="mt-8 space-y-4">
-          {registerMode ? (
+          {registerMode && !building360Intent ? (
             <>
               <input
                 value={fullName}
@@ -2014,7 +2024,7 @@ const SystemLoginContent = () => {
             >
               {recoveryMode ? t('sistema.voltar_login') : t('sistema.esqueceu_senha')}
             </button>
-            {!recoveryMode && !passwordUpdateMode && (
+            {!building360Intent && !recoveryMode && !passwordUpdateMode && (
               <button
                 type="button"
                 onClick={() => setLoginMode(registerMode ? 'login' : 'signup')}
