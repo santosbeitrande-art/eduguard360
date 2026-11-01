@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: eduguard360-building360-staging-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: building360-staging-db
+          property: connectionString
+      - key: BUILDING360_AUTO_SEED
+        value: 0
+
+databases:
+  - name: building360-staging-db
+    databaseName: building360_staging
+    user: building360_staging_user
+    plan: free
+    region: oregon
