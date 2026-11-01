@@ -32,6 +32,10 @@ import { join } from 'path';
 const isProduction = process.env.NODE_ENV === 'production';
 const databaseUrl = String(process.env.DATABASE_URL || '').trim();
 
+if (isProduction && !databaseUrl) {
+  throw new Error('DATABASE_URL must be configured when NODE_ENV is production.');
+}
+
 export const DatabaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
   ...(databaseUrl

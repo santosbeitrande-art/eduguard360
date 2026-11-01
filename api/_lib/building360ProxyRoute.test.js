@@ -93,3 +93,69 @@ test('routes Building360 requests to its dedicated API base when configured', as
     else process.env.BUSINESS_API_BASE = originalBusinessApi;
   }
 });
+
+test('fails closed in production when the dedicated Building360 API base is missing', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalBuildingApi = process.env.BUILDING360_API_BASE;
+  const originalBusinessApi = process.env.BUSINESS_API_BASE;
+  let fetchCalled = false;
+  process.env.NODE_ENV = 'production';
+  delete process.env.BUILDING360_API_BASE;
+  process.env.BUSINESS_API_BASE = 'https://legacy-api.test';
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('A network request should not be made.');
+  };
+
+  try {
+    const response = createResponse();
+    await handleBuilding360Route({ method: 'GET', headers: {}, query: {} }, response, '/overview');
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.body, {
+      error: 'building360-api-not-configured',
+      message: 'Set BUILDING360_API_BASE to the dedicated Building360 API host.',
+    });
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalBuildingApi === undefined) delete process.env.BUILDING360_API_BASE;
+    else process.env.BUILDING360_API_BASE = originalBuildingApi;
+    if (originalBusinessApi === undefined) delete process.env.BUSINESS_API_BASE;
+    else process.env.BUSINESS_API_BASE = originalBusinessApi;
+  }
+});
+
+test('rejects a non-HTTPS or path-based Building360 API base in production', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalBuildingApi = process.env.BUILDING360_API_BASE;
+  let fetchCalled = false;
+  process.env.NODE_ENV = 'production';
+  process.env.BUILDING360_API_BASE = 'http://building360-api.test/api';
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('A network request should not be made.');
+  };
+
+  try {
+    const response = createResponse();
+    await handleBuilding360Route({ method: 'GET', headers: {}, query: {} }, response, '/overview');
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.body, {
+      error: 'building360-api-configuration-invalid',
+      message: 'BUILDING360_API_BASE must be an HTTPS origin without a path.',
+    });
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalBuildingApi === undefined) delete process.env.BUILDING360_API_BASE;
+    else process.env.BUILDING360_API_BASE = originalBuildingApi;
+  }
+});

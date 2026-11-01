@@ -47,15 +47,20 @@ Para manter o `api.eduguard360.co.mz` actual ligado ao Verify API e publicar o b
 
 Depois disso:
 
-1. Na Vercel, definir `BUSINESS_API_BASE=https://business.eduguard360.co.mz` no projecto principal.
-2. Fazer redeploy do frontend e validar:
+1. Na Vercel, definir `BUSINESS_API_BASE` para a API business geral.
+2. Definir `BUILDING360_API_BASE` com o hostname dedicado da API Building360, sem caminho final. Em produção, o proxy devolve HTTP 503 se esta variável faltar; não encaminha Building360 para o domínio antigo da API.
+3. Configurar `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` apenas como variáveis server-side nos serviços que executam operações administrativas do Supabase (Vercel e/ou Render, conforme os endpoints utilizados). Configurar também `BUILDING360_INVITE_REDIRECT_URL` no serviço backend que envia convites.
+4. Nunca usar o prefixo `VITE_` para a chave service role nem guardar credenciais nos ficheiros do repositório.
+5. Fazer redeploy do frontend e validar:
 	- `https://business.eduguard360.co.mz/api/v1/health`
+	- `https://business.eduguard360.co.mz/api/v1/health/ready` (deve devolver `ready: true`)
 	- `https://business.eduguard360.co.mz/api/v1/building360/public/overview`
 	- `https://eduguard360.co.mz/api/v1/building360/public/overview`
 
 O backend Nest business agora expoe healthcheck proprio em `/api/v1/health` para validacao do deploy.
+O blueprint de produção usa `/api/v1/health/ready`, que confirma a ligação à base de dados e a presença de configuração server-side para Supabase Auth antes de considerar o serviço pronto. O endpoint `/api/v1/health` continua disponível como verificação de vida.
 
-O proxy do frontend passou a assumir `https://business.eduguard360.co.mz` como default para `BUSINESS_API_BASE`, evitando novo acoplamento acidental ao `api.eduguard360.co.mz` do Verify.
+Defina os hosts reais no painel do provider e valide-os antes de promover produção. O domínio `api.eduguard360.co.mz` continua reservado ao Verify; Building360 deve usar o hostname dedicado configurado em `BUILDING360_API_BASE`.
 
 ### Modo `api-external-orchestrated` no Render
 Se o frontend `/public` exigir modo externo obrigatório, configure também estes env vars no serviço da API:

@@ -485,8 +485,37 @@ export function buildPermissionsByRole(roleInput) {
 
 export async function proxyBusinessApi(req, path) {
   const isBuilding360Route = /^\/(?:api\/v1\/)?building360(?:\/|$)/.test(path);
+  const building360ApiBase = String(process.env.BUILDING360_API_BASE || '').trim();
+  if (isBuilding360Route && process.env.NODE_ENV === 'production' && !building360ApiBase) {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        error: 'building360-api-not-configured',
+        message: 'Set BUILDING360_API_BASE to the dedicated Building360 API host.',
+      },
+    };
+  }
+  if (isBuilding360Route && process.env.NODE_ENV === 'production') {
+    try {
+      const parsedBase = new URL(building360ApiBase);
+      if (parsedBase.protocol !== 'https:' || parsedBase.pathname !== '/' || parsedBase.search || parsedBase.hash) {
+        throw new Error('Invalid production API base.');
+      }
+    } catch {
+      return {
+        ok: false,
+        status: 503,
+        data: {
+          error: 'building360-api-configuration-invalid',
+          message: 'BUILDING360_API_BASE must be an HTTPS origin without a path.',
+        },
+      };
+    }
+  }
+
   const base = String(
-    (isBuilding360Route && process.env.BUILDING360_API_BASE)
+    (isBuilding360Route && building360ApiBase)
       || process.env.BUSINESS_API_BASE
       || DEFAULT_BUSINESS_API_BASE,
   ).replace(/\/$/, '');

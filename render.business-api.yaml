@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     autoDeploy: true
-    healthCheckPath: /api/v1/health
+    healthCheckPath: /api/v1/health/ready
     envVars:
       - key: NODE_ENV
         value: production
@@ -14,6 +14,8 @@ services:
       - key: PORT
         value: 3000
       - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: DATABASE_URL
         sync: false
