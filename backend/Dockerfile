@@ -19,6 +19,7 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY backend/scripts ./scripts
+COPY backend/certs ./certs
 
 EXPOSE 3000
 

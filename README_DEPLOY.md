@@ -61,6 +61,7 @@ O backend Nest business agora expoe healthcheck proprio em `/api/v1/health` para
 O blueprint de produção usa `/api/v1/health/ready`, que confirma a ligação à base de dados e a presença de configuração server-side para Supabase Auth antes de considerar o serviço pronto. O endpoint `/api/v1/health` continua disponível como verificação de vida.
 
 O plano gratuito pode suspender o serviço após inatividade e causar demora no primeiro pedido. Configure `DATABASE_URL` para uma base de dados de produção separada (não a base de staging), além das chaves Supabase, diretamente no painel do provider. Não comite credenciais no repositório. Defina os hosts reais no painel do provider e valide-os antes de promover produção. O domínio `api.eduguard360.co.mz` continua reservado ao Verify; Building360 deve usar o hostname dedicado configurado em `BUILDING360_API_BASE`.
+O container inclui a CA pública oficial do Supabase em `backend/certs/supabase-prod-ca-2021.crt` e define `NODE_EXTRA_CA_CERTS` para que o Node valide corretamente TLS ao conectar-se ao Postgres. Não remova a validação do certificado TLS para contornar erros de conexão.
 
 ### Modo `api-external-orchestrated` no Render
 Se o frontend `/public` exigir modo externo obrigatório, configure também estes env vars no serviço da API:
