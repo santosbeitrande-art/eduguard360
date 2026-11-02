@@ -90,13 +90,53 @@ export class Building360DemoRequestService {
 
   async list(status: string | undefined, actor: ApprovalActor) {
     this.assertPlatformAdmin(actor);
-    const allowedStatuses = ['pending', 'provisioning', 'invitation_failed', 'approved', 'rejected'];
+    const allowedStatuses = ['pending', 'under_review', 'provisioning', 'invitation_failed', 'approved', 'rejected', 'completed'];
     if (status && !allowedStatuses.includes(status)) {
       throw new BadRequestException('Unsupported demo request status.');
     }
     return this.requestRepository.find({
       where: status ? { status } : {},
       order: { createdAt: 'DESC' },
+    });
+  }
+
+  async updateStatus(id: string, status: 'under_review' | 'completed', actor: ApprovalActor) {
+    this.assertPlatformAdmin(actor);
+    return this.dataSource.transaction(async (manager) => {
+      const requestRepository = manager.getRepository(Building360DemoRequest);
+      const request = await requestRepository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!request) throw new NotFoundException('Demo request not found.');
+
+      const allowedTransition = status === 'under_review'
+        ? request.status === 'pending'
+        : request.status === 'approved';
+      if (!allowedTransition) {
+        throw new ConflictException(`Cannot change demo request from "${request.status}" to "${status}".`);
+      }
+
+      request.status = status;
+      request.reviewedBy = actor.userId || null;
+      request.reviewedAt = new Date();
+      const saved = await requestRepository.save(request);
+      const auditRepository = manager.getRepository(AuditLog);
+      await auditRepository.save(auditRepository.create({
+        action: `building360.demo_request.${status}`,
+        resourceType: 'building360_demo_request',
+        resourceId: request.id,
+        actorId: actor.userId || null,
+        actorName: actor.userName || null,
+        actorRole: actor.role || null,
+        schoolId: null,
+        tenantId: request.tenantId,
+        severity: 'info',
+        metadata: { email: request.email, status },
+        ipAddress: null,
+        userAgent: null,
+      }));
+      return { requestId: saved.id, status: saved.status };
     });
   }
 
@@ -109,8 +149,8 @@ export class Building360DemoRequestService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!request) throw new NotFoundException('Demo request not found.');
-      if (request.status !== 'pending') {
-        throw new ConflictException('Only pending demo requests can be rejected.');
+      if (!['pending', 'under_review'].includes(request.status)) {
+        throw new ConflictException('Only pending or in-review demo requests can be rejected.');
       }
       request.status = 'rejected';
       request.reviewedBy = actor.userId || null;
@@ -141,10 +181,10 @@ export class Building360DemoRequestService {
     let request = await this.requestRepository.findOne({ where: { id } });
     if (!request) throw new NotFoundException('Demo request not found.');
 
-    if (request.status === 'pending') {
+    if (['pending', 'under_review'].includes(request.status)) {
       const tenantId = randomUUID();
       const claim = await this.requestRepository.update(
-        { id: request.id, status: 'pending' },
+        { id: request.id, status: request.status },
         {
           status: 'provisioning',
           reviewedBy: actor.userId || null,

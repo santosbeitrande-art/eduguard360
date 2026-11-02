@@ -112,6 +112,46 @@ describe('Building360 demo request provisioning', () => {
     await expect(service.list(undefined, { role: 'building_manager' })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('records review and completion transitions with an audit event', async () => {
+    const request = { ...requestSeed() };
+    const requestRepository = {
+      findOne: jest.fn(async () => request),
+      save: jest.fn(async (value: typeof request) => ({ ...value })),
+    };
+    const auditRepository = makeRepository('audit');
+    const repositoryMap = new Map([
+      [Building360DemoRequest, requestRepository],
+      [AuditLog, auditRepository],
+    ]);
+    const dataSource = {
+      transaction: jest.fn(async (callback: (manager: any) => Promise<unknown>) => callback({
+        getRepository: (entity: unknown) => repositoryMap.get(entity),
+      })),
+    };
+    const service = new Building360DemoRequestService(
+      requestRepository as any,
+      auditRepository as any,
+      makeRepository('organization') as any,
+      makeRepository('site') as any,
+      makeRepository('building') as any,
+      makeRepository('person') as any,
+      makeRepository('assignment') as any,
+      dataSource as any,
+    );
+
+    await expect(service.updateStatus(request.id, 'under_review', {
+      role: 'platform_admin',
+      userId: 'reviewer-1',
+    })).resolves.toEqual({ requestId: request.id, status: 'under_review' });
+
+    request.status = 'approved';
+    await expect(service.updateStatus(request.id, 'completed', {
+      role: 'platform_admin',
+      userId: 'reviewer-1',
+    })).resolves.toEqual({ requestId: request.id, status: 'completed' });
+    expect(auditRepository.save).toHaveBeenCalledTimes(2);
+  });
+
   it('provisions an isolated tenant and sets trusted Supabase app metadata after manual approval', async () => {
     process.env.SUPABASE_URL = 'https://project.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role';

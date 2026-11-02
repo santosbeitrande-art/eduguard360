@@ -12,8 +12,19 @@ async function bootstrap() {
   app.use(helmetMiddleware());
   app.enableCors({
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://app.ecotrade360.pt', 'https://ecotrade360.pt']
-      : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080'],
+      ? [
+          'https://app.ecotrade360.pt',
+          'https://ecotrade360.pt',
+          'https://eduguard360.co.mz',
+          'https://www.eduguard360.co.mz',
+        ]
+      : [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://localhost:5173',
+          'http://127.0.0.1:5173',
+          'http://localhost:8080',
+        ],
     credentials: true,
   });
 

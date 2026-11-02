@@ -1,8 +1,9 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequireEnterprisePermission } from '../enterprise/decorators/enterprise-permission.decorator';
 import { EnterpriseRbacGuard } from '../enterprise/guards/enterprise-rbac.guard';
 import { Building360DemoRequestService } from './building360-demo-request.service';
+import { UpdateDemoRequestStatusDto } from './dto/update-demo-request-status.dto';
 
 const actorFromRequest = (request: any) => request?.enterprisePrincipal || {};
 
@@ -15,6 +16,16 @@ export class Building360DemoRequestAdminController {
   @RequireEnterprisePermission('users', 'read')
   list(@Req() request: any, @Query('status') status?: string) {
     return this.requestService.list(status, actorFromRequest(request));
+  }
+
+  @Patch(':id/status')
+  @RequireEnterprisePermission('users', 'update')
+  updateStatus(
+    @Req() request: any,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: UpdateDemoRequestStatusDto,
+  ) {
+    return this.requestService.updateStatus(id, body.status, actorFromRequest(request));
   }
 
   @Post(':id/approve')
