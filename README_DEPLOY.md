@@ -36,7 +36,7 @@ Se a API estiver em outro host, ajuste o valor em:
 
 Para manter o `api.eduguard360.co.mz` actual ligado ao Verify API e publicar o backend Nest business separadamente:
 
-1. Criar um novo servico web no Render usando o blueprint [render.business-api.yaml](render.business-api.yaml) ou apontando para [backend/Dockerfile](backend/Dockerfile).
+1. Criar um novo servico web no Render usando o blueprint [render.business-api.yaml](render.business-api.yaml) ou apontando para [backend/Dockerfile](backend/Dockerfile). O blueprint usa o plano gratuito para permitir um deploy sem cartao de pagamento.
 2. Publicar o servico com um host proprio, por exemplo `business.eduguard360.co.mz`.
 3. Na Cloudflare, criar `business` como `CNAME` para o hostname publico do Render.
    No Windows/PowerShell podes usar [restore-business-dns.ps1](restore-business-dns.ps1):
@@ -60,7 +60,7 @@ Depois disso:
 O backend Nest business agora expoe healthcheck proprio em `/api/v1/health` para validacao do deploy.
 O blueprint de produção usa `/api/v1/health/ready`, que confirma a ligação à base de dados e a presença de configuração server-side para Supabase Auth antes de considerar o serviço pronto. O endpoint `/api/v1/health` continua disponível como verificação de vida.
 
-Defina os hosts reais no painel do provider e valide-os antes de promover produção. O domínio `api.eduguard360.co.mz` continua reservado ao Verify; Building360 deve usar o hostname dedicado configurado em `BUILDING360_API_BASE`.
+O plano gratuito pode suspender o serviço após inatividade e causar demora no primeiro pedido. Configure `DATABASE_URL` para uma base de dados de produção separada (não a base de staging), além das chaves Supabase, diretamente no painel do provider. Não comite credenciais no repositório. Defina os hosts reais no painel do provider e valide-os antes de promover produção. O domínio `api.eduguard360.co.mz` continua reservado ao Verify; Building360 deve usar o hostname dedicado configurado em `BUILDING360_API_BASE`.
 
 ### Modo `api-external-orchestrated` no Render
 Se o frontend `/public` exigir modo externo obrigatório, configure também estes env vars no serviço da API:
