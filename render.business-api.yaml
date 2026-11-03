@@ -3,7 +3,6 @@ services:
     name: eduguard360-building360-api
     runtime: docker
     plan: free
-    region: frankfurt
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     autoDeploy: true
